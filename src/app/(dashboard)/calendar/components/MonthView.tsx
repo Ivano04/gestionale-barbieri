@@ -39,7 +39,7 @@ export function MonthView({ date, appointments, onDayClick }: Props) {
       {weeks.map((week, wi) => (
         <div key={wi} className="grid grid-cols-7 border-b last:border-b-0">
           {week.map((d, di) => {
-            const count = appointments.filter(a => isSameDay(parseISO(a.start_time), d)).length;
+            const count = appointments.filter(a => a.status !== 'cancelled' && isSameDay(parseISO(a.start_time), d)).length;
             const isCurrentMonth = isSameMonth(d, monthStart);
             const isTodayDate = isSameDay(d, today);
 

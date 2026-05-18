@@ -57,7 +57,7 @@ export function WeekView({ date, stylists, appointments, onSlotClick, onAppointm
           {/* Day cells */}
           {days.map((d, di) => {
             const dayApps = appointments.filter(a =>
-              a.stylist_id === stylist.id && isSameDay(parseISO(a.start_time), d)
+              a.status !== 'cancelled' && a.stylist_id === stylist.id && isSameDay(parseISO(a.start_time), d)
             );
             return (
               <div key={di}

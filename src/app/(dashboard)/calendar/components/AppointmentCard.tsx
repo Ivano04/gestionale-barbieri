@@ -20,7 +20,8 @@ interface Props {
 
 export function AppointmentCard({ appointment, onClick }: Props) {
   const cfg = sourceConfig[appointment.source] || sourceConfig.manual;
-  const synced = Boolean(appointment.treatwell_appointment_id || appointment.ghl_appointment_id || appointment.source === 'treatwell' || appointment.source === 'manual');
+  // Show checkmark for all non-Treatwell appointments and synced ones
+  const synced = appointment.source !== 'treatwell' || Boolean(appointment.treatwell_appointment_id);
 
   return (
     <div

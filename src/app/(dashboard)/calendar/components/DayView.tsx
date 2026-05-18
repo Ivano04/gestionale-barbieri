@@ -66,6 +66,7 @@ export function DayView({ date, stylists, appointments, onSlotClick, onAppointme
               const slotStart = setMinutes(setHours(date, h), 0);
               const slotEnd = setMinutes(setHours(date, h + 1), 0);
               const slotApps = appointments.filter(a => {
+                if (a.status === 'cancelled') return false;
                 const start = parseISO(a.start_time);
                 return a.stylist_id === stylist.id && start >= slotStart && start < slotEnd;
               });
