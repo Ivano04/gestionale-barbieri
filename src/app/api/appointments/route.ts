@@ -41,6 +41,20 @@ export async function POST(request: Request) {
 
   const endTime = addMinutes(new Date(body.start_time), service.duration_minutes).toISOString();
 
+  // Check time blocks
+  let blockQuery = supabase
+    .from('time_blocks')
+    .select('id')
+    .eq('salon_id', body.salon_id)
+    .lt('start_time', endTime)
+    .gt('end_time', body.start_time);
+  if (body.stylist_id) blockQuery = blockQuery.or(`stylist_id.eq.${body.stylist_id},stylist_id.is.null`);
+  else blockQuery = blockQuery.is('stylist_id', null);
+  const { data: blocks } = await blockQuery.limit(1);
+  if (blocks?.length) {
+    return Response.json({ error: 'Questo slot non è disponibile (fascia bloccata)' }, { status: 409 });
+  }
+
   const { data: conflict } = await supabase
     .from('appointments').select('id')
     .eq('stylist_id', body.stylist_id)

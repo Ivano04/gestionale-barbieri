@@ -55,18 +55,6 @@ export default function CalendarPage() {
   useEffect(() => { loadData(); }, [loadData]);
 
   // Time block handler
-  async function handleBlockSlot(stylistId: string, startTime: string, endTime: string) {
-    const res = await fetch('/api/time-blocks', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ salon_id: salonId, stylist_id: stylistId || null, start_time: startTime, end_time: endTime }),
-    });
-    if (res.ok) {
-      const block = await res.json();
-      setTimeBlocks(prev => [...prev, block]);
-    }
-  }
-
   async function handleDeleteBlock(blockId: string) {
     setTimeBlocks(prev => prev.filter(b => b.id !== blockId));
     await fetch(`/api/time-blocks?id=${blockId}`, { method: 'DELETE' });
@@ -153,7 +141,6 @@ export default function CalendarPage() {
             date={date} stylists={stylists} appointments={appointments} timeBlocks={timeBlocks}
             onSlotClick={(stylist_id, start_time) => setSelectedAppointment({ stylist_id, start_time } as Appointment)}
             onAppointmentClick={setSelectedAppointment}
-            onBlockSlot={handleBlockSlot}
             onDeleteBlock={handleDeleteBlock}
           />
         )}

@@ -10,7 +10,6 @@ interface Props {
   timeBlocks: TimeBlock[];
   onSlotClick: (stylistId: string, time: string) => void;
   onAppointmentClick: (appointment: Appointment) => void;
-  onBlockSlot: (stylistId: string, startTime: string, endTime: string) => void;
   onDeleteBlock: (blockId: string) => void;
 }
 
@@ -20,7 +19,7 @@ function isToday(d: Date): boolean {
   return format(d, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
 }
 
-export function DayView({ date, stylists, appointments, timeBlocks, onSlotClick, onAppointmentClick, onBlockSlot, onDeleteBlock }: Props) {
+export function DayView({ date, stylists, appointments, timeBlocks, onSlotClick, onAppointmentClick, onDeleteBlock }: Props) {
   const hours = Array.from({ length: 13 }, (_, i) => i + 8);
   const today = isToday(date);
 
@@ -84,12 +83,6 @@ export function DayView({ date, stylists, appointments, timeBlocks, onSlotClick,
                     } else if (slotApps.length === 0) {
                       onSlotClick(stylist.id, format(slotStart, "yyyy-MM-dd'T'HH:mm:ssXXX"));
                     }
-                  }}
-                  onDoubleClick={(e) => {
-                    e.preventDefault();
-                    if (!isBlocked && slotApps.length === 0) {
-                      onBlockSlot(stylist.id, slotStart.toISOString(), slotEnd.toISOString());
-                    }
                   }}>
 
                   {isBlocked && (
@@ -106,7 +99,7 @@ export function DayView({ date, stylists, appointments, timeBlocks, onSlotClick,
 
                   {slotApps.length === 0 && !isBlocked && (
                     <div className="h-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <span className="text-[10px] text-gray-300">+ click / doppio-click blocca</span>
+                      <span className="text-[10px] text-gray-300">+</span>
                     </div>
                   )}
                 </div>
