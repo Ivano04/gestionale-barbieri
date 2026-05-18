@@ -7,6 +7,10 @@ export default async function proxy(request: NextRequest) {
   const isPublic = request.nextUrl.pathname.startsWith('/book/') ||
                    request.nextUrl.pathname.startsWith('/login') ||
                    request.nextUrl.pathname.startsWith('/auth') ||
+                   request.nextUrl.pathname.startsWith('/api/book/') ||
+                   request.nextUrl.pathname.startsWith('/api/slots') ||
+                   request.nextUrl.pathname.startsWith('/api/appointments') ||
+                   request.nextUrl.pathname.startsWith('/api/services') ||
                    request.nextUrl.pathname.startsWith('/_next') ||
                    request.nextUrl.pathname === '/favicon.ico';
 
