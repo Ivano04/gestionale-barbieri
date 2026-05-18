@@ -11,7 +11,9 @@ import { Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function CalendarPage() {
-  const [date, setDate] = useState(new Date());
+  const [date, setDate] = useState<Date | null>(null);
+  // Hydration-safe: initialize date on client only
+  useEffect(() => { if (!date) setDate(new Date()); }, []);
   const [view, setView] = useState<'day' | 'week'>('day');
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [services, setServices] = useState<Service[]>([]);
@@ -34,8 +36,10 @@ export default function CalendarPage() {
     });
   }, []);
 
+  if (!date) return <div className="p-8 text-center text-gray-400">Caricamento calendario...</div>;
+
   const loadData = useCallback(async () => {
-    if (!salonId) return;
+    if (!salonId || !date) return;
     const dateStr = format(date, 'yyyy-MM-dd');
     const [appsRes, svcRes] = await Promise.all([
       fetch(`/api/appointments?salon_id=${salonId}&date=${dateStr}`).then(r => r.json()),

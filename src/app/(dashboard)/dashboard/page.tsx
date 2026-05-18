@@ -43,6 +43,22 @@ export default function DashboardPage() {
       if (!statsRes.error) setStats(statsRes);
       if (appsRes.data) setUpcoming(appsRes.data);
     });
+    // Refresh data when page becomes visible again
+    const onFocus = () => supabase.auth.getSession().then(async ({ data }) => {
+      if (!data.session) return;
+      const { data: users } = await supabase.from('users').select('salon_id').eq('id', data.session.user.id).single();
+      if (users?.salon_id) {
+        const today2 = format(new Date(), 'yyyy-MM-dd');
+        const [statsRes2, appsRes2] = await Promise.all([
+          fetch(`/api/stats?salon_id=${users.salon_id}`).then(r => r.json()),
+          supabase.from('appointments').select('*, client:clients(*), service:services(*), stylist:users(*)').eq('salon_id', users.salon_id).eq('status', 'confirmed').gte('start_time', new Date().toISOString()).order('start_time').limit(30),
+        ]);
+        if (!statsRes2.error) setStats(statsRes2);
+        if (appsRes2.data) setUpcoming(appsRes2.data);
+      }
+    });
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
   }, []);
 
   async function cancelAppointment(id: string) {
