@@ -5,6 +5,7 @@ import { format, addDays } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { ArrowLeft, Check, Clock } from 'lucide-react';
 import type { Service } from '@/lib/types';
+import { countryCodes, formatPhone } from '@/lib/utils';
 
 export default function BookPage() {
   const params = useParams();
@@ -19,6 +20,7 @@ export default function BookPage() {
   const [surname, setSurname] = useState('');
   const [phone, setPhone] = useState('');
   const [note, setNote] = useState('');
+  const [phonePrefix, setPhonePrefix] = useState('+39');
   const [slots, setSlots] = useState<{ time: string; stylist_id: string; stylist_name: string }[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [salonData, setSalonData] = useState<{ id: string; name: string; address?: string; phone?: string } | null>(null);
@@ -63,7 +65,7 @@ export default function BookPage() {
           stylist_id: selectedSlot!.stylist_id,
           start_time: `${format(selectedDate, 'yyyy-MM-dd')}T${selectedSlot!.time}:00+02:00`,
           source: 'widget',
-          client: { first_name: name, last_name: surname, phone },
+          client: { first_name: name, last_name: surname, phone: formatPhone(phonePrefix + phone) },
           notes: note,
         }),
       });
@@ -186,8 +188,17 @@ export default function BookPage() {
                 className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
               <input type="text" placeholder="Cognome *" value={surname} onChange={e => setSurname(e.target.value)}
                 className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
-              <input type="tel" placeholder="Telefono *" value={phone} onChange={e => setPhone(e.target.value)}
-                className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+              <div className="flex gap-2">
+                <select value={phonePrefix} onChange={e => setPhonePrefix(e.target.value)}
+                  className="px-2 py-3 border rounded-lg text-sm bg-gray-50 w-24">
+                  {countryCodes.slice(0, 8).map(c => (
+                    <option key={c.code} value={c.code}>{c.flag} {c.code}</option>
+                  ))}
+                </select>
+                <input type="tel" placeholder="Telefono *" value={phone}
+                  onChange={e => setPhone(e.target.value.replace(/[^\d\s\-\(\)]/g, ''))}
+                  className="flex-1 px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+              </div>
               <textarea placeholder="Note (opzionale)" value={note} onChange={e => setNote(e.target.value)}
                 className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" rows={2} />
               <button onClick={handleBook} disabled={!name || !surname || !phone || loading}

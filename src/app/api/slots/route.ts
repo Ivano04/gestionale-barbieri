@@ -13,30 +13,29 @@ export async function GET(request: Request) {
   }
 
   const supabase = createAdminClient();
-
-  const { data: salon } = await supabase.from('salons').select('working_hours, open_time, close_time').eq('id', salon_id).single();
   const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
   const today = dayNames[new Date(date).getDay()];
-  const dayHours = salon?.working_hours?.[today] || (salon?.working_hours as any)?.[today];
-  const openTime = dayHours?.open || salon?.open_time || '09:00';
-  const closeTime = dayHours?.close || salon?.close_time || '19:00';
 
-  // If the day is null in working_hours, salon is closed
-  if ((salon?.working_hours && salon.working_hours[today] === null)) {
-    return Response.json([]);
-  }
+  // Get salon hours for today
+  const { data: salon } = await supabase.from('salons').select('working_hours, open_time, close_time').eq('id', salon_id).single();
+  const salonDay = salon?.working_hours?.[today];
+  if (salon?.working_hours && salonDay === null) return Response.json([]); // salon closed
+  const salonOpen = salonDay?.open || salon?.open_time || '09:00';
+  const salonClose = salonDay?.close || salon?.close_time || '19:00';
 
   const { data: service } = await supabase.from('services').select('duration_minutes').eq('id', service_id).single();
   if (!service) return Response.json({ error: 'service not found' }, { status: 404 });
   const duration = service.duration_minutes;
 
-  let stylistQuery = supabase.from('users').select('id, full_name').eq('salon_id', salon_id).eq('role', 'stylist');
+  // Get stylists with their personal working hours
+  let stylistQuery = supabase.from('users').select('id, full_name, working_hours').eq('salon_id', salon_id).eq('role', 'stylist');
   if (stylist_id) stylistQuery = stylistQuery.eq('id', stylist_id);
   const { data: stylists } = await stylistQuery;
   if (!stylists?.length) return Response.json([]);
 
-  const dayStart = new Date(`${date}T${openTime}:00+02:00`);
-  const dayEnd = new Date(`${date}T${closeTime}:00+02:00`);
+  // Overall time range for queries (earliest open to latest close)
+  const dayStart = new Date(`${date}T${salonOpen}:00+02:00`);
+  const dayEnd = new Date(`${date}T${salonClose}:00+02:00`);
 
   const { data: appointments } = await supabase
     .from('appointments').select('stylist_id, start_time, end_time')
@@ -51,11 +50,22 @@ export async function GET(request: Request) {
   const occupied = [...(appointments || []), ...(blocks || [])];
 
   const slots: { time: string; stylist_id: string; stylist_name: string }[] = [];
+
   for (const stylist of stylists) {
-    let current = dayStart;
-    while (current < dayEnd) {
+    // Check stylist's personal working hours for today
+    const stylistDay = (stylist.working_hours as any)?.[today];
+    // If stylist has working_hours set and today is null → stylist off today
+    if (stylist.working_hours && Object.keys(stylist.working_hours).length > 0 && stylistDay === null) continue;
+    // Use stylist hours if set, otherwise fallback to salon hours
+    const sOpen = stylistDay?.open || salonOpen;
+    const sClose = stylistDay?.close || salonClose;
+    const sStart = new Date(`${date}T${sOpen}:00+02:00`);
+    const sEnd = new Date(`${date}T${sClose}:00+02:00`);
+
+    let current = sStart;
+    while (current < sEnd) {
       const slotEnd = addMinutes(current, duration);
-      if (slotEnd > dayEnd) break;
+      if (slotEnd > sEnd) break;
       const isFree = !occupied.some(o => {
         if (o.stylist_id && o.stylist_id !== stylist.id) return false;
         const oStart = parseISO(o.start_time);
@@ -68,5 +78,6 @@ export async function GET(request: Request) {
       current = addMinutes(current, 30);
     }
   }
+
   return Response.json(slots);
 }
