@@ -28,17 +28,24 @@ export function AppointmentModal({ appointment, services, clients, stylists, onC
   if (!appointment) return null;
 
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  function handleSave() {
+  async function handleSave() {
     setError('');
     if (!form.service_id) { setError('Seleziona un servizio'); return; }
     if (!form.stylist_id) { setError('Seleziona un operatore'); return; }
     if (!form.start_time) { setError('Seleziona data e ora'); return; }
     if (clientMode === 'new') {
       if (!newClient.first_name || !newClient.last_name) { setError('Inserisci nome e cognome del cliente'); return; }
-      onSave({ ...form, client_id: undefined, client: newClient });
-    } else {
-      onSave(form);
+    }
+    setSaving(true);
+    try {
+      const data = clientMode === 'new'
+        ? { ...form, client_id: undefined, client: newClient }
+        : form;
+      await onSave(data);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -143,7 +150,10 @@ export function AppointmentModal({ appointment, services, clients, stylists, onC
               </button>
             )}
             <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm">Annulla</button>
-            <button onClick={handleSave} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">Salva</button>
+            <button onClick={handleSave} disabled={saving}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium">
+              {saving ? 'Salvataggio...' : 'Salva'}
+            </button>
           </div>
         </div>
       </div>

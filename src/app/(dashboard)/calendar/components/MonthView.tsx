@@ -30,51 +30,40 @@ export function MonthView({ date, appointments, onDayClick }: Props) {
 
   return (
     <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-      {/* Day names header */}
       <div className="grid grid-cols-7 border-b bg-gray-50/50">
         {['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'].map(d => (
-          <div key={d} className="p-2 text-center text-xs font-medium text-gray-400">{d}</div>
+          <div key={d} className="p-2 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">{d}</div>
         ))}
       </div>
 
       {weeks.map((week, wi) => (
         <div key={wi} className="grid grid-cols-7 border-b last:border-b-0">
           {week.map((d, di) => {
-            const dayApps = appointments.filter(a => isSameDay(parseISO(a.start_time), d));
+            const count = appointments.filter(a => isSameDay(parseISO(a.start_time), d)).length;
             const isCurrentMonth = isSameMonth(d, monthStart);
             const isTodayDate = isSameDay(d, today);
 
             return (
               <div key={di}
                 onClick={() => onDayClick(d)}
-                className={`min-h-[80px] p-1.5 border-r last:border-r-0 cursor-pointer hover:bg-blue-50/20 transition-colors ${
-                  !isCurrentMonth ? 'bg-gray-50/50 text-gray-300' : ''
-                } ${isTodayDate ? 'bg-blue-50/30' : ''}`}>
-                <div className={`text-xs mb-1 font-medium ${
-                  isTodayDate ? 'bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center' : 'text-gray-500'
+                className={`min-h-[90px] p-2 border-r last:border-r-0 cursor-pointer hover:bg-blue-50/30 transition-colors flex flex-col items-center justify-center ${
+                  !isCurrentMonth ? 'bg-gray-50/30' : ''
+                } ${isTodayDate ? 'bg-blue-50/20' : ''}`}>
+                <div className={`text-sm font-semibold mb-1 ${
+                  isTodayDate ? 'bg-blue-600 text-white w-7 h-7 rounded-full flex items-center justify-center' :
+                  !isCurrentMonth ? 'text-gray-300' : 'text-gray-600'
                 }`}>
                   {format(d, 'd')}
                 </div>
-                <div className="space-y-0.5">
-                  {dayApps.slice(0, 4).map(app => {
-                    const src = app.source || 'manual';
-                    const colors: Record<string, string> = {
-                      walk_in: 'bg-green-400', phone: 'bg-blue-400', whatsapp: 'bg-teal-400',
-                      widget: 'bg-purple-400', treatwell: 'bg-orange-400', google: 'bg-red-400', manual: 'bg-gray-300',
-                    };
-                    return (
-                      <div key={app.id} className="flex items-center gap-1 text-[10px]">
-                        <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${colors[src] || 'bg-gray-300'}`} />
-                        <span className="truncate text-gray-600">
-                          {app.client?.first_name?.[0]}{app.client?.last_name?.[0] || '?'} {app.service?.name?.substring(0, 8)}
-                        </span>
-                      </div>
-                    );
-                  })}
-                  {dayApps.length > 4 && (
-                    <div className="text-[10px] text-blue-500 font-medium">+{dayApps.length - 4} altri</div>
-                  )}
-                </div>
+                {isCurrentMonth && count > 0 && (
+                  <div className={`text-xs font-bold rounded-full px-2 py-0.5 ${
+                    count >= 10 ? 'bg-red-100 text-red-700' :
+                    count >= 5 ? 'bg-orange-100 text-orange-700' :
+                    'bg-blue-100 text-blue-700'
+                  }`}>
+                    {count} app
+                  </div>
+                )}
               </div>
             );
           })}

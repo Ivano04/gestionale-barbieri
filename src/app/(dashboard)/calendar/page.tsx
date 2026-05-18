@@ -68,9 +68,15 @@ export default function CalendarPage() {
 
     const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (res.ok) {
+      const saved = await res.json();
       setSelectedAppointment(null);
-      loadData();
-      toast.success(isNew ? 'Appuntamento creato' : 'Appuntamento aggiornato');
+      // Update local state instantly instead of full reload
+      if (isNew) {
+        setAppointments(prev => [...prev, saved]);
+      } else {
+        setAppointments(prev => prev.map(a => a.id === saved.id ? saved : a));
+      }
+      toast.success(isNew ? 'Creato' : 'Aggiornato');
     } else {
       const err = await res.json();
       toast.error(err.error || 'Errore');
