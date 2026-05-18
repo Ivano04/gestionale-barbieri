@@ -73,13 +73,13 @@ export default function DashboardPage() {
         </a>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
         {cards.map((card, i) => (
           <div key={i} className="bg-white rounded-xl border p-5 hover:shadow-md transition-shadow">
-            <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${card.color}`}>
-              <card.icon size={20} />
+            <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center mb-2 sm:mb-3 ${card.color}`}>
+              <card.icon size={18} />
             </div>
-            <div className="text-2xl font-bold mb-1">{card.value}</div>
+            <div className="text-xl sm:text-2xl font-bold mb-1">{card.value}</div>
             <div className="text-sm text-gray-500">{card.label}</div>
             <div className="text-xs text-gray-400 mt-1">{card.sub}</div>
           </div>

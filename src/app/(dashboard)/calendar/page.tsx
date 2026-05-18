@@ -154,7 +154,7 @@ export default function CalendarPage() {
   return (
     <div>
       <CalendarHeader date={date} view={view} onDateChange={setDate} onViewChange={setView} onNewAppointment={handleNewAppointment} onNewBlock={() => setShowBlockModal(true)} />
-      <div className="mx-4 mt-4">
+      <div className="mx-0 md:mx-4 mt-0 md:mt-4">
         {view === 'day' && (
           <DayView
             date={date} stylists={stylists} appointments={appointments} timeBlocks={timeBlocks} salonHours={salonHours}

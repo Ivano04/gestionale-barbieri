@@ -31,7 +31,7 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonHours, 
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-160px)] overflow-hidden bg-white rounded-xl border shadow-sm">
+    <div className="flex flex-col h-[calc(100vh-140px)] md:h-[calc(100vh-160px)] overflow-hidden bg-white rounded-none md:rounded-xl border-0 md:border shadow-sm">
       <div className="flex border-b bg-gray-50/50 sticky top-0 z-10 rounded-t-xl">
         <div className="w-14 flex-shrink-0 p-2" />
         {stylists.map((s, i) => (

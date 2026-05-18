@@ -17,7 +17,7 @@ export function CalendarHeader({ date, view, onDateChange, onViewChange, onNewAp
   const next = () => onDateChange(view === 'day' ? addDays(date, 1) : addWeeks(date, 1));
 
   return (
-    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-white border-b">
+    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-3 sm:p-4 bg-white border-b sticky top-0 z-10">
       <div className="flex items-center gap-3">
         <button onClick={prev} className="p-1 hover:bg-gray-100 rounded"><ChevronLeft size={20} /></button>
         <h2 className="text-lg font-semibold min-w-[200px] text-center" suppressHydrationWarning>
