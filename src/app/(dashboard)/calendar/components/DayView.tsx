@@ -1,5 +1,4 @@
 'use client';
-import { useState } from 'react';
 import { format, setHours, setMinutes, parseISO, addMinutes } from 'date-fns';
 import { AppointmentCard } from './AppointmentCard';
 import type { Appointment, User, TimeBlock } from '@/lib/types';
@@ -11,7 +10,6 @@ interface Props {
   timeBlocks: TimeBlock[];
   onSlotClick: (stylistId: string, time: string) => void;
   onAppointmentClick: (appointment: Appointment) => void;
-  onAppointmentDrop: (appointmentId: string, stylistId: string, newStartTime: string) => void;
   onBlockSlot: (stylistId: string, startTime: string, endTime: string) => void;
   onDeleteBlock: (blockId: string) => void;
 }
@@ -19,45 +17,15 @@ interface Props {
 const STYLIST_COLORS = ['#f472b6', '#60a5fa', '#34d399', '#a78bfa', '#fbbf24'];
 
 function isToday(d: Date): boolean {
-  const now = new Date();
-  return format(d, 'yyyy-MM-dd') === format(now, 'yyyy-MM-dd');
+  return format(d, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
 }
 
-export function DayView({ date, stylists, appointments, timeBlocks, onSlotClick, onAppointmentClick, onAppointmentDrop, onBlockSlot, onDeleteBlock }: Props) {
+export function DayView({ date, stylists, appointments, timeBlocks, onSlotClick, onAppointmentClick, onBlockSlot, onDeleteBlock }: Props) {
   const hours = Array.from({ length: 13 }, (_, i) => i + 8);
   const today = isToday(date);
-  const [dragOver, setDragOver] = useState<string | null>(null);
-
-  function handleDrop(stylistId: string, h: number, e: React.DragEvent) {
-    e.preventDefault();
-    setDragOver(null);
-    const appId = e.dataTransfer.getData('text/plain');
-    if (!appId) return;
-    // Precise: use event Y to find exact hour cell
-    const container = (e.currentTarget as HTMLElement).closest('.overflow-auto');
-    let preciseH = h;
-    if (container) {
-      const rows = container.querySelectorAll('.h-20');
-      rows.forEach((row, idx) => {
-        const r = row.getBoundingClientRect();
-        if (e.clientY >= r.top && e.clientY < r.bottom) preciseH = 8 + idx;
-      });
-    }
-    const newStartTime = format(setMinutes(setHours(date, preciseH), 0), "yyyy-MM-dd'T'HH:mm:ssXXX");
-    onAppointmentDrop(appId, stylistId, newStartTime);
-  }
-
-  function handleDragOver(e: React.DragEvent, key: string) {
-    e.preventDefault();
-    setDragOver(key);
-  }
 
   if (stylists.length === 0) {
-    return (
-      <div className="p-12 text-center bg-white rounded-xl border">
-        <p className="text-gray-400 text-lg mb-2">Nessun operatore configurato</p>
-      </div>
-    );
+    return <div className="p-12 text-center text-gray-400 bg-white rounded-xl border">Nessun operatore configurato</div>;
   }
 
   return (
@@ -100,13 +68,12 @@ export function DayView({ date, stylists, appointments, timeBlocks, onSlotClick,
                 return slotStart < bEnd && slotEnd > bStart;
               });
               const isCurrentHour = today && new Date().getHours() === h;
-              const dropKey = `${stylist.id}-${h}`;
 
               return (
                 <div key={h}
                   className={`h-20 border-b border-gray-50 p-0.5 transition-colors cursor-pointer group relative ${
-                    dragOver === dropKey ? 'bg-blue-100 ring-2 ring-blue-400' : ''
-                  } ${isCurrentHour ? 'bg-blue-50/30' : 'hover:bg-gray-50/50'} ${isBlocked ? 'bg-red-50/40' : ''}`}
+                    isCurrentHour ? 'bg-blue-50/30' : 'hover:bg-gray-50/50'
+                  } ${isBlocked ? 'bg-red-50/40' : ''}`}
                   onClick={() => {
                     if (isBlocked) {
                       const block = timeBlocks.find(b => {
@@ -123,21 +90,17 @@ export function DayView({ date, stylists, appointments, timeBlocks, onSlotClick,
                     if (!isBlocked && slotApps.length === 0) {
                       onBlockSlot(stylist.id, slotStart.toISOString(), slotEnd.toISOString());
                     }
-                  }}
-                  onDrop={(e) => handleDrop(stylist.id, h, e)}
-                  onDragOver={(e) => handleDragOver(e, dropKey)}
-                  onDragLeave={() => setDragOver(null)}>
+                  }}>
 
-                  {/* Blocked slot overlay */}
                   {isBlocked && (
-                    <div className="absolute inset-0 flex items-center justify-center z-10 cursor-pointer">
+                    <div className="absolute inset-0 flex items-center justify-center z-10">
                       <div className="w-full border-t-2 border-red-300 rotate-12" />
-                      <span className="absolute text-[10px] text-red-400 font-medium bg-white/80 px-1 rounded">Click: rimuovi</span>
+                      <span className="absolute text-[10px] text-red-400 font-medium bg-white/80 px-1 rounded">Non disp. (click rimuove)</span>
                     </div>
                   )}
 
                   {slotApps.map(app => (
-                    <AppointmentCard key={app.id} appointment={app} dragEnabled
+                    <AppointmentCard key={app.id} appointment={app}
                       onClick={(e) => { e?.stopPropagation?.(); onAppointmentClick(app); }} />
                   ))}
 

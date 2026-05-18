@@ -16,28 +16,14 @@ const sourceConfig: Record<string, { icon: string; color: string; bg: string }> 
 interface Props {
   appointment: Appointment;
   onClick: (e?: React.MouseEvent) => void;
-  dragEnabled?: boolean;
 }
 
-export function AppointmentCard({ appointment, onClick, dragEnabled }: Props) {
+export function AppointmentCard({ appointment, onClick }: Props) {
   const cfg = sourceConfig[appointment.source] || sourceConfig.manual;
-  // Show checkmark for all non-Treatwell appointments and synced ones
   const synced = appointment.source !== 'treatwell' || Boolean(appointment.treatwell_appointment_id);
 
   return (
     <div
-      draggable={dragEnabled}
-      onDragStart={(e) => {
-        if (!dragEnabled) return;
-        e.dataTransfer.setData('text/plain', appointment.id);
-        e.dataTransfer.effectAllowed = 'move';
-        const el = e.currentTarget as HTMLElement;
-        el.style.opacity = '0.5';
-        setTimeout(() => { el.style.opacity = '1'; }, 0);
-      }}
-      onDragEnd={(e) => {
-        (e.currentTarget as HTMLElement).style.opacity = '1';
-      }}
       onClick={(e) => { e.stopPropagation(); onClick(e); }}
       className="rounded-md p-1.5 cursor-pointer text-xs border-l-[3px] hover:shadow-md transition-all duration-200 mb-0.5"
       style={{ borderLeftColor: cfg.color, backgroundColor: cfg.bg }}

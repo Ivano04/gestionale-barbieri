@@ -47,6 +47,7 @@ export default function DashboardPage() {
   }, []);
 
   async function cancelAppointment(id: string) {
+    if (!confirm('Sicuro di voler cancellare questo appuntamento?')) return;
     setUpcoming(prev => prev.map(a => a.id === id ? { ...a, status: 'cancelled' } : a));
     await fetch(`/api/appointments/${id}`, { method: 'DELETE' });
     setStats(prev => prev ? {

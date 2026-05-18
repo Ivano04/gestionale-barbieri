@@ -52,19 +52,6 @@ export default function CalendarPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Drag & drop handler
-  async function handleAppointmentDrop(appointmentId: string, newStylistId: string, newStartTime: string) {
-    setAppointments(prev => prev.map(a =>
-      a.id === appointmentId ? { ...a, stylist_id: newStylistId, start_time: newStartTime, stylist: stylists.find(s => s.id === newStylistId) as any } : a
-    ));
-    await fetch(`/api/appointments/${appointmentId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stylist_id: newStylistId, start_time: newStartTime }),
-    });
-    loadData(); // refresh to get correct end_time etc
-  }
-
   // Time block handler
   async function handleBlockSlot(stylistId: string, startTime: string, endTime: string) {
     const res = await fetch('/api/time-blocks', {
@@ -164,7 +151,6 @@ export default function CalendarPage() {
             date={date} stylists={stylists} appointments={appointments} timeBlocks={timeBlocks}
             onSlotClick={(stylist_id, start_time) => setSelectedAppointment({ stylist_id, start_time } as Appointment)}
             onAppointmentClick={setSelectedAppointment}
-            onAppointmentDrop={handleAppointmentDrop}
             onBlockSlot={handleBlockSlot}
             onDeleteBlock={handleDeleteBlock}
           />
