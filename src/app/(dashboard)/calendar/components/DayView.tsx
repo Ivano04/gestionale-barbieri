@@ -97,16 +97,32 @@ export function DayView({ date, stylists, appointments, timeBlocks, onSlotClick,
                   className={`h-20 border-b border-gray-50 p-0.5 transition-colors cursor-pointer group relative ${
                     dragOver === dropKey ? 'bg-blue-100 ring-2 ring-blue-400' : ''
                   } ${isCurrentHour ? 'bg-blue-50/30' : 'hover:bg-gray-50/50'} ${isBlocked ? 'bg-red-50/40' : ''}`}
-                  onClick={() => !isBlocked && onSlotClick(stylist.id, format(slotStart, "yyyy-MM-dd'T'HH:mm:ssXXX"))}
+                  onClick={() => {
+                    if (isBlocked) {
+                      const block = timeBlocks.find(b => {
+                        const bStart = parseISO(b.start_time); const bEnd = parseISO(b.end_time);
+                        return b.stylist_id === stylist.id && slotStart < bEnd && slotEnd > bStart;
+                      });
+                      if (block) onDeleteBlock(block.id);
+                    } else if (slotApps.length === 0) {
+                      onSlotClick(stylist.id, format(slotStart, "yyyy-MM-dd'T'HH:mm:ssXXX"));
+                    }
+                  }}
+                  onDoubleClick={(e) => {
+                    e.preventDefault();
+                    if (!isBlocked && slotApps.length === 0) {
+                      onBlockSlot(stylist.id, slotStart.toISOString(), slotEnd.toISOString());
+                    }
+                  }}
                   onDrop={(e) => handleDrop(stylist.id, h, e)}
                   onDragOver={(e) => handleDragOver(e, dropKey)}
                   onDragLeave={() => setDragOver(null)}>
 
                   {/* Blocked slot overlay */}
                   {isBlocked && (
-                    <div className="absolute inset-0 flex items-center justify-center z-10">
+                    <div className="absolute inset-0 flex items-center justify-center z-10 cursor-pointer">
                       <div className="w-full border-t-2 border-red-300 rotate-12" />
-                      <span className="absolute text-[10px] text-red-400 font-medium bg-white/80 px-1 rounded">Non disp.</span>
+                      <span className="absolute text-[10px] text-red-400 font-medium bg-white/80 px-1 rounded">Click: rimuovi</span>
                     </div>
                   )}
 
@@ -117,7 +133,7 @@ export function DayView({ date, stylists, appointments, timeBlocks, onSlotClick,
 
                   {slotApps.length === 0 && !isBlocked && (
                     <div className="h-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <span className="text-[10px] text-gray-300">+</span>
+                      <span className="text-[10px] text-gray-300">+ click / doppio-click blocca</span>
                     </div>
                   )}
                 </div>

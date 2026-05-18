@@ -31,9 +31,15 @@ export function AppointmentCard({ appointment, onClick, dragEnabled }: Props) {
         if (!dragEnabled) return;
         e.dataTransfer.setData('text/plain', appointment.id);
         e.dataTransfer.effectAllowed = 'move';
+        const el = e.currentTarget as HTMLElement;
+        el.style.opacity = '0.5';
+        setTimeout(() => { el.style.opacity = '1'; }, 0);
+      }}
+      onDragEnd={(e) => {
+        (e.currentTarget as HTMLElement).style.opacity = '1';
       }}
       onClick={(e) => { e.stopPropagation(); onClick(e); }}
-      className="rounded-md p-1.5 cursor-pointer text-xs border-l-[3px] hover:shadow-md transition-shadow mb-0.5 active:opacity-70"
+      className="rounded-md p-1.5 cursor-pointer text-xs border-l-[3px] hover:shadow-md transition-shadow mb-0.5"
       style={{ borderLeftColor: cfg.color, backgroundColor: cfg.bg }}
     >
       <div className="flex items-center justify-between">

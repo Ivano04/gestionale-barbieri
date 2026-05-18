@@ -33,18 +33,16 @@ export default function DashboardPage() {
       setSalonId(users.salon_id);
       const [statsRes, appsRes] = await Promise.all([
         fetch(`/api/stats?salon_id=${users.salon_id}`).then(r => r.json()),
-        fetch(`/api/appointments?salon_id=${users.salon_id}&date=${format(new Date(), 'yyyy-MM-dd')}`).then(r => r.json()),
+        supabase.from('appointments')
+          .select('*, client:clients(*), service:services(*), stylist:users(*)')
+          .eq('salon_id', users.salon_id)
+          .eq('status', 'confirmed')
+          .gte('start_time', new Date().toISOString())
+          .order('start_time')
+          .limit(30),
       ]);
       if (!statsRes.error) setStats(statsRes);
-      if (Array.isArray(appsRes)) {
-        const now = new Date();
-        // Filter upcoming (today + future) and sort by start_time
-        const upcomingApps = appsRes
-          .filter((a: Appointment) => a.status !== 'cancelled' && new Date(a.start_time) >= now)
-          .sort((a: Appointment, b: Appointment) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
-          .slice(0, 30);
-        setUpcoming(upcomingApps);
-      }
+      if (appsRes.data) setUpcoming(appsRes.data);
     });
   }, []);
 
