@@ -14,9 +14,17 @@ export async function GET(request: Request) {
 
   const supabase = createAdminClient();
 
-  const { data: salon } = await supabase.from('salons').select('open_time, close_time').eq('id', salon_id).single();
-  const openTime = salon?.open_time || '09:00';
-  const closeTime = salon?.close_time || '19:00';
+  const { data: salon } = await supabase.from('salons').select('working_hours, open_time, close_time').eq('id', salon_id).single();
+  const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+  const today = dayNames[new Date(date).getDay()];
+  const dayHours = salon?.working_hours?.[today] || (salon?.working_hours as any)?.[today];
+  const openTime = dayHours?.open || salon?.open_time || '09:00';
+  const closeTime = dayHours?.close || salon?.close_time || '19:00';
+
+  // If the day is null in working_hours, salon is closed
+  if ((salon?.working_hours && salon.working_hours[today] === null)) {
+    return Response.json([]);
+  }
 
   const { data: service } = await supabase.from('services').select('duration_minutes').eq('id', service_id).single();
   if (!service) return Response.json({ error: 'service not found' }, { status: 404 });

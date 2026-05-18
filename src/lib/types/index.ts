@@ -13,6 +13,7 @@ export interface Salon {
   timezone: string;
   open_time: string;
   close_time: string;
+  working_hours: Record<string, { open: string; close: string } | null> | null;
   ghl_subaccount_id: string | null;
   treatwell_salon_id: string | null;
   treatwell_api_enabled: boolean;

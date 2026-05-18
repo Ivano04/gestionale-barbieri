@@ -70,12 +70,16 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonHours, 
                 return slotStart < bEnd && slotEnd > bStart;
               });
               const isCurrentHour = today && new Date().getHours() === h;
+              const isPastHour = today && slotEnd < new Date();
 
               return (
                 <div key={h}
-                  className={`h-20 border-b border-gray-50 p-0.5 transition-colors cursor-pointer group relative ${
-                    isCurrentHour ? 'bg-blue-50/30' : 'hover:bg-gray-50/50'
+                  className={`h-20 border-b border-gray-50 p-0.5 transition-colors group relative ${
+                    isPastHour ? 'bg-gray-100/50 cursor-not-allowed opacity-40' :
+                    isCurrentHour ? 'bg-blue-50/30 cursor-pointer' : 'hover:bg-gray-50/50 cursor-pointer'
                   } ${isBlocked ? 'bg-red-50/40' : ''}`}
+                  onClick={() => {
+                    if (isPastHour) return; // block past bookings
                   onClick={() => {
                     if (isBlocked) {
                       const block = timeBlocks.find(b => {

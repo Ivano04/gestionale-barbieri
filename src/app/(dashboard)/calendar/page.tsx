@@ -51,8 +51,20 @@ export default function CalendarPage() {
     fetch(`/api/time-blocks?salon_id=${salonId}`).then(r => r.json()).then(d => {
       if (Array.isArray(d)) setTimeBlocks(d);
     });
-    const { data: salonData } = await supabase.from('salons').select('open_time, close_time').eq('id', salonId).single();
-    if (salonData) setSalonHours({ open: salonData.open_time || '09:00', close: salonData.close_time || '19:00' });
+    const { data: salonData } = await supabase.from('salons').select('working_hours, open_time, close_time').eq('id', salonId).single();
+    if (salonData) {
+      const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+      const todayName = dayNames[date.getDay()];
+      const dayHours = salonData.working_hours?.[todayName];
+      if (salonData.working_hours?.[todayName] === null) {
+        setSalonHours({ open: '00:00', close: '00:00' }); // closed
+      } else {
+        setSalonHours({
+          open: dayHours?.open || salonData.open_time || '09:00',
+          close: dayHours?.close || salonData.close_time || '19:00'
+        });
+      }
+    }
   }, [salonId, date]);
 
   useEffect(() => { loadData(); }, [loadData]);
