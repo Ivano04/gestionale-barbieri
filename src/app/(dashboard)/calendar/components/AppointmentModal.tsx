@@ -16,13 +16,24 @@ interface Props {
 
 export function AppointmentModal({ appointment, services, clients, stylists, onClose, onSave, onDelete }: Props) {
   const [form, setForm] = useState<Partial<Appointment>>({});
+  const [clientMode, setClientMode] = useState<'existing' | 'new'>('existing');
+  const [newClient, setNewClient] = useState({ first_name: '', last_name: '', phone: '' });
   const isNew = !appointment?.id;
 
   useEffect(() => {
     setForm(appointment || {});
+    if (appointment?.client_id) setClientMode('existing');
   }, [appointment]);
 
   if (!appointment) return null;
+
+  function handleSave() {
+    if (clientMode === 'new' && newClient.first_name && newClient.last_name) {
+      onSave({ ...form, client_id: undefined, client: newClient });
+    } else {
+      onSave(form);
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
@@ -32,13 +43,48 @@ export function AppointmentModal({ appointment, services, clients, stylists, onC
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded"><X size={20} /></button>
         </div>
         <div className="space-y-3 max-h-[70vh] overflow-y-auto">
+
+          {/* Cliente: toggle existing / new */}
           <div>
-            <label className="text-sm text-gray-500">Cliente</label>
-            <select className="w-full border rounded-lg px-3 py-2 mt-1 text-sm" value={form.client_id || ''} onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))}>
-              <option value="">Seleziona cliente...</option>
-              {clients.map(c => <option key={c.id} value={c.id}>{c.first_name} {c.last_name} {c.phone ? `· ${c.phone}` : ''}</option>)}
-            </select>
+            <div className="flex items-center justify-between">
+              <label className="text-sm text-gray-500">Cliente</label>
+              <div className="flex bg-gray-100 rounded-lg p-0.5">
+                <button
+                  onClick={() => setClientMode('existing')}
+                  className={`px-2 py-1 rounded-md text-xs ${clientMode === 'existing' ? 'bg-white shadow-sm font-medium' : 'text-gray-500'}`}>
+                  Esistente
+                </button>
+                <button
+                  onClick={() => setClientMode('new')}
+                  className={`px-2 py-1 rounded-md text-xs ${clientMode === 'new' ? 'bg-white shadow-sm font-medium' : 'text-gray-500'}`}>
+                  Nuovo
+                </button>
+              </div>
+            </div>
+
+            {clientMode === 'existing' ? (
+              <select className="w-full border rounded-lg px-3 py-2 mt-1 text-sm" value={form.client_id || ''}
+                onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))}>
+                <option value="">Seleziona cliente...</option>
+                {clients.map(c => <option key={c.id} value={c.id}>{c.first_name} {c.last_name} {c.phone ? `· ${c.phone}` : ''}</option>)}
+              </select>
+            ) : (
+              <div className="space-y-2 mt-1">
+                <div className="flex gap-2">
+                  <input type="text" placeholder="Nome *" value={newClient.first_name}
+                    onChange={e => setNewClient({ ...newClient, first_name: e.target.value })}
+                    className="flex-1 px-3 py-2 border rounded-lg text-sm" />
+                  <input type="text" placeholder="Cognome *" value={newClient.last_name}
+                    onChange={e => setNewClient({ ...newClient, last_name: e.target.value })}
+                    className="flex-1 px-3 py-2 border rounded-lg text-sm" />
+                </div>
+                <input type="tel" placeholder="Telefono" value={newClient.phone}
+                  onChange={e => setNewClient({ ...newClient, phone: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg text-sm" />
+              </div>
+            )}
           </div>
+
           <div>
             <label className="text-sm text-gray-500">Servizio</label>
             <select className="w-full border rounded-lg px-3 py-2 mt-1 text-sm" value={form.service_id || ''} onChange={e => setForm(f => ({ ...f, service_id: e.target.value }))}>
@@ -46,6 +92,7 @@ export function AppointmentModal({ appointment, services, clients, stylists, onC
               {services.map(s => <option key={s.id} value={s.id}>{s.name} · {s.duration_minutes}min · €{(s.price_cents/100).toFixed(2)}</option>)}
             </select>
           </div>
+
           <div>
             <label className="text-sm text-gray-500">Operatore</label>
             <select className="w-full border rounded-lg px-3 py-2 mt-1 text-sm" value={form.stylist_id || ''} onChange={e => setForm(f => ({ ...f, stylist_id: e.target.value }))}>
@@ -53,6 +100,7 @@ export function AppointmentModal({ appointment, services, clients, stylists, onC
               {stylists.map(s => <option key={s.id} value={s.id}>{s.full_name}</option>)}
             </select>
           </div>
+
           <div>
             <label className="text-sm text-gray-500">Data e ora inizio</label>
             <input type="datetime-local"
@@ -61,11 +109,25 @@ export function AppointmentModal({ appointment, services, clients, stylists, onC
               onChange={e => setForm(f => ({ ...f, start_time: new Date(e.target.value).toISOString() }))}
             />
           </div>
+
+          <div>
+            <label className="text-sm text-gray-500">Canale</label>
+            <select className="w-full border rounded-lg px-3 py-2 mt-1 text-sm" value={form.source || 'manual'}
+              onChange={e => setForm(f => ({ ...f, source: e.target.value as any }))}>
+              <option value="walk_in">🚶 Walk-in</option>
+              <option value="phone">📞 Telefono</option>
+              <option value="whatsapp">💬 WhatsApp</option>
+              <option value="widget">📱 Sito/Widget</option>
+              <option value="manual">✍️ Manuale</option>
+            </select>
+          </div>
+
           <div>
             <label className="text-sm text-gray-500">Note</label>
             <textarea className="w-full border rounded-lg px-3 py-2 mt-1 text-sm" rows={2}
               value={form.notes || ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
           </div>
+
           <div className="flex items-center gap-2 justify-end pt-2">
             {!isNew && (
               <button onClick={() => onDelete(appointment.id)} className="px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-1 text-sm">
@@ -73,7 +135,7 @@ export function AppointmentModal({ appointment, services, clients, stylists, onC
               </button>
             )}
             <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm">Annulla</button>
-            <button onClick={() => onSave(form)} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">Salva</button>
+            <button onClick={handleSave} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">Salva</button>
           </div>
         </div>
       </div>
