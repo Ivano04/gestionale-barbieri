@@ -174,7 +174,7 @@ export default function CalendarPage() {
       {selectedAppointment && (
         <AppointmentModal
           appointment={selectedAppointment}
-          services={services} clients={clients} stylists={stylists}
+          services={services} clients={clients} stylists={stylists} salonId={salonId}
           onClose={() => setSelectedAppointment(null)}
           onSave={handleSave} onDelete={handleDelete}
         />
