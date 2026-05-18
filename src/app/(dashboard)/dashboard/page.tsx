@@ -1,7 +1,9 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { CalendarDays, Users, Euro, TrendingUp, Clock, Target } from 'lucide-react';
+import { CalendarDays, Users, Euro, TrendingUp, Clock, Target, ArrowRight } from 'lucide-react';
+import type { Appointment } from '@/lib/types';
+import { format, parseISO } from 'date-fns';
 import Link from 'next/link';
 
 interface Stats {
@@ -19,6 +21,7 @@ const channelLabels: Record<string, string> = {
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<Stats | null>(null);
+  const [todayApps, setTodayApps] = useState<Appointment[]>([]);
   const [salonId, setSalonId] = useState('');
   const supabase = createClient();
 
@@ -31,6 +34,10 @@ export default function DashboardPage() {
       const res = await fetch(`/api/stats?salon_id=${users.salon_id}`);
       const data2 = await res.json();
       if (!data2.error) setStats(data2);
+      // Fetch today's appointments
+      const today = format(new Date(), 'yyyy-MM-dd');
+      const appsRes = await fetch(`/api/appointments?salon_id=${users.salon_id}&date=${today}`).then(r => r.json());
+      if (Array.isArray(appsRes)) setTodayApps(appsRes);
     });
   }, []);
 
@@ -121,6 +128,37 @@ export default function DashboardPage() {
                   <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                     <div className="h-full bg-blue-500 rounded-full" style={{ width: `${(count / stats.month.appointments) * 100}%` }} />
                   </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Today's appointments */}
+      <div className="mt-6">
+        <h3 className="font-semibold mb-3 flex items-center gap-2">
+          <Clock size={18} className="text-blue-600" /> Prossimi clienti oggi
+        </h3>
+        <div className="bg-white rounded-xl border overflow-hidden">
+          {todayApps.length === 0 ? (
+            <p className="p-6 text-center text-gray-400 text-sm">Nessun appuntamento oggi</p>
+          ) : (
+            <div className="divide-y">
+              {todayApps.map(a => (
+                <div key={a.id} className="flex items-center gap-4 p-3 hover:bg-gray-50">
+                  <div className="w-1 h-10 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: a.service?.color_hex || '#60a5fa' }} />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm">{a.client?.first_name} {a.client?.last_name}</div>
+                    <div className="text-xs text-gray-500">{a.service?.name} · {a.stylist?.full_name}</div>
+                  </div>
+                  <div className="text-sm font-semibold text-gray-700">
+                    {format(parseISO(a.start_time), 'HH:mm')}
+                  </div>
+                  <Link href="/calendar" className="text-blue-500 hover:bg-blue-50 p-1 rounded">
+                    <ArrowRight size={16} />
+                  </Link>
                 </div>
               ))}
             </div>

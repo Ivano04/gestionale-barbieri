@@ -92,15 +92,19 @@ export default function CalendarPage() {
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       if (res.ok) {
         const saved = await res.json();
-        // Replace temp with real
-        setAppointments(prev => prev.map(a => a.id === tempId ? saved : a.id === saved.id ? saved : a));
+        if (isNew) {
+          // Replace temp with real
+          setAppointments(prev => prev.map(a => a.id === tempId ? saved : a));
+        } else {
+          // For edits: full reload to get joined relations
+          loadData();
+        }
         toast.success(isNew ? 'Creato' : 'Aggiornato');
       } else {
-        // Remove optimistic on failure
         setAppointments(prev => prev.filter(a => a.id !== tempId));
         const err = await res.json();
         toast.error(err.error || 'Errore');
-        setSelectedAppointment(form as any);
+        if (isNew) setSelectedAppointment(form as any);
       }
     } catch {
       setAppointments(prev => prev.filter(a => a.id !== tempId));
