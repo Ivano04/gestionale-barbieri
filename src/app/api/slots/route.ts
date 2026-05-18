@@ -14,12 +14,15 @@ export async function GET(request: Request) {
 
   const supabase = createAdminClient();
   const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-  const today = dayNames[new Date(date).getDay()];
+  // Use noon UTC to avoid timezone edge cases
+  const today = dayNames[new Date(date + 'T12:00:00').getDay()];
 
   // Get salon hours for today
   const { data: salon } = await supabase.from('salons').select('working_hours, open_time, close_time').eq('id', salon_id).single();
-  const salonDay = salon?.working_hours?.[today];
-  if (salon?.working_hours && salonDay === null) return Response.json([]); // salon closed
+  let wh = (salon?.working_hours || {}) as Record<string, any>;
+  if (typeof wh === 'string') try { wh = JSON.parse(wh); } catch {}
+  const salonDay = wh?.[today];
+  if (Object.keys(wh).length > 0 && salonDay === null) return Response.json([]);
   const salonOpen = salonDay?.open || salon?.open_time || '09:00';
   const salonClose = salonDay?.close || salon?.close_time || '19:00';
 
@@ -53,9 +56,10 @@ export async function GET(request: Request) {
 
   for (const stylist of stylists) {
     // Check stylist's personal working hours for today
-    const stylistDay = (stylist.working_hours as any)?.[today];
-    // If stylist has working_hours set and today is null → stylist off today
-    if (stylist.working_hours && Object.keys(stylist.working_hours).length > 0 && stylistDay === null) continue;
+    let swh = (stylist.working_hours || {}) as any;
+    if (typeof swh === 'string') try { swh = JSON.parse(swh); } catch {}
+    const stylistDay = swh?.[today];
+    if (Object.keys(swh).length > 0 && stylistDay === null) continue;
     // Use stylist hours if set, otherwise fallback to salon hours
     const sOpen = stylistDay?.open || salonOpen;
     const sClose = stylistDay?.close || salonClose;
