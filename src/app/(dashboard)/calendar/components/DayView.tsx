@@ -8,6 +8,7 @@ interface Props {
   stylists: Pick<User, 'id' | 'full_name'>[];
   appointments: Appointment[];
   timeBlocks: TimeBlock[];
+  salonHours: { open: string; close: string };
   onSlotClick: (stylistId: string, time: string) => void;
   onAppointmentClick: (appointment: Appointment) => void;
   onDeleteBlock: (blockId: string) => void;
@@ -19,8 +20,10 @@ function isToday(d: Date): boolean {
   return format(d, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
 }
 
-export function DayView({ date, stylists, appointments, timeBlocks, onSlotClick, onAppointmentClick, onDeleteBlock }: Props) {
-  const hours = Array.from({ length: 13 }, (_, i) => i + 8);
+export function DayView({ date, stylists, appointments, timeBlocks, salonHours, onSlotClick, onAppointmentClick, onDeleteBlock }: Props) {
+  const openH = parseInt(salonHours.open.split(':')[0]);
+  const closeH = parseInt(salonHours.close.split(':')[0]);
+  const hours = Array.from({ length: closeH - openH }, (_, i) => i + openH);
   const today = isToday(date);
 
   if (stylists.length === 0) {

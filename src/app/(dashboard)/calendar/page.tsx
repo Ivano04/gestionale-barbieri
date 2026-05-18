@@ -22,6 +22,7 @@ export default function CalendarPage() {
   const [showBlockModal, setShowBlockModal] = useState(false);
   const [blockForm, setBlockForm] = useState({ stylist_id: '', date: format(new Date(), 'yyyy-MM-dd'), start: '12:00', end: '13:00', reason: '' });
   const [salonId, setSalonId] = useState('');
+  const [salonHours, setSalonHours] = useState({ open: '09:00', close: '19:00' });
   const supabase = createClient();
 
   useEffect(() => {
@@ -46,10 +47,12 @@ export default function CalendarPage() {
     setServices(Array.isArray(svcRes) ? svcRes : []);
     setClients(clientsData || []);
     setStylists(stylistsData || []);
-    // Fetch time blocks
+    // Fetch time blocks & salon hours
     fetch(`/api/time-blocks?salon_id=${salonId}`).then(r => r.json()).then(d => {
       if (Array.isArray(d)) setTimeBlocks(d);
     });
+    const { data: salonData } = await supabase.from('salons').select('open_time, close_time').eq('id', salonId).single();
+    if (salonData) setSalonHours({ open: salonData.open_time || '09:00', close: salonData.close_time || '19:00' });
   }, [salonId, date]);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -65,6 +68,12 @@ export default function CalendarPage() {
   }
 
   async function handleSave(form: Record<string, any>) {
+    // Block past bookings
+    if (form.start_time && new Date(form.start_time) < new Date()) {
+      toast.error('Non puoi prenotare nel passato');
+      return;
+    }
+
     const isNew = !form.id;
     const body = { ...form, salon_id: salonId, source: form.source || 'manual' };
 
@@ -104,11 +113,9 @@ export default function CalendarPage() {
       if (res.ok) {
         const saved = await res.json();
         if (isNew) {
-          // Replace temp with real
           setAppointments(prev => prev.map(a => a.id === tempId ? saved : a));
         } else {
-          // For edits: full reload to get joined relations
-          loadData();
+          setAppointments(prev => prev.map(a => a.id === saved.id ? { ...a, ...saved } : a));
         }
         toast.success(isNew ? 'Creato' : 'Aggiornato');
       } else {
@@ -138,7 +145,7 @@ export default function CalendarPage() {
       <div className="mx-4 mt-4">
         {view === 'day' && (
           <DayView
-            date={date} stylists={stylists} appointments={appointments} timeBlocks={timeBlocks}
+            date={date} stylists={stylists} appointments={appointments} timeBlocks={timeBlocks} salonHours={salonHours}
             onSlotClick={(stylist_id, start_time) => setSelectedAppointment({ stylist_id, start_time } as Appointment)}
             onAppointmentClick={setSelectedAppointment}
             onDeleteBlock={handleDeleteBlock}

@@ -14,8 +14,11 @@ export async function GET(request: Request) {
 
   const supabase = createAdminClient();
 
-  const { data: service } = await supabase
-    .from('services').select('duration_minutes').eq('id', service_id).single();
+  const { data: salon } = await supabase.from('salons').select('open_time, close_time').eq('id', salon_id).single();
+  const openTime = salon?.open_time || '09:00';
+  const closeTime = salon?.close_time || '19:00';
+
+  const { data: service } = await supabase.from('services').select('duration_minutes').eq('id', service_id).single();
   if (!service) return Response.json({ error: 'service not found' }, { status: 404 });
   const duration = service.duration_minutes;
 
@@ -24,22 +27,17 @@ export async function GET(request: Request) {
   const { data: stylists } = await stylistQuery;
   if (!stylists?.length) return Response.json([]);
 
-  const dayStart = new Date(`${date}T08:00:00+02:00`);
-  const dayEnd = new Date(`${date}T20:00:00+02:00`);
+  const dayStart = new Date(`${date}T${openTime}:00+02:00`);
+  const dayEnd = new Date(`${date}T${closeTime}:00+02:00`);
 
   const { data: appointments } = await supabase
-    .from('appointments')
-    .select('stylist_id, start_time, end_time')
-    .eq('salon_id', salon_id)
-    .gte('start_time', dayStart.toISOString())
-    .lte('start_time', dayEnd.toISOString())
-    .neq('status', 'cancelled');
+    .from('appointments').select('stylist_id, start_time, end_time')
+    .eq('salon_id', salon_id).gte('start_time', dayStart.toISOString())
+    .lte('start_time', dayEnd.toISOString()).neq('status', 'cancelled');
 
   const { data: blocks } = await supabase
-    .from('time_blocks')
-    .select('stylist_id, start_time, end_time')
-    .eq('salon_id', salon_id)
-    .gte('start_time', dayStart.toISOString())
+    .from('time_blocks').select('stylist_id, start_time, end_time')
+    .eq('salon_id', salon_id).gte('start_time', dayStart.toISOString())
     .lte('start_time', dayEnd.toISOString());
 
   const occupied = [...(appointments || []), ...(blocks || [])];
@@ -50,20 +48,17 @@ export async function GET(request: Request) {
     while (current < dayEnd) {
       const slotEnd = addMinutes(current, duration);
       if (slotEnd > dayEnd) break;
-
       const isFree = !occupied.some(o => {
         if (o.stylist_id && o.stylist_id !== stylist.id) return false;
         const oStart = parseISO(o.start_time);
         const oEnd = parseISO(o.end_time);
         return current < oEnd && slotEnd > oStart;
       });
-
       if (isFree) {
         slots.push({ time: format(current, 'HH:mm'), stylist_id: stylist.id, stylist_name: stylist.full_name });
       }
       current = addMinutes(current, 30);
     }
   }
-
   return Response.json(slots);
 }

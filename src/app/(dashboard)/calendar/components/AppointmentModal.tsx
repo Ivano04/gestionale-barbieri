@@ -129,6 +129,7 @@ export function AppointmentModal({ appointment, services, clients, stylists, onC
             <label className="text-sm text-gray-500">Data e ora inizio</label>
             <input type="datetime-local"
               className="w-full border rounded-lg px-3 py-2 mt-1 text-sm"
+              min={format(new Date(), "yyyy-MM-dd'T'00:00")}
               value={form.start_time ? format(parseISO(form.start_time), "yyyy-MM-dd'T'HH:mm") : ''}
               onChange={e => setForm(f => ({ ...f, start_time: new Date(e.target.value).toISOString() }))}
             />

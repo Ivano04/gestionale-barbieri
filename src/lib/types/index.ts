@@ -11,6 +11,8 @@ export interface Salon {
   address: string | null;
   phone: string | null;
   timezone: string;
+  open_time: string;
+  close_time: string;
   ghl_subaccount_id: string | null;
   treatwell_salon_id: string | null;
   treatwell_api_enabled: boolean;

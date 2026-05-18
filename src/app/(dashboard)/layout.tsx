@@ -1,7 +1,7 @@
 'use client';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter, usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { CalendarDays, Users, Settings, LogOut, Menu, X, LayoutDashboard, Scissors } from 'lucide-react';
 import Link from 'next/link';
 
@@ -15,9 +15,21 @@ const navItems = [
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [salonName, setSalonName] = useState('Hairforce');
   const supabase = createClient();
   const router = useRouter();
   const pathname = usePathname();
+
+  useEffect(() => {
+    supabase.auth.getSession().then(async ({ data }) => {
+      if (!data.session) return;
+      const { data: users } = await supabase.from('users').select('salon_id').eq('id', data.session.user.id).single();
+      if (users?.salon_id) {
+        const { data: salon } = await supabase.from('salons').select('name').eq('id', users.salon_id).single();
+        if (salon) setSalonName(salon.name);
+      }
+    });
+  }, []);
 
   async function handleLogout() {
     await supabase.auth.signOut();
@@ -27,7 +39,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const sidebar = (
     <div className="flex flex-col h-full">
-      <div className="p-4 font-bold text-xl border-b">Hairforce</div>
+      <div className="p-4 font-bold text-xl border-b">{salonName}</div>
       <nav className="flex-1 p-2 space-y-1">
         {navItems.map(item => (
           <Link
