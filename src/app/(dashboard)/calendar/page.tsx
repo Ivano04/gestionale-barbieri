@@ -38,7 +38,7 @@ export default function CalendarPage() {
       fetch(`/api/services?salon_id=${salonId}`).then(r => r.json()),
     ]);
     const { data: clientsData } = await supabase.from('clients').select('*').eq('salon_id', salonId).order('last_name');
-    const { data: stylistsData } = await supabase.from('users').select('id, full_name').eq('salon_id', salonId);
+    const { data: stylistsData } = await supabase.from('users').select('id, full_name').eq('salon_id', salonId).eq('role', 'stylist');
     setAppointments(Array.isArray(appsRes) ? appsRes : []);
     setServices(Array.isArray(svcRes) ? svcRes : []);
     setClients(clientsData || []);
