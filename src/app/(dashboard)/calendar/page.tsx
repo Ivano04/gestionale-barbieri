@@ -87,7 +87,7 @@ export default function CalendarPage() {
       // Attach partial relations for display
       client: form.client ? { id: '', salon_id: salonId, first_name: form.client.first_name, last_name: form.client.last_name, phone: form.client.phone || '', email: null, notes: null, ghl_contact_id: null, treatwell_client_id: null, created_at: '' } : undefined,
       service: services.find(s => s.id === form.service_id),
-      stylist: stylists.find(s => s.id === form.stylist_id),
+      stylist: stylists.find(s => s.id === form.stylist_id) as any,
     };
 
     if (isNew) setAppointments(prev => [...prev, optimistic]);
