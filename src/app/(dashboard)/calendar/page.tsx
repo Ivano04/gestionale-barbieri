@@ -6,7 +6,7 @@ import { DayView } from './components/DayView';
 import { WeekView } from './components/WeekView';
 import { MonthView } from './components/MonthView';
 import { AppointmentModal } from './components/AppointmentModal';
-import type { Appointment, Service, Client, User } from '@/lib/types';
+import type { Appointment, Service, Client, User, TimeBlock } from '@/lib/types';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 
@@ -17,6 +17,7 @@ export default function CalendarPage() {
   const [services, setServices] = useState<Service[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [stylists, setStylists] = useState<Pick<User, 'id' | 'full_name'>[]>([]);
+  const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([]);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [salonId, setSalonId] = useState('');
   const supabase = createClient();
@@ -43,11 +44,44 @@ export default function CalendarPage() {
     setServices(Array.isArray(svcRes) ? svcRes : []);
     setClients(clientsData || []);
     setStylists(stylistsData || []);
+    // Fetch time blocks
+    fetch(`/api/time-blocks?salon_id=${salonId}`).then(r => r.json()).then(d => {
+      if (Array.isArray(d)) setTimeBlocks(d);
+    });
   }, [salonId, date]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Realtime disabled - causes flicker and performance issues
+  // Drag & drop handler
+  async function handleAppointmentDrop(appointmentId: string, newStylistId: string, newStartTime: string) {
+    setAppointments(prev => prev.map(a =>
+      a.id === appointmentId ? { ...a, stylist_id: newStylistId, start_time: newStartTime, stylist: stylists.find(s => s.id === newStylistId) as any } : a
+    ));
+    await fetch(`/api/appointments/${appointmentId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stylist_id: newStylistId, start_time: newStartTime }),
+    });
+    loadData(); // refresh to get correct end_time etc
+  }
+
+  // Time block handler
+  async function handleBlockSlot(stylistId: string, startTime: string, endTime: string) {
+    const res = await fetch('/api/time-blocks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ salon_id: salonId, stylist_id: stylistId || null, start_time: startTime, end_time: endTime }),
+    });
+    if (res.ok) {
+      const block = await res.json();
+      setTimeBlocks(prev => [...prev, block]);
+    }
+  }
+
+  async function handleDeleteBlock(blockId: string) {
+    setTimeBlocks(prev => prev.filter(b => b.id !== blockId));
+    await fetch(`/api/time-blocks?id=${blockId}`, { method: 'DELETE' });
+  }
 
   function handleNewAppointment() {
     setSelectedAppointment({} as Appointment);
@@ -127,9 +161,12 @@ export default function CalendarPage() {
       <div className="mx-4 mt-4">
         {view === 'day' && (
           <DayView
-            date={date} stylists={stylists} appointments={appointments}
+            date={date} stylists={stylists} appointments={appointments} timeBlocks={timeBlocks}
             onSlotClick={(stylist_id, start_time) => setSelectedAppointment({ stylist_id, start_time } as Appointment)}
             onAppointmentClick={setSelectedAppointment}
+            onAppointmentDrop={handleAppointmentDrop}
+            onBlockSlot={handleBlockSlot}
+            onDeleteBlock={handleDeleteBlock}
           />
         )}
         {view === 'week' && (
