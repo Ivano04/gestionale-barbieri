@@ -47,14 +47,7 @@ export default function CalendarPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  useEffect(() => {
-    if (!salonId) return;
-    const channel = supabase
-      .channel('appointments-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments', filter: `salon_id=eq.${salonId}` }, () => loadData())
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [salonId, loadData]);
+  // Realtime disabled - causes flicker and performance issues
 
   function handleNewAppointment() {
     setSelectedAppointment({} as Appointment);
@@ -115,11 +108,13 @@ export default function CalendarPage() {
     }
   }
 
-  async function handleDelete(id: string) {
-    await fetch(`/api/appointments/${id}`, { method: 'DELETE' });
+  function handleDelete(id: string) {
     setSelectedAppointment(null);
-    loadData();
-    toast.success('Appuntamento cancellato');
+    setAppointments(prev => prev.map(a => a.id === id ? { ...a, status: 'cancelled' } : a));
+    fetch(`/api/appointments/${id}`, { method: 'DELETE' }).catch(() => {
+      loadData(); // reload on failure
+      toast.error('Errore cancellazione');
+    });
   }
 
   return (
