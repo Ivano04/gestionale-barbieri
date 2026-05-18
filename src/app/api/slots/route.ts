@@ -83,5 +83,5 @@ export async function GET(request: Request) {
     }
   }
 
-  return Response.json(slots);
+  return Response.json({ slots, debug: { salonOpen, salonClose, today, stylistCount: stylists.length } });
 }
