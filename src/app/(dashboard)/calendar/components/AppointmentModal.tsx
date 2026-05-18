@@ -27,8 +27,15 @@ export function AppointmentModal({ appointment, services, clients, stylists, onC
 
   if (!appointment) return null;
 
+  const [error, setError] = useState('');
+
   function handleSave() {
-    if (clientMode === 'new' && newClient.first_name && newClient.last_name) {
+    setError('');
+    if (!form.service_id) { setError('Seleziona un servizio'); return; }
+    if (!form.stylist_id) { setError('Seleziona un operatore'); return; }
+    if (!form.start_time) { setError('Seleziona data e ora'); return; }
+    if (clientMode === 'new') {
+      if (!newClient.first_name || !newClient.last_name) { setError('Inserisci nome e cognome del cliente'); return; }
       onSave({ ...form, client_id: undefined, client: newClient });
     } else {
       onSave(form);
@@ -128,6 +135,7 @@ export function AppointmentModal({ appointment, services, clients, stylists, onC
               value={form.notes || ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
           </div>
 
+          {error && <div className="text-red-600 text-sm bg-red-50 p-2 rounded-lg">{error}</div>}
           <div className="flex items-center gap-2 justify-end pt-2">
             {!isNew && (
               <button onClick={() => onDelete(appointment.id)} className="px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-1 text-sm">

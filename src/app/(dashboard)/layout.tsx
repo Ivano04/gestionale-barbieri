@@ -2,12 +2,13 @@
 import { createClient } from '@/lib/supabase/client';
 import { useRouter, usePathname } from 'next/navigation';
 import { useState } from 'react';
-import { CalendarDays, Users, Settings, LogOut, Menu, X, LayoutDashboard } from 'lucide-react';
+import { CalendarDays, Users, Settings, LogOut, Menu, X, LayoutDashboard, Scissors } from 'lucide-react';
 import Link from 'next/link';
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/calendar', label: 'Calendario', icon: CalendarDays },
+  { href: '/services', label: 'Servizi', icon: Scissors },
   { href: '/clients', label: 'Clienti', icon: Users },
   { href: '/settings', label: 'Impostazioni', icon: Settings },
 ];
