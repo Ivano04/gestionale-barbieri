@@ -77,11 +77,12 @@ export async function GET(request: Request) {
         return current < oEnd && slotEnd > oStart;
       });
       if (isFree) {
-        slots.push({ time: format(current, 'HH:mm'), stylist_id: stylist.id, stylist_name: stylist.full_name });
+        const time = current.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' });
+        slots.push({ time, stylist_id: stylist.id, stylist_name: stylist.full_name });
       }
       current = addMinutes(current, 30);
     }
   }
 
-  return Response.json({ slots, debug: { salonOpen, salonClose, today, stylistCount: stylists.length } });
+  return Response.json(slots);
 }
