@@ -1,4 +1,5 @@
 import { createServerSupabase } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { addMinutes } from 'date-fns';
 
 export async function GET(request: Request) {
@@ -41,8 +42,9 @@ export async function POST(request: Request) {
 
   const endTime = addMinutes(new Date(body.start_time), service.duration_minutes).toISOString();
 
-  // Check time blocks
-  let blockQuery = supabase
+  // Check time blocks using admin client (bypass RLS)
+  const adminSupabase = createAdminClient();
+  let blockQuery = adminSupabase
     .from('time_blocks')
     .select('id')
     .eq('salon_id', body.salon_id)
