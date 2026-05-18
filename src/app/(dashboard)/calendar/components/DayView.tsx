@@ -79,8 +79,7 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonHours, 
                     isCurrentHour ? 'bg-blue-50/30 cursor-pointer' : 'hover:bg-gray-50/50 cursor-pointer'
                   } ${isBlocked ? 'bg-red-50/40' : ''}`}
                   onClick={() => {
-                    if (isPastHour) return; // block past bookings
-                  onClick={() => {
+                    if (isPastHour) return;
                     if (isBlocked) {
                       const block = timeBlocks.find(b => {
                         const bStart = parseISO(b.start_time); const bEnd = parseISO(b.end_time);
