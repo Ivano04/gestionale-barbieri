@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { X, Trash2 } from 'lucide-react';
 import type { Appointment, Service, Client, User } from '@/lib/types';
 import { format, parseISO } from 'date-fns';
-import { formatPhone } from '@/lib/utils';
+import { formatPhone, countryCodes } from '@/lib/utils';
 
 interface Props {
   appointment: Appointment | null;
@@ -19,6 +19,7 @@ export function AppointmentModal({ appointment, services, clients, stylists, onC
   const [form, setForm] = useState<Partial<Appointment>>({});
   const [clientMode, setClientMode] = useState<'existing' | 'new'>('existing');
   const [newClient, setNewClient] = useState({ first_name: '', last_name: '', phone: '' });
+  const [clientPrefix, setClientPrefix] = useState('+39');
   const isNew = !appointment?.id;
 
   useEffect(() => {
@@ -42,7 +43,7 @@ export function AppointmentModal({ appointment, services, clients, stylists, onC
     setSaving(true);
     try {
       const data = clientMode === 'new'
-        ? { ...form, client_id: undefined, client: { ...newClient, phone: formatPhone(newClient.phone) } }
+        ? { ...form, client_id: undefined, client: { ...newClient, phone: formatPhone(clientPrefix + newClient.phone) } }
         : form;
       await onSave(data);
     } finally {
@@ -93,9 +94,17 @@ export function AppointmentModal({ appointment, services, clients, stylists, onC
                     onChange={e => setNewClient({ ...newClient, last_name: e.target.value })}
                     className="flex-1 px-3 py-2 border rounded-lg text-sm" />
                 </div>
-                <input type="tel" placeholder="Telefono" value={newClient.phone}
-                  onChange={e => setNewClient({ ...newClient, phone: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg text-sm" />
+                <div className="flex gap-2">
+                  <select value={clientPrefix} onChange={e => setClientPrefix(e.target.value)}
+                    className="px-2 py-2 border rounded-lg text-sm bg-gray-50 w-24">
+                    {countryCodes.slice(0, 8).map(c => (
+                      <option key={c.code} value={c.code}>{c.flag} {c.code}</option>
+                    ))}
+                  </select>
+                  <input type="tel" placeholder="Telefono" value={newClient.phone}
+                    onChange={e => setNewClient({ ...newClient, phone: e.target.value.replace(/[^\d\s\-\(\)]/g, '') })}
+                    className="flex-1 px-3 py-2 border rounded-lg text-sm" />
+                </div>
               </div>
             )}
           </div>

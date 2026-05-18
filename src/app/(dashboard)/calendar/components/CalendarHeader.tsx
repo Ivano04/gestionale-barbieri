@@ -1,7 +1,7 @@
 'use client';
 import { format, addDays, subDays, addWeeks, subWeeks } from 'date-fns';
 import { it } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Lock } from 'lucide-react';
 
 interface Props {
   date: Date;
@@ -9,9 +9,10 @@ interface Props {
   onDateChange: (d: Date) => void;
   onViewChange: (v: 'day' | 'week' | 'month') => void;
   onNewAppointment: () => void;
+  onNewBlock: () => void;
 }
 
-export function CalendarHeader({ date, view, onDateChange, onViewChange, onNewAppointment }: Props) {
+export function CalendarHeader({ date, view, onDateChange, onViewChange, onNewAppointment, onNewBlock }: Props) {
   const prev = () => onDateChange(view === 'day' ? subDays(date, 1) : subWeeks(date, 1));
   const next = () => onDateChange(view === 'day' ? addDays(date, 1) : addWeeks(date, 1));
 
@@ -36,6 +37,10 @@ export function CalendarHeader({ date, view, onDateChange, onViewChange, onNewAp
             </button>
           ))}
         </div>
+        <button onClick={onNewBlock}
+          className="flex items-center gap-2 bg-red-50 text-red-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-red-100 border border-red-200">
+          <Lock size={14} /> Blocca fascia
+        </button>
         <button onClick={onNewAppointment}
           className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">
           <Plus size={16} /> Nuovo

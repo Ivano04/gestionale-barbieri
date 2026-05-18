@@ -70,17 +70,17 @@ export function WeekView({ date, stylists, appointments, onSlotClick, onAppointm
                   return (
                     <div key={app.id}
                       onClick={(e) => { e.stopPropagation(); onAppointmentClick(app); }}
-                      className="rounded-md px-2 py-1 mb-1 cursor-pointer hover:shadow-md transition-shadow text-[11px] leading-tight border-l-[3px] bg-white border border-gray-100"
+                      className="rounded-lg px-2 py-1.5 mb-1 cursor-pointer hover:shadow-md transition-all duration-150 text-[11px] leading-tight border-l-[3px] bg-white shadow-sm"
                       style={{ borderLeftColor: sc }}>
                       <div className="flex items-center justify-between gap-1">
                         <span className="font-semibold truncate">
                           {app.client?.first_name} {app.client?.last_name?.[0]}.
                         </span>
-                        <span className="text-gray-400 text-[10px] flex-shrink-0">
+                        <span className="text-[10px] font-medium text-gray-500 bg-gray-100 px-1 rounded">
                           {format(parseISO(app.start_time), 'HH:mm')}
                         </span>
                       </div>
-                      <div className="text-gray-500 truncate">{app.service?.name}</div>
+                      <div className="text-gray-500 truncate mt-0.5">{app.service?.name}</div>
                     </div>
                   );
                 })}

@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Search, Plus, X, Pencil, Trash2, History, Phone } from 'lucide-react';
 import type { Client, Appointment } from '@/lib/types';
-import { formatPhone } from '@/lib/utils';
+import { formatPhone, countryCodes } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 import { it } from 'date-fns/locale';
 
@@ -14,6 +14,7 @@ export default function ClientsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Client | null>(null);
   const [form, setForm] = useState({ first_name: '', last_name: '', phone: '', email: '', notes: '' });
+  const [prefix, setPrefix] = useState('+39');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [history, setHistory] = useState<{ client: Client; appointments: Appointment[] } | null>(null);
@@ -38,6 +39,7 @@ export default function ClientsPage() {
   function openNew() {
     setEditing(null);
     setForm({ first_name: '', last_name: '', phone: '', email: '', notes: '' });
+    setPrefix('+39');
     setShowForm(true);
   }
 
@@ -50,7 +52,7 @@ export default function ClientsPage() {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!form.first_name || !form.last_name || !form.phone) return;
-    const data = { ...form, phone: formatPhone(form.phone) };
+    const data = { ...form, phone: formatPhone(prefix + form.phone) };
     setSaving(true);
     if (editing) {
       await supabase.from('clients').update(data).eq('id', editing.id);
@@ -124,9 +126,17 @@ export default function ClientsPage() {
                   onChange={e => setForm({ ...form, last_name: e.target.value })} required
                   className="flex-1 px-4 py-2 border rounded-lg text-sm" />
               </div>
-              <input type="tel" placeholder="Telefono * (identificativo univoco)" value={form.phone}
-                onChange={e => setForm({ ...form, phone: e.target.value })} required
-                className="w-full px-4 py-2 border rounded-lg text-sm" />
+              <div className="flex gap-2">
+                <select value={prefix} onChange={e => setPrefix(e.target.value)}
+                  className="px-2 py-2 border rounded-lg text-sm bg-gray-50 w-28">
+                  {countryCodes.map(c => (
+                    <option key={c.code} value={c.code}>{c.flag} {c.code}</option>
+                  ))}
+                </select>
+                <input type="tel" placeholder="Numero telefono *" value={form.phone}
+                  onChange={e => setForm({ ...form, phone: e.target.value.replace(/[^\d\s\-\(\)]/g, '') })} required
+                  className="flex-1 px-4 py-2 border rounded-lg text-sm" />
+              </div>
               <input type="email" placeholder="Email" value={form.email}
                 onChange={e => setForm({ ...form, email: e.target.value })}
                 className="w-full px-4 py-2 border rounded-lg text-sm" />
