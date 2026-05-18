@@ -5,9 +5,9 @@ import { ChevronLeft, ChevronRight, Plus, Lock } from 'lucide-react';
 
 interface Props {
   date: Date;
-  view: 'day' | 'week' | 'month';
+  view: 'day' | 'week';
   onDateChange: (d: Date) => void;
-  onViewChange: (v: 'day' | 'week' | 'month') => void;
+  onViewChange: (v: 'day' | 'week') => void;
   onNewAppointment: () => void;
   onNewBlock: () => void;
 }
@@ -23,17 +23,16 @@ export function CalendarHeader({ date, view, onDateChange, onViewChange, onNewAp
         <h2 className="text-lg font-semibold min-w-[200px] text-center">
           {view === 'day' && format(date, 'EEEE d MMMM yyyy', { locale: it })}
           {view === 'week' && `${format(date, 'd MMM', { locale: it })} - ${format(addDays(date, 6), 'd MMM yyyy', { locale: it })}`}
-          {view === 'month' && format(date, 'MMMM yyyy', { locale: it })}
         </h2>
         <button onClick={next} className="p-1 hover:bg-gray-100 rounded"><ChevronRight size={20} /></button>
         <button onClick={() => onDateChange(new Date())} className="text-sm text-blue-600 hover:underline ml-2">Oggi</button>
       </div>
       <div className="flex items-center gap-2">
         <div className="flex bg-gray-100 rounded-lg p-1">
-          {(['day', 'week', 'month'] as const).map(v => (
+          {(['day', 'week'] as const).map(v => (
             <button key={v} onClick={() => onViewChange(v)}
               className={`px-3 py-1 rounded-md text-sm capitalize ${view === v ? 'bg-white shadow-sm font-medium' : 'text-gray-500'}`}>
-              {v === 'day' ? 'Giorno' : v === 'week' ? 'Settimana' : 'Mese'}
+              {v === 'day' ? 'Giorno' : 'Settimana'}
             </button>
           ))}
         </div>

@@ -155,7 +155,7 @@ export function AppointmentModal({ appointment, services, clients, stylists, onC
           {error && <div className="text-red-600 text-sm bg-red-50 p-2 rounded-lg">{error}</div>}
           <div className="flex items-center gap-2 justify-end pt-2">
             {!isNew && (
-              <button onClick={() => onDelete(appointment.id)} className="px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-1 text-sm">
+              <button onClick={() => { if (confirm('Sicuro di voler cancellare questo appuntamento?')) onDelete(appointment.id); }} className="px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-1 text-sm">
                 <Trash2 size={16} /> Elimina
               </button>
             )}

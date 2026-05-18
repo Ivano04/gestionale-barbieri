@@ -29,58 +29,55 @@ export function WeekView({ date, stylists, appointments, onSlotClick, onAppointm
 
   return (
     <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-      {/* Header row: day names */}
-      <div className="grid grid-cols-8 border-b bg-gradient-to-r from-gray-50 to-white">
-        <div className="p-3 flex items-end justify-center">
-          <span className="text-xs font-medium text-gray-400">Operatore</span>
-        </div>
+      {/* Day headers */}
+      <div className="grid grid-cols-8 border-b bg-gray-50/50">
+        <div className="p-3 flex items-end"><span className="text-xs font-medium text-gray-400">Operatore</span></div>
         {days.map((d, i) => (
-          <div key={i} className={`p-3 text-center border-l ${isSameDay(d, today) ? 'bg-blue-50/40' : ''}`}>
-            <div className="text-[11px] text-gray-400 uppercase">{format(d, 'EEE', { locale: it })}</div>
-            <div className={`text-lg font-bold ${isSameDay(d, today) ? 'text-blue-600' : 'text-gray-700'}`}>
-              {format(d, 'd')}
-            </div>
+          <div key={i} className={`p-3 text-center border-l ${isSameDay(d, today) ? 'bg-blue-50/30' : ''}`}>
+            <div className="text-[11px] text-gray-400 font-medium">{format(d, 'EEE', { locale: it })}</div>
+            <div className={`text-xl font-bold ${isSameDay(d, today) ? 'text-blue-600' : 'text-gray-700'}`}>{format(d, 'd')}</div>
           </div>
         ))}
       </div>
 
-      {/* Stylist rows */}
+      {/* Rows */}
       {stylists.map((stylist, si) => (
         <div key={stylist.id} className="grid grid-cols-8 border-b last:border-b-0 hover:bg-gray-50/30 transition-colors">
-          {/* Stylist name column */}
           <div className="p-3 flex items-center gap-2 border-r bg-gray-50/30">
             <div className="w-3 h-3 rounded-full flex-shrink-0 ring-2 ring-offset-1 ring-gray-200"
               style={{ backgroundColor: STYLIST_COLORS[si % STYLIST_COLORS.length] }} />
             <span className="text-sm font-semibold text-gray-700 truncate">{stylist.full_name.split(' ')[0]}</span>
+            <span className="text-xs text-gray-400 ml-auto">{appointments.filter(a => a.stylist_id === stylist.id && a.status !== 'cancelled' && isSameDay(parseISO(a.start_time), weekStart) || isSameDay(parseISO(a.start_time), addDays(weekStart, 1))).length || ''}</span>
           </div>
-
-          {/* Day cells */}
           {days.map((d, di) => {
             const dayApps = appointments.filter(a =>
               a.status !== 'cancelled' && a.stylist_id === stylist.id && isSameDay(parseISO(a.start_time), d)
             );
             return (
               <div key={di}
-                className={`border-l p-1.5 min-h-[72px] cursor-pointer hover:bg-blue-50/30 transition-colors ${
-                  isSameDay(d, today) ? 'bg-blue-50/10' : ''
-                }`}
+                className={`border-l p-1.5 min-h-[80px] cursor-pointer transition-colors ${
+                  isSameDay(d, today) ? 'bg-blue-50/10' : 'hover:bg-gray-50/50'
+                } ${dayApps.length === 0 ? '' : ''}`}
                 onClick={() => onSlotClick(stylist.id, format(d, "yyyy-MM-dd'T'08:00:00+02:00"))}>
                 {dayApps.map(app => {
                   const sc = sourceColors[app.source] || '#6b7280';
                   return (
                     <div key={app.id}
                       onClick={(e) => { e.stopPropagation(); onAppointmentClick(app); }}
-                      className="rounded-lg px-2 py-1.5 mb-1 cursor-pointer hover:shadow-md transition-all duration-150 text-[11px] leading-tight border-l-[3px] bg-white shadow-sm"
+                      className="rounded-lg px-2 py-1.5 mb-1 cursor-pointer hover:shadow-md transition-all duration-150 border-l-[3px] bg-white shadow-sm"
                       style={{ borderLeftColor: sc }}>
                       <div className="flex items-center justify-between gap-1">
-                        <span className="font-semibold truncate">
-                          {app.client?.first_name} {app.client?.last_name?.[0]}.
+                        <span className="font-semibold text-[11px] truncate">
+                          {app.client?.first_name}
                         </span>
                         <span className="text-[10px] font-medium text-gray-500 bg-gray-100 px-1 rounded">
                           {format(parseISO(app.start_time), 'HH:mm')}
                         </span>
                       </div>
-                      <div className="text-gray-500 truncate mt-0.5">{app.service?.name}</div>
+                      <div className="text-[10px] text-gray-500 truncate mt-0.5">{app.service?.name}</div>
+                      {app.service?.price_cents && (
+                        <div className="text-[10px] font-medium text-green-600">€{(app.service.price_cents / 100).toFixed(0)}</div>
+                      )}
                     </div>
                   );
                 })}

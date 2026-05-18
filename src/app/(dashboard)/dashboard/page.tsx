@@ -1,10 +1,9 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { CalendarDays, Users, Euro, TrendingUp, Clock, Target, ArrowRight, Trash2 } from 'lucide-react';
+import { CalendarDays, Users, Euro, TrendingUp, Clock, Target, Trash2 } from 'lucide-react';
 import type { Appointment } from '@/lib/types';
 import { format, parseISO } from 'date-fns';
-import Link from 'next/link';
 
 interface Stats {
   today: { appointments: number; clients: number; revenue: number };
@@ -69,9 +68,9 @@ export default function DashboardPage() {
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Dashboard</h1>
-        <Link href="/calendar" className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">
+        <a href="/calendar" className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">
           <CalendarDays size={16} /> Vai al calendario
-        </Link>
+        </a>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -147,24 +146,25 @@ export default function DashboardPage() {
           ) : (
             <div className="divide-y max-h-[500px] overflow-auto">
               {upcoming.map(a => (
-                <div key={a.id} className="flex items-center gap-4 p-3 hover:bg-gray-50 group">
-                  <div className="w-1 h-10 rounded-full flex-shrink-0"
+                <div key={a.id} className="flex items-center gap-4 p-3 hover:bg-gray-50 group cursor-pointer"
+                  onClick={() => window.location.href = '/calendar'}>
+                  <div className="w-1 h-12 rounded-full flex-shrink-0"
                     style={{ backgroundColor: a.service?.color_hex || '#60a5fa' }} />
-                  <div className="flex-1 min-w-0">
+                  <div className="flex-1 min-w-0" onClick={e => e.stopPropagation()}>
                     <div className="font-medium text-sm">{a.client?.first_name} {a.client?.last_name}</div>
                     <div className="text-xs text-gray-500">{a.service?.name} · {a.stylist?.full_name}</div>
                   </div>
-                  <div className="text-sm font-semibold text-gray-700 text-right">
-                    <div>{format(parseISO(a.start_time), 'dd/MM')}</div>
-                    <div>{format(parseISO(a.start_time), 'HH:mm')}</div>
+                  <div className="text-sm font-semibold text-green-700 whitespace-nowrap">
+                    {a.service?.price_cents ? `€${(a.service.price_cents / 100).toFixed(0)}` : ''}
                   </div>
-                  <button onClick={() => cancelAppointment(a.id)}
+                  <div className="text-xs text-gray-500 text-right">
+                    <div>{format(parseISO(a.start_time), 'dd/MM')}</div>
+                    <div className="font-semibold text-gray-700">{format(parseISO(a.start_time), 'HH:mm')}</div>
+                  </div>
+                  <button onClick={(e) => { e.stopPropagation(); cancelAppointment(a.id); }}
                     className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-red-50 rounded-lg text-red-500 transition-opacity" title="Cancella">
                     <Trash2 size={14} />
                   </button>
-                  <Link href="/calendar" className="text-blue-400 hover:bg-blue-50 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                    <ArrowRight size={16} />
-                  </Link>
                 </div>
               ))}
             </div>

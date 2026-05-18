@@ -4,7 +4,6 @@ import { createClient } from '@/lib/supabase/client';
 import { CalendarHeader } from './components/CalendarHeader';
 import { DayView } from './components/DayView';
 import { WeekView } from './components/WeekView';
-import { MonthView } from './components/MonthView';
 import { AppointmentModal } from './components/AppointmentModal';
 import type { Appointment, Service, Client, User, TimeBlock } from '@/lib/types';
 import { format } from 'date-fns';
@@ -12,7 +11,7 @@ import { toast } from 'sonner';
 
 export default function CalendarPage() {
   const [date, setDate] = useState(new Date());
-  const [view, setView] = useState<'day' | 'week' | 'month'>('day');
+  const [view, setView] = useState<'day' | 'week'>('day');
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -149,12 +148,6 @@ export default function CalendarPage() {
             date={date} stylists={stylists} appointments={appointments}
             onSlotClick={(stylist_id, start_time) => setSelectedAppointment({ stylist_id, start_time } as Appointment)}
             onAppointmentClick={setSelectedAppointment}
-          />
-        )}
-        {view === 'month' && (
-          <MonthView
-            date={date} appointments={appointments}
-            onDayClick={(d) => { setDate(d); setView('day'); }}
           />
         )}
       </div>
