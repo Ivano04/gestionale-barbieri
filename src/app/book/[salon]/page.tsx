@@ -25,6 +25,7 @@ export default function BookPage() {
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState('');
+  const [selectedStylist, setSelectedStylist] = useState<string | null>(null);
 
   const preselectedService = searchParams.get('service');
 
@@ -143,10 +144,27 @@ export default function BookPage() {
                 </button>
               ))}
             </div>
-            <h3 className="font-semibold mb-2">Orari disponibili</h3>
+            {/* Stylist filter */}
+            {slots.length > 0 && (() => {
+              const stylists = [...new Set(slots.map(s => s.stylist_name))];
+              return (
+                <div className="mb-3">
+                  <div className="font-semibold mb-2 text-sm">Operatore</div>
+                  <div className="flex gap-2 flex-wrap">
+                    {stylists.map(st => (
+                      <button key={st} onClick={() => setSelectedStylist(selectedStylist === st ? null : st)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                          selectedStylist === st ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}>{st}</button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+            <h3 className="font-semibold mb-2 text-sm">Orari disponibili</h3>
             {slots.length === 0 && <p className="text-center text-gray-400 py-4 text-sm">Nessuno slot disponibile</p>}
             <div className="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto">
-              {slots.map((s, i) => (
+              {slots.filter(s => !selectedStylist || s.stylist_name === selectedStylist).map((s, i) => (
                 <button key={`${s.time}-${s.stylist_id}-${i}`} onClick={() => { setSelectedSlot(s); setStep('details'); }}
                   className="p-3 border border-green-300 bg-green-50 rounded-lg text-center hover:bg-green-100 text-sm">
                   <div className="font-medium">{s.time}</div>
