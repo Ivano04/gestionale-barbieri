@@ -3,6 +3,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { CalendarHeader } from './components/CalendarHeader';
 import { DayView } from './components/DayView';
+import { WeekView } from './components/WeekView';
+import { MonthView } from './components/MonthView';
 import { AppointmentModal } from './components/AppointmentModal';
 import type { Appointment, Service, Client, User } from '@/lib/types';
 import { format } from 'date-fns';
@@ -93,8 +95,19 @@ export default function CalendarPage() {
             onAppointmentClick={setSelectedAppointment}
           />
         )}
-        {view === 'week' && <div className="p-8 text-center text-gray-400">Vista settimanale in arrivo</div>}
-        {view === 'month' && <div className="p-8 text-center text-gray-400">Vista mensile in arrivo</div>}
+        {view === 'week' && (
+          <WeekView
+            date={date} stylists={stylists} appointments={appointments}
+            onSlotClick={(stylist_id, start_time) => setSelectedAppointment({ stylist_id, start_time } as Appointment)}
+            onAppointmentClick={setSelectedAppointment}
+          />
+        )}
+        {view === 'month' && (
+          <MonthView
+            date={date} appointments={appointments}
+            onDayClick={(d) => { setDate(d); setView('day'); }}
+          />
+        )}
       </div>
       {selectedAppointment && (
         <AppointmentModal
