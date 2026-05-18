@@ -60,26 +60,58 @@ export default function CalendarPage() {
     setSelectedAppointment({} as Appointment);
   }
 
-  async function handleSave(form: Partial<Appointment>) {
+  async function handleSave(form: Record<string, any>) {
     const isNew = !form.id;
-    const url = isNew ? '/api/appointments' : `/api/appointments/${form.id}`;
-    const method = isNew ? 'POST' : 'PATCH';
     const body = { ...form, salon_id: salonId, source: form.source || 'manual' };
 
-    const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (res.ok) {
-      const saved = await res.json();
-      setSelectedAppointment(null);
-      // Update local state instantly instead of full reload
-      if (isNew) {
-        setAppointments(prev => [...prev, saved]);
+    // Close modal instantly
+    setSelectedAppointment(null);
+
+    // Optimistic: add to state immediately with temp ID
+    const tempId = 'temp_' + Date.now();
+    const optimistic: Appointment = {
+      id: tempId,
+      salon_id: salonId,
+      client_id: form.client_id || null,
+      stylist_id: form.stylist_id,
+      service_id: form.service_id,
+      start_time: form.start_time,
+      end_time: '', // will be fixed on reload
+      status: 'confirmed',
+      source: body.source,
+      notes: form.notes || null,
+      treatwell_appointment_id: null,
+      ghl_appointment_id: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      // Attach partial relations for display
+      client: form.client ? { id: '', salon_id: salonId, first_name: form.client.first_name, last_name: form.client.last_name, phone: form.client.phone || '', email: null, notes: null, ghl_contact_id: null, treatwell_client_id: null, created_at: '' } : undefined,
+      service: services.find(s => s.id === form.service_id),
+      stylist: stylists.find(s => s.id === form.stylist_id),
+    };
+
+    if (isNew) setAppointments(prev => [...prev, optimistic]);
+
+    // Save in background
+    const url = isNew ? '/api/appointments' : `/api/appointments/${form.id}`;
+    const method = isNew ? 'POST' : 'PATCH';
+    try {
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (res.ok) {
+        const saved = await res.json();
+        // Replace temp with real
+        setAppointments(prev => prev.map(a => a.id === tempId ? saved : a.id === saved.id ? saved : a));
+        toast.success(isNew ? 'Creato' : 'Aggiornato');
       } else {
-        setAppointments(prev => prev.map(a => a.id === saved.id ? saved : a));
+        // Remove optimistic on failure
+        setAppointments(prev => prev.filter(a => a.id !== tempId));
+        const err = await res.json();
+        toast.error(err.error || 'Errore');
+        setSelectedAppointment(form); // Re-open modal with original data
       }
-      toast.success(isNew ? 'Creato' : 'Aggiornato');
-    } else {
-      const err = await res.json();
-      toast.error(err.error || 'Errore');
+    } catch {
+      setAppointments(prev => prev.filter(a => a.id !== tempId));
+      toast.error('Errore di connessione');
     }
   }
 
