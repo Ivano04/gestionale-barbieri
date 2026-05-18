@@ -107,7 +107,7 @@ export default function CalendarPage() {
         setAppointments(prev => prev.filter(a => a.id !== tempId));
         const err = await res.json();
         toast.error(err.error || 'Errore');
-        setSelectedAppointment(form); // Re-open modal with original data
+        setSelectedAppointment(form as any);
       }
     } catch {
       setAppointments(prev => prev.filter(a => a.id !== tempId));
