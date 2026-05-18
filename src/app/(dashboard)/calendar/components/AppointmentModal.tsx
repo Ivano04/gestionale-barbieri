@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { X, Trash2 } from 'lucide-react';
 import type { Appointment, Service, Client, User } from '@/lib/types';
 import { format, parseISO } from 'date-fns';
+import { formatPhone } from '@/lib/utils';
 
 interface Props {
   appointment: Appointment | null;
@@ -41,7 +42,7 @@ export function AppointmentModal({ appointment, services, clients, stylists, onC
     setSaving(true);
     try {
       const data = clientMode === 'new'
-        ? { ...form, client_id: undefined, client: newClient }
+        ? { ...form, client_id: undefined, client: { ...newClient, phone: formatPhone(newClient.phone) } }
         : form;
       await onSave(data);
     } finally {

@@ -39,7 +39,7 @@ export function AppointmentCard({ appointment, onClick, dragEnabled }: Props) {
         (e.currentTarget as HTMLElement).style.opacity = '1';
       }}
       onClick={(e) => { e.stopPropagation(); onClick(e); }}
-      className="rounded-md p-1.5 cursor-pointer text-xs border-l-[3px] hover:shadow-md transition-shadow mb-0.5"
+      className="rounded-md p-1.5 cursor-pointer text-xs border-l-[3px] hover:shadow-md transition-all duration-200 mb-0.5"
       style={{ borderLeftColor: cfg.color, backgroundColor: cfg.bg }}
     >
       <div className="flex items-center justify-between">

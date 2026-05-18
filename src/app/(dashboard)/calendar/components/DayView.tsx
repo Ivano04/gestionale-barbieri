@@ -33,7 +33,17 @@ export function DayView({ date, stylists, appointments, timeBlocks, onSlotClick,
     setDragOver(null);
     const appId = e.dataTransfer.getData('text/plain');
     if (!appId) return;
-    const newStartTime = format(setMinutes(setHours(date, h), 0), "yyyy-MM-dd'T'HH:mm:ssXXX");
+    // Precise: use event Y to find exact hour cell
+    const container = (e.currentTarget as HTMLElement).closest('.overflow-auto');
+    let preciseH = h;
+    if (container) {
+      const rows = container.querySelectorAll('.h-20');
+      rows.forEach((row, idx) => {
+        const r = row.getBoundingClientRect();
+        if (e.clientY >= r.top && e.clientY < r.bottom) preciseH = 8 + idx;
+      });
+    }
+    const newStartTime = format(setMinutes(setHours(date, preciseH), 0), "yyyy-MM-dd'T'HH:mm:ssXXX");
     onAppointmentDrop(appId, stylistId, newStartTime);
   }
 

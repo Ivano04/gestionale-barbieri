@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Search, Plus, X, Pencil, Trash2, History, Phone } from 'lucide-react';
 import type { Client, Appointment } from '@/lib/types';
+import { formatPhone } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 import { it } from 'date-fns/locale';
 
@@ -49,11 +50,12 @@ export default function ClientsPage() {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!form.first_name || !form.last_name || !form.phone) return;
+    const data = { ...form, phone: formatPhone(form.phone) };
     setSaving(true);
     if (editing) {
-      await supabase.from('clients').update(form).eq('id', editing.id);
+      await supabase.from('clients').update(data).eq('id', editing.id);
     } else {
-      await supabase.from('clients').insert({ salon_id: salonId, ...form });
+      await supabase.from('clients').insert({ salon_id: salonId, ...data });
     }
     setSaving(false);
     setShowForm(false);
