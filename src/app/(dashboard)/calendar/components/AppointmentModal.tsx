@@ -10,7 +10,7 @@ interface Props {
   clients: Client[];
   stylists: Pick<User, 'id' | 'full_name'>[];
   onClose: () => void;
-  onSave: (data: Partial<Appointment>) => void;
+  onSave: (data: Record<string, any>) => void;
   onDelete: (id: string) => void;
 }
 
