@@ -19,7 +19,7 @@ export async function GET(request: Request) {
   if (!service) return Response.json({ error: 'service not found' }, { status: 404 });
   const duration = service.duration_minutes;
 
-  let stylistQuery = supabase.from('users').select('id, full_name').eq('salon_id', salon_id);
+  let stylistQuery = supabase.from('users').select('id, full_name').eq('salon_id', salon_id).eq('role', 'stylist');
   if (stylist_id) stylistQuery = stylistQuery.eq('id', stylist_id);
   const { data: stylists } = await stylistQuery;
   if (!stylists?.length) return Response.json([]);
