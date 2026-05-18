@@ -20,7 +20,7 @@ export function CalendarHeader({ date, view, onDateChange, onViewChange, onNewAp
     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-white border-b">
       <div className="flex items-center gap-3">
         <button onClick={prev} className="p-1 hover:bg-gray-100 rounded"><ChevronLeft size={20} /></button>
-        <h2 className="text-lg font-semibold min-w-[200px] text-center">
+        <h2 className="text-lg font-semibold min-w-[200px] text-center" suppressHydrationWarning>
           {view === 'day' && format(date, 'EEEE d MMMM yyyy', { locale: it })}
           {view === 'week' && `${format(date, 'd MMM', { locale: it })} - ${format(addDays(date, 6), 'd MMM yyyy', { locale: it })}`}
         </h2>

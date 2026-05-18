@@ -33,7 +33,7 @@ export default function LoginPage() {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 mb-4 shadow-lg shadow-blue-500/20">
             <Scissors size={28} className="text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-white">Hairforce</h1>
+          <h1 className="text-2xl font-bold text-white">LocalVista</h1>
           <p className="text-gray-400 text-sm mt-1">Gestionale parrucchieri</p>
         </div>
 

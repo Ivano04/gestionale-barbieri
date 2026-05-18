@@ -1,14 +1,16 @@
 'use client';
 import { format, startOfWeek, addDays, parseISO, isSameDay } from 'date-fns';
 import { it } from 'date-fns/locale';
-import type { Appointment, User } from '@/lib/types';
+import type { Appointment, User, TimeBlock } from '@/lib/types';
 
 interface Props {
   date: Date;
   stylists: Pick<User, 'id' | 'full_name'>[];
   appointments: Appointment[];
+  timeBlocks: TimeBlock[];
   onSlotClick: (stylistId: string, time: string) => void;
   onAppointmentClick: (appointment: Appointment) => void;
+  onDeleteBlock: (blockId: string) => void;
 }
 
 const STYLIST_COLORS = ['#f472b6', '#60a5fa', '#34d399', '#a78bfa', '#fbbf24'];
@@ -18,7 +20,7 @@ const sourceColors: Record<string, string> = {
   treatwell: '#ea580c', google: '#dc2626', manual: '#6b7280',
 };
 
-export function WeekView({ date, stylists, appointments, onSlotClick, onAppointmentClick }: Props) {
+export function WeekView({ date, stylists, appointments, timeBlocks, onSlotClick, onAppointmentClick, onDeleteBlock }: Props) {
   const weekStart = startOfWeek(date, { weekStartsOn: 1 });
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const today = new Date();
@@ -53,12 +55,26 @@ export function WeekView({ date, stylists, appointments, onSlotClick, onAppointm
             const dayApps = appointments.filter(a =>
               a.status !== 'cancelled' && a.stylist_id === stylist.id && isSameDay(parseISO(a.start_time), d)
             );
+            const dayBlocked = timeBlocks.some(b => {
+              if (b.stylist_id && b.stylist_id !== stylist.id) return false;
+              return isSameDay(parseISO(b.start_time), d) || isSameDay(parseISO(b.end_time), d);
+            });
             return (
               <div key={di}
                 className={`border-l p-1.5 min-h-[80px] cursor-pointer transition-colors ${
-                  isSameDay(d, today) ? 'bg-blue-50/10' : 'hover:bg-gray-50/50'
-                } ${dayApps.length === 0 ? '' : ''}`}
-                onClick={() => onSlotClick(stylist.id, format(d, "yyyy-MM-dd'T'08:00:00+02:00"))}>
+                  dayBlocked ? 'bg-red-50/30' : isSameDay(d, today) ? 'bg-blue-50/10' : 'hover:bg-gray-50/50'
+                }`}
+                onClick={() => {
+                  if (dayBlocked) {
+                    const block = timeBlocks.find(b => {
+                      if (b.stylist_id && b.stylist_id !== stylist.id) return false;
+                      return isSameDay(parseISO(b.start_time), d) || isSameDay(parseISO(b.end_time), d);
+                    });
+                    if (block) onDeleteBlock(block.id);
+                  } else {
+                    onSlotClick(stylist.id, format(d, "yyyy-MM-dd'T'08:00:00+02:00"));
+                  }
+                }}>
                 {dayApps.map(app => {
                   const sc = sourceColors[app.source] || '#6b7280';
                   return (

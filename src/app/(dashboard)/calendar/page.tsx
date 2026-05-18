@@ -165,9 +165,10 @@ export default function CalendarPage() {
         )}
         {view === 'week' && (
           <WeekView
-            date={date} stylists={stylists} appointments={appointments}
+            date={date} stylists={stylists} appointments={appointments} timeBlocks={timeBlocks}
             onSlotClick={(stylist_id, start_time) => setSelectedAppointment({ stylist_id, start_time } as Appointment)}
             onAppointmentClick={setSelectedAppointment}
+            onDeleteBlock={handleDeleteBlock}
           />
         )}
       </div>
