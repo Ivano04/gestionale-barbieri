@@ -111,11 +111,15 @@ ALTER TABLE time_blocks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sync_log ENABLE ROW LEVEL SECURITY;
 
 -- RLS POLICIES
-CREATE POLICY "Users read own salon" ON salons FOR SELECT
-  USING (id IN (SELECT salon_id FROM users WHERE id = auth.uid()));
+-- Users can read their own row (avoid self-referential RLS loop)
+CREATE POLICY "Users read own row" ON users FOR SELECT
+  USING (id = auth.uid());
+-- Users can read other users in same salon
+CREATE POLICY "Users read salon mates" ON users FOR SELECT
+  USING (salon_id = (SELECT salon_id FROM users WHERE id = auth.uid()));
 
-CREATE POLICY "Users read same salon" ON users FOR SELECT
-  USING (salon_id IN (SELECT salon_id FROM users WHERE id = auth.uid()));
+CREATE POLICY "Users read own salon" ON salons FOR SELECT
+  USING (id = (SELECT salon_id FROM users WHERE id = auth.uid()));
 
 CREATE POLICY "Services read salon" ON services FOR SELECT
   USING (salon_id IN (SELECT salon_id FROM users WHERE id = auth.uid()));
