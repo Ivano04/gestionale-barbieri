@@ -1,13 +1,16 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { Search } from 'lucide-react';
+import { Search, Plus, X } from 'lucide-react';
 import type { Client } from '@/lib/types';
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [search, setSearch] = useState('');
   const [salonId, setSalonId] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ first_name: '', last_name: '', phone: '', email: '', notes: '' });
+  const [saving, setSaving] = useState(false);
   const supabase = createClient();
 
   useEffect(() => {
@@ -26,6 +29,17 @@ export default function ClientsPage() {
     setClients(data || []);
   }
 
+  async function handleAdd(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.first_name || !form.last_name) return;
+    setSaving(true);
+    await supabase.from('clients').insert({ salon_id: salonId, ...form });
+    setSaving(false);
+    setShowForm(false);
+    setForm({ first_name: '', last_name: '', phone: '', email: '', notes: '' });
+    loadClients(salonId);
+  }
+
   const filtered = clients.filter(c =>
     `${c.first_name} ${c.last_name} ${c.phone || ''}`.toLowerCase().includes(search.toLowerCase())
   );
@@ -34,12 +48,51 @@ export default function ClientsPage() {
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Clienti</h1>
-        <div className="relative">
-          <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input type="text" placeholder="Cerca..." value={search} onChange={e => setSearch(e.target.value)}
-            className="pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-64 text-sm" />
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input type="text" placeholder="Cerca..." value={search} onChange={e => setSearch(e.target.value)}
+              className="pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-64 text-sm" />
+          </div>
+          <button onClick={() => setShowForm(true)}
+            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">
+            <Plus size={16} /> Nuovo cliente
+          </button>
         </div>
       </div>
+
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowForm(false)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 mx-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Nuovo Cliente</h3>
+              <button onClick={() => setShowForm(false)}><X size={20} /></button>
+            </div>
+            <form onSubmit={handleAdd} className="space-y-3">
+              <input type="text" placeholder="Nome *" value={form.first_name}
+                onChange={e => setForm({ ...form, first_name: e.target.value })} required
+                className="w-full px-4 py-2 border rounded-lg text-sm" />
+              <input type="text" placeholder="Cognome *" value={form.last_name}
+                onChange={e => setForm({ ...form, last_name: e.target.value })} required
+                className="w-full px-4 py-2 border rounded-lg text-sm" />
+              <input type="tel" placeholder="Telefono" value={form.phone}
+                onChange={e => setForm({ ...form, phone: e.target.value })}
+                className="w-full px-4 py-2 border rounded-lg text-sm" />
+              <input type="email" placeholder="Email" value={form.email}
+                onChange={e => setForm({ ...form, email: e.target.value })}
+                className="w-full px-4 py-2 border rounded-lg text-sm" />
+              <textarea placeholder="Note" value={form.notes}
+                onChange={e => setForm({ ...form, notes: e.target.value })}
+                className="w-full px-4 py-2 border rounded-lg text-sm" rows={2} />
+              <button type="submit" disabled={saving}
+                className="w-full bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50">
+                {saving ? 'Salvataggio...' : 'Aggiungi cliente'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-lg border overflow-hidden">
         <table className="w-full">
           <thead>
