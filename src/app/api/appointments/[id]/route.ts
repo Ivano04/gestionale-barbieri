@@ -111,21 +111,22 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   const { id } = await params;
   const supabase = await createServerSupabase();
 
-  // Fetch external IDs before cancelling
-  const { data: existing } = await supabase
+  // Fetch external IDs before cancelling (admin client bypasses RLS for cross-stylist access)
+  const adminSupabase = createAdminClient();
+  const { data: existing } = await adminSupabase
     .from('appointments')
     .select('ghl_appointment_id, treatwell_appointment_id, salon_id')
     .eq('id', id)
     .single();
 
-  const { error } = await supabase
+  // Use admin client to soft-delete (bypass RLS — any authenticated salon user can cancel)
+  const { error } = await adminSupabase
     .from('appointments')
     .update({ status: 'cancelled' })
     .eq('id', id);
 
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
-  // Fire-and-forget n8n event so it can cancel on GHL + release Treatwell slot
   sendN8nEvent('appointment.cancelled', {
     id,
     salon_id: existing?.salon_id,

@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { CalendarDays, Users, Euro, TrendingUp, Clock, Target, Trash2 } from 'lucide-react';
 import type { Appointment } from '@/lib/types';
@@ -19,6 +20,7 @@ const channelLabels: Record<string, string> = {
 };
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [stats, setStats] = useState<Stats | null>(null);
   const [upcoming, setUpcoming] = useState<Appointment[]>([]);
   const [salonId, setSalonId] = useState('');
@@ -163,11 +165,14 @@ export default function DashboardPage() {
             <div className="divide-y max-h-[500px] overflow-auto">
               {upcoming.map(a => (
                 <div key={a.id} className="flex items-center gap-4 p-3 hover:bg-gray-50 group cursor-pointer"
-                  onClick={() => window.location.href = '/calendar'}>
+                  onClick={() => router.push(`/calendar?date=${format(parseISO(a.start_time), 'yyyy-MM-dd')}`)}>
                   <div className="w-1 h-12 rounded-full flex-shrink-0"
                     style={{ backgroundColor: a.service?.color_hex || '#60a5fa' }} />
-                  <div className="flex-1 min-w-0" onClick={e => e.stopPropagation()}>
-                    <div className="font-medium text-sm">{a.client?.first_name} {a.client?.last_name}</div>
+                  <div className="flex-1 min-w-0">
+                    <button onClick={(e) => { e.stopPropagation(); router.push(`/clients`); }}
+                      className="font-medium text-sm text-blue-600 hover:text-blue-800 hover:underline text-left">
+                      {a.client?.first_name} {a.client?.last_name}
+                    </button>
                     <div className="text-xs text-gray-500">{a.service?.name} · {a.stylist?.full_name}</div>
                   </div>
                   <div className="text-sm font-semibold text-green-700 whitespace-nowrap">
