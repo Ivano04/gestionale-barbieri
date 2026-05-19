@@ -9,6 +9,7 @@ import type { Appointment, Service, Client, User, TimeBlock } from '@/lib/types'
 import { format, parseISO } from 'date-fns';
 import { Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { todayDateStr, buildSlotTime } from '@/lib/date-utils';
 
 export default function CalendarPage() {
   const [date, setDate] = useState<Date | null>(null);
@@ -22,7 +23,7 @@ export default function CalendarPage() {
   const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([]);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [showBlockModal, setShowBlockModal] = useState(false);
-  const [blockForm, setBlockForm] = useState({ stylist_id: '', date: format(new Date(), 'yyyy-MM-dd'), start: '12:00', end: '13:00', reason: '' });
+  const [blockForm, setBlockForm] = useState({ stylist_id: '', date: todayDateStr(), start: '12:00', end: '13:00', reason: '' });
   const [salonId, setSalonId] = useState('');
   const [salonHours, setSalonHours] = useState({ open: '09:00', close: '19:00' });
   const supabase = createClient();
@@ -240,8 +241,8 @@ export default function CalendarPage() {
                 <div className="flex gap-2 justify-end pt-2">
                   <button onClick={() => setShowBlockModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm">Chiudi</button>
                   <button onClick={async () => {
-                    const startTime = `${blockForm.date}T${blockForm.start}:00+02:00`;
-                    const endTime = `${blockForm.date}T${blockForm.end}:00+02:00`;
+                    const startTime = buildSlotTime(blockForm.date, blockForm.start);
+                    const endTime = buildSlotTime(blockForm.date, blockForm.end);
                     const res = await fetch('/api/time-blocks', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
@@ -256,7 +257,7 @@ export default function CalendarPage() {
                     if (res.ok) {
                       const block = await res.json();
                       setTimeBlocks(prev => [...prev, block]);
-                      setBlockForm({ stylist_id: '', date: format(new Date(), 'yyyy-MM-dd'), start: '12:00', end: '13:00', reason: '' });
+                      setBlockForm({ stylist_id: '', date: todayDateStr(), start: '12:00', end: '13:00', reason: '' });
                     } else {
                       toast.error('Errore creazione blocco');
                     }

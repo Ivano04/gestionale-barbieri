@@ -5,6 +5,7 @@ import type { Appointment, Service, Client, User } from '@/lib/types';
 import { format, parseISO, addDays } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { formatPhone, countryCodes } from '@/lib/utils';
+import { buildSlotTime } from '@/lib/date-utils';
 
 interface Props {
   appointment: Appointment | null;
@@ -150,10 +151,10 @@ export function AppointmentModal({ appointment, services, clients, stylists, sal
             ) : (
               <div className="grid grid-cols-4 gap-1.5 max-h-40 overflow-y-auto">
                 {slots.map((s, i) => {
-                  const isSelected = form.start_time === `${slotDate}T${s.time}:00+02:00`;
+                  const isSelected = form.start_time ? form.start_time.startsWith(`${slotDate}T${s.time}:00`) : false;
                   return (
                     <button key={i} type="button"
-                      onClick={() => setForm(f => ({ ...f, start_time: `${slotDate}T${s.time}:00+02:00` }))}
+                      onClick={() => setForm(f => ({ ...f, start_time: buildSlotTime(slotDate, s.time) }))}
                       className={`py-2 px-1 rounded-lg text-xs font-medium transition-all ${
                         isSelected
                           ? 'bg-blue-600 text-white shadow-sm'
