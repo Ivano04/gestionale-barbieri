@@ -8,10 +8,12 @@ export function toLocalTimeString(iso: string): string {
 
 /** Build a full ISO string from a date string and a HH:mm time, using the local timezone offset */
 export function buildSlotTime(dateStr: string, time: string): string {
-  const offset = -new Date().getTimezoneOffset();
-  const sign = offset >= 0 ? '+' : '-';
-  const abs = String(Math.abs(offset)).padStart(2, '0');
-  return `${dateStr}T${time}:00${sign}${abs}:00`;
+  const offsetMin = -new Date().getTimezoneOffset();
+  const sign = offsetMin >= 0 ? '+' : '-';
+  const absMin = Math.abs(offsetMin);
+  const hh = String(Math.floor(absMin / 60)).padStart(2, '0');
+  const mm = String(absMin % 60).padStart(2, '0');
+  return `${dateStr}T${time}:00${sign}${hh}:${mm}`;
 }
 
 /** Check whether a slot identified by date + time is in the past */
