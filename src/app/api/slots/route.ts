@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin';
-import { addMinutes, format, parseISO } from 'date-fns';
+import { addMinutes, parseISO } from 'date-fns';
+import { getRomeOffset } from '@/lib/date-utils';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -36,16 +37,8 @@ export async function GET(request: Request) {
   const { data: stylists } = await stylistQuery;
   if (!stylists?.length) return Response.json([]);
 
-  // Compute the local timezone offset for the given date (DST-safe)
-  const tzOffset = (() => {
-    const probe = new Date(`${date}T12:00:00`);
-    const offsetMin = -probe.getTimezoneOffset();
-    const sign = offsetMin >= 0 ? '+' : '-';
-    const absMin = Math.abs(offsetMin);
-    const hh = String(Math.floor(absMin / 60)).padStart(2, '0');
-    const mm = String(absMin % 60).padStart(2, '0');
-    return `${sign}${hh}:${mm}`;
-  })();
+  // DST-safe timezone offset for Europe/Rome (works regardless of server TZ)
+  const tzOffset = getRomeOffset(date);
 
   // Overall time range for queries (earliest open to latest close)
   const dayStart = new Date(`${date}T${salonOpen}:00${tzOffset}`);
