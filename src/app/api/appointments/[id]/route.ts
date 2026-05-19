@@ -9,8 +9,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const adminSupabase = createAdminClient();
   const body = await request.json();
 
-  // If start_time or stylist_id changed, check for conflicts
-  if (body.start_time || body.stylist_id) {
+  // If start_time, stylist_id, or service_id changed, check for conflicts
+  if (body.start_time || body.stylist_id || body.service_id) {
     const { data: existing } = await supabase
       .from('appointments')
       .select('stylist_id, service_id, salon_id, start_time')
@@ -32,13 +32,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       durationMinutes = service?.duration_minutes ?? null;
     }
 
-    if (newStartTime && durationMinutes) {
-      const endTime = addMinutes(new Date(newStartTime), durationMinutes).toISOString();
-
-      // Past booking check
+    if (newStartTime) {
+      // Past booking check (always run, even if duration unknown)
       if (new Date(newStartTime) < new Date()) {
         return Response.json({ error: 'Non puoi spostare un appuntamento nel passato' }, { status: 400 });
       }
+
+      if (!durationMinutes) {
+        return Response.json({ error: 'Servizio non trovato o senza durata' }, { status: 404 });
+      }
+
+      const endTime = addMinutes(new Date(newStartTime), durationMinutes).toISOString();
 
       // Time blocks check
       let blockQuery = adminSupabase
