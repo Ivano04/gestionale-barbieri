@@ -1,11 +1,11 @@
-import { createAdminClient } from '@/lib/supabase/admin';
+import { createServerSupabase } from '@/lib/supabase/server';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const salon_id = searchParams.get('salon_id');
   if (!salon_id) return Response.json({ error: 'salon_id required' }, { status: 400 });
 
-  const supabase = createAdminClient();
+  const supabase = await createServerSupabase();
   const { data, error } = await supabase
     .from('time_blocks')
     .select('*')
@@ -18,7 +18,14 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const supabase = createAdminClient();
+  const supabase = await createServerSupabase();
+
+  // Auth check
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const body = await request.json();
   const { data, error } = await supabase
     .from('time_blocks')
@@ -34,7 +41,14 @@ export async function DELETE(request: Request) {
   const id = searchParams.get('id');
   if (!id) return Response.json({ error: 'id required' }, { status: 400 });
 
-  const supabase = createAdminClient();
+  const supabase = await createServerSupabase();
+
+  // Auth check
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const { error } = await supabase.from('time_blocks').delete().eq('id', id);
   if (error) return Response.json({ error: error.message }, { status: 500 });
   return Response.json({ status: 'ok' });
