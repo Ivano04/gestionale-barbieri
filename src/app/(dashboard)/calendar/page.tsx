@@ -38,8 +38,18 @@ export default function CalendarPage() {
 
   // Time block handler
   async function handleDeleteBlock(blockId: string) {
-    await fetch(`/api/time-blocks?id=${blockId}`, { method: 'DELETE' });
-    refresh();
+    try {
+      const res = await fetch(`/api/time-blocks?id=${blockId}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast.success('Blocco rimosso');
+        refresh();
+      } else {
+        const err = await res.json();
+        toast.error(err.error || 'Errore rimozione blocco');
+      }
+    } catch {
+      toast.error('Errore di connessione');
+    }
   }
 
   function handleNewAppointment() {

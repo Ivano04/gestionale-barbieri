@@ -1,4 +1,5 @@
 import { createServerSupabase } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { sendN8nEvent } from '@/lib/sync-webhook';
 
 export async function GET(request: Request) {
@@ -82,17 +83,19 @@ export async function DELETE(request: Request) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  // Use admin client to bypass RLS for delete
+  const adminSupabase = createAdminClient();
+
   // Fetch salon_id before deleting (for n8n event)
-  const { data: existing } = await supabase
+  const { data: existing } = await adminSupabase
     .from('time_blocks')
     .select('salon_id')
     .eq('id', id)
     .single();
 
-  const { error } = await supabase.from('time_blocks').delete().eq('id', id);
+  const { error } = await adminSupabase.from('time_blocks').delete().eq('id', id);
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
-  // Fire-and-forget n8n webhook
   sendN8nEvent('time_block.deleted', {
     id,
     salon_id: existing?.salon_id,

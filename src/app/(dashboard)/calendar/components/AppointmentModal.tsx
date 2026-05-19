@@ -83,7 +83,56 @@ export function AppointmentModal({ appointment, services, clients, stylists, sal
 
         <div className="space-y-4 max-h-[80vh] overflow-y-auto">
 
-          {/* 1. Servizio */}
+          {/* 1. Cliente */}
+          <div>
+            <label className="text-sm font-medium text-gray-700">Cliente</label>
+            <div className="flex bg-gray-100 rounded-lg p-0.5 mt-1.5 mb-2">
+              <button onClick={() => setClientMode('existing')}
+                className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors ${clientMode === 'existing' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>
+                Cliente esistente
+              </button>
+              <button onClick={() => setClientMode('new')}
+                className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors ${clientMode === 'new' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>
+                Nuovo cliente
+              </button>
+            </div>
+
+            {clientMode === 'existing' ? (
+              <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.client_id || ''}
+                onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))}>
+                <option value="">Seleziona cliente...</option>
+                {clients.map(c => <option key={c.id} value={c.id}>{c.first_name} {c.last_name}{c.phone ? ` · ${c.phone}` : ''}</option>)}
+              </select>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <input type="text" placeholder="Nome *" value={newClient.first_name}
+                      onChange={e => { setNewClient({ ...newClient, first_name: e.target.value }); clearError('clientFirst'); }}
+                      className={`w-full px-3 py-2 border rounded-lg text-sm ${errors.clientFirst ? 'border-red-400' : ''}`} />
+                    {errors.clientFirst && <p className="text-red-500 text-xs mt-0.5">{errors.clientFirst}</p>}
+                  </div>
+                  <div className="flex-1">
+                    <input type="text" placeholder="Cognome *" value={newClient.last_name}
+                      onChange={e => { setNewClient({ ...newClient, last_name: e.target.value }); clearError('clientLast'); }}
+                      className={`w-full px-3 py-2 border rounded-lg text-sm ${errors.clientLast ? 'border-red-400' : ''}`} />
+                    {errors.clientLast && <p className="text-red-500 text-xs mt-0.5">{errors.clientLast}</p>}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <select value={clientPrefix} onChange={e => setClientPrefix(e.target.value)}
+                    className="px-2 py-2 border rounded-lg text-sm bg-gray-50 w-24">
+                    {countryCodes.slice(0, 8).map(c => <option key={c.code} value={c.code}>{c.flag} {c.code}</option>)}
+                  </select>
+                  <input type="tel" placeholder="Telefono" value={newClient.phone}
+                    onChange={e => setNewClient({ ...newClient, phone: e.target.value.replace(/[^\d\s\-\(\)]/g, '') })}
+                    className="flex-1 px-3 py-2 border rounded-lg text-sm" />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 2. Servizio */}
           <div>
             <label className="text-sm font-medium text-gray-700">Servizio</label>
             <select className={`w-full border rounded-lg px-3 py-2 mt-1 text-sm ${errors.service ? 'border-red-400' : ''}`}
@@ -95,7 +144,7 @@ export function AppointmentModal({ appointment, services, clients, stylists, sal
             {errors.service && <p className="text-red-500 text-xs mt-1">{errors.service}</p>}
           </div>
 
-          {/* 2. Operatore */}
+          {/* 3. Operatore */}
           <div>
             <label className="text-sm font-medium text-gray-700">Operatore</label>
             <select className={`w-full border rounded-lg px-3 py-2 mt-1 text-sm ${errors.stylist ? 'border-red-400' : ''}`}
@@ -107,7 +156,7 @@ export function AppointmentModal({ appointment, services, clients, stylists, sal
             {errors.stylist && <p className="text-red-500 text-xs mt-1">{errors.stylist}</p>}
           </div>
 
-          {/* 3. Data e Orario */}
+          {/* 4. Data e Orario */}
           <div>
             <label className="text-sm font-medium text-gray-700">Data e orario</label>
             {errors.time && <p className="text-red-500 text-xs mt-1">{errors.time}</p>}
@@ -154,55 +203,6 @@ export function AppointmentModal({ appointment, services, clients, stylists, sal
                     </button>
                   );
                 })}
-              </div>
-            )}
-          </div>
-
-          {/* 4. Cliente */}
-          <div>
-            <label className="text-sm font-medium text-gray-700">Cliente</label>
-            <div className="flex bg-gray-100 rounded-lg p-0.5 mt-1.5 mb-2">
-              <button onClick={() => setClientMode('existing')}
-                className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors ${clientMode === 'existing' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>
-                Cliente esistente
-              </button>
-              <button onClick={() => setClientMode('new')}
-                className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors ${clientMode === 'new' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>
-                Nuovo cliente
-              </button>
-            </div>
-
-            {clientMode === 'existing' ? (
-              <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.client_id || ''}
-                onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))}>
-                <option value="">Seleziona cliente...</option>
-                {clients.map(c => <option key={c.id} value={c.id}>{c.first_name} {c.last_name}{c.phone ? ` · ${c.phone}` : ''}</option>)}
-              </select>
-            ) : (
-              <div className="space-y-2">
-                <div className="flex gap-2">
-                  <div className="flex-1">
-                    <input type="text" placeholder="Nome *" value={newClient.first_name}
-                      onChange={e => { setNewClient({ ...newClient, first_name: e.target.value }); clearError('clientFirst'); }}
-                      className={`w-full px-3 py-2 border rounded-lg text-sm ${errors.clientFirst ? 'border-red-400' : ''}`} />
-                    {errors.clientFirst && <p className="text-red-500 text-xs mt-0.5">{errors.clientFirst}</p>}
-                  </div>
-                  <div className="flex-1">
-                    <input type="text" placeholder="Cognome *" value={newClient.last_name}
-                      onChange={e => { setNewClient({ ...newClient, last_name: e.target.value }); clearError('clientLast'); }}
-                      className={`w-full px-3 py-2 border rounded-lg text-sm ${errors.clientLast ? 'border-red-400' : ''}`} />
-                    {errors.clientLast && <p className="text-red-500 text-xs mt-0.5">{errors.clientLast}</p>}
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <select value={clientPrefix} onChange={e => setClientPrefix(e.target.value)}
-                    className="px-2 py-2 border rounded-lg text-sm bg-gray-50 w-24">
-                    {countryCodes.slice(0, 8).map(c => <option key={c.code} value={c.code}>{c.flag} {c.code}</option>)}
-                  </select>
-                  <input type="tel" placeholder="Telefono" value={newClient.phone}
-                    onChange={e => setNewClient({ ...newClient, phone: e.target.value.replace(/[^\d\s\-\(\)]/g, '') })}
-                    className="flex-1 px-3 py-2 border rounded-lg text-sm" />
-                </div>
               </div>
             )}
           </div>

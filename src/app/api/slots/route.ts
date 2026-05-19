@@ -18,5 +18,12 @@ export async function GET(request: Request) {
     date,
   });
 
-  return Response.json(slots);
+  // Filter out past slots for today
+  const now = new Date();
+  const filtered = slots.filter(s => {
+    const slotTime = new Date(`${date}T${s.time}:00`);
+    return slotTime > now;
+  });
+
+  return Response.json(filtered);
 }

@@ -62,6 +62,7 @@ export function WeekView({ date, stylists, appointments, timeBlocks, onSlotClick
           </div>
           {days.map((d, di) => {
             const dayOff = isDayOff(stylist, d);
+            const isPastDay = d < new Date(new Date().toDateString());
             const dayApps = appointments.filter(a =>
               a.status !== 'cancelled' && a.stylist_id === stylist.id && isSameDay(parseISO(a.start_time), d)
             );
@@ -72,13 +73,13 @@ export function WeekView({ date, stylists, appointments, timeBlocks, onSlotClick
             return (
               <div key={di}
                 className={`border-l p-1.5 min-h-[80px] ${
-                  dayOff ? 'bg-gray-100/70 cursor-default' :
+                  dayOff || isPastDay ? 'bg-gray-100/70 cursor-not-allowed opacity-40' :
                   dayBlocked ? 'bg-red-50/30 cursor-pointer' :
                   isSameDay(d, today) ? 'bg-blue-50/10 cursor-pointer' :
                   'hover:bg-gray-50/50 cursor-pointer'
                 }`}
                 onClick={() => {
-                  if (dayOff) return;
+                  if (dayOff || isPastDay) return;
                   if (dayBlocked) {
                     const block = timeBlocks.find(b => {
                       if (b.stylist_id && b.stylist_id !== stylist.id) return false;
