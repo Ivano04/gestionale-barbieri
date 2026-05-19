@@ -1,11 +1,12 @@
-import { createServerSupabase } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const salon_id = searchParams.get('salon_id');
   if (!salon_id) return Response.json({ error: 'salon_id required' }, { status: 400 });
 
-  const supabase = await createServerSupabase();
+  // Admin client required: aggregates appointments across all users of a salon
+  const supabase = createAdminClient();
   const now = new Date();
   const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);

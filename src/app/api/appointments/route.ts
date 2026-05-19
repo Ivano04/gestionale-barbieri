@@ -1,6 +1,7 @@
 import { createServerSupabase } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { addMinutes } from 'date-fns';
+import { getRomeOffset } from '@/lib/date-utils';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -13,8 +14,9 @@ export async function GET(request: Request) {
   }
 
   const supabase = await createServerSupabase();
-  const dayStart = new Date(`${date}T00:00:00+02:00`);
-  const dayEnd = new Date(`${date}T23:59:59+02:00`);
+  const tzOffset = getRomeOffset(date);
+  const dayStart = new Date(`${date}T00:00:00${tzOffset}`);
+  const dayEnd = new Date(`${date}T23:59:59${tzOffset}`);
 
   let query = supabase
     .from('appointments')
