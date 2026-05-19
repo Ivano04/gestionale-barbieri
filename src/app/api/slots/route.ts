@@ -36,9 +36,20 @@ export async function GET(request: Request) {
   const { data: stylists } = await stylistQuery;
   if (!stylists?.length) return Response.json([]);
 
+  // Compute the local timezone offset for the given date (DST-safe)
+  const tzOffset = (() => {
+    const probe = new Date(`${date}T12:00:00`);
+    const offsetMin = -probe.getTimezoneOffset();
+    const sign = offsetMin >= 0 ? '+' : '-';
+    const absMin = Math.abs(offsetMin);
+    const hh = String(Math.floor(absMin / 60)).padStart(2, '0');
+    const mm = String(absMin % 60).padStart(2, '0');
+    return `${sign}${hh}:${mm}`;
+  })();
+
   // Overall time range for queries (earliest open to latest close)
-  const dayStart = new Date(`${date}T${salonOpen}:00+02:00`);
-  const dayEnd = new Date(`${date}T${salonClose}:00+02:00`);
+  const dayStart = new Date(`${date}T${salonOpen}:00${tzOffset}`);
+  const dayEnd = new Date(`${date}T${salonClose}:00${tzOffset}`);
 
   const { data: appointments } = await supabase
     .from('appointments').select('stylist_id, start_time, end_time')
@@ -63,8 +74,8 @@ export async function GET(request: Request) {
     // Use stylist hours if set, otherwise fallback to salon hours
     const sOpen = stylistDay?.open || salonOpen;
     const sClose = stylistDay?.close || salonClose;
-    const sStart = new Date(`${date}T${sOpen}:00+02:00`);
-    const sEnd = new Date(`${date}T${sClose}:00+02:00`);
+    const sStart = new Date(`${date}T${sOpen}:00${tzOffset}`);
+    const sEnd = new Date(`${date}T${sClose}:00${tzOffset}`);
 
     let current = sStart;
     while (current < sEnd) {
