@@ -1,7 +1,7 @@
 'use client';
 import { format, addDays, subDays, addWeeks, subWeeks } from 'date-fns';
 import { it } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, Plus, Lock, Unlock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Lock } from 'lucide-react';
 
 interface Props {
   date: Date;
