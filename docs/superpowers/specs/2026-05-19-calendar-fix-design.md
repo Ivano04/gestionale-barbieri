@@ -18,6 +18,8 @@
 
 Prima di espandere integrazioni e multi-salone: rendere il core PERFETTO. Calendario, booking, clienti, servizi devono funzionare senza bug e con UX eccellente. Le integrazioni (Treatwell, GHL, n8n) restano attive ma non vengono modificate in questa fase.
 
+**Principio**: Non rifare da zero. Costruire sulla direzione già presa nei deployment recenti: mobile-first responsive, week view raffinata, ore passate grigie, protezioni blocchi, hydration-safe rendering.
+
 ## 1. Timezone & Date Utils
 
 **Problema**: `+02:00` hardcodato in slots API, calendar page, modal. D'inverno (`+01:00`) tutti gli orari shiftano di 1 ora.
@@ -62,24 +64,27 @@ Consumer:
 
 ## 4. Calendar UX
 
-**Problema**: Slot invisibili, click per cancellare blocchi pericoloso, card scarne, navigazione date scomoda.
+**Base di partenza**: DayView e WeekView già esistenti con mobile-first responsive, ore passate grigie, protezioni blocchi. MonthView rimosso — non serve.
 
-**Miglioramenti DayView**:
+**Miglioramenti DayView** (da codice esistente):
 - Slot liberi: bordo tratteggiato + "+ Prenota" sempre visibile (non solo hover)
 - Blocchi: click → dialog conferma "Rimuovere il blocco?" invece di rimozione immediata
-- Card: ora in bold, servizio, prezzo, icona canale (📞🚶💬)
-- Riga ora corrente evidenziata con animazione
+- Card: ora in bold, servizio, prezzo, icona canale
+- Riga ora corrente già evidenziata (da `9699830`), mantenere e rifinire
 
-**Miglioramenti WeekView**:
+**Miglioramenti WeekView** (da codice esistente):
 - Card appuntamento più ricche (come DayView)
 - Blocchi con confirm dialog
-- Oggi evidenziato con bordo blu spesso
+- Oggi già evidenziato (da `a98a349`), mantenere
 
-**Miglioramenti CalendarHeader**:
+**Miglioramenti CalendarHeader** (da codice esistente):
 - Tasto "Oggi" per tornare alla data corrente
+- Toggle Day/Week (rimuovere Month)
 - Date picker più accessibile
 
 **File toccati**: `calendar/components/DayView.tsx`, `WeekView.tsx`, `CalendarHeader.tsx`, `AppointmentCard.tsx`
+**File rimossi**: `calendar/components/MonthView.tsx`
+**Modifiche correlate**: `calendar/page.tsx` — rimuovere import MonthView e stato view 'month'
 
 ## 5. Modal UX
 
