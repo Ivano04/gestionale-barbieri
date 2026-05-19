@@ -44,6 +44,44 @@ export async function POST(request: Request) {
 
   const endTime = addMinutes(new Date(body.start_time), service.duration_minutes).toISOString();
 
+  // Past booking check
+  if (new Date(body.start_time) < new Date()) {
+    return Response.json({ error: 'Non puoi prenotare nel passato' }, { status: 400 });
+  }
+
+  // Salon hours check
+  const dateStr = body.start_time.split('T')[0];
+  const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+  const dayName = dayNames[new Date(dateStr + 'T12:00:00').getDay()];
+
+  const { data: salonHoursData } = await supabase
+    .from('salons')
+    .select('working_hours, open_time, close_time')
+    .eq('id', body.salon_id)
+    .single();
+
+  if (salonHoursData) {
+    let wh = (salonHoursData.working_hours || {}) as Record<string, any>;
+    if (typeof wh === 'string') try { wh = JSON.parse(wh); } catch {}
+
+    if (wh?.[dayName] === null) {
+      return Response.json({ error: 'Salone chiuso in questa data' }, { status: 400 });
+    }
+
+    const openTime = wh?.[dayName]?.open || salonHoursData.open_time || '09:00';
+    const closeTime = wh?.[dayName]?.close || salonHoursData.close_time || '19:00';
+
+    const slotTime = body.start_time.split('T')[1]?.substring(0, 5) || '';
+    if (slotTime < openTime || slotTime >= closeTime) {
+      return Response.json({ error: `Orario fuori dalla fascia ${openTime}-${closeTime}` }, { status: 400 });
+    }
+
+    const endSlotTime = endTime.split('T')[1]?.substring(0, 5) || '';
+    if (endSlotTime > closeTime) {
+      return Response.json({ error: `L'appuntamento sfora l'orario di chiusura (${closeTime})` }, { status: 400 });
+    }
+  }
+
   // Check time blocks using admin client (bypass RLS)
   const adminSupabase = createAdminClient();
   let blockQuery = adminSupabase
