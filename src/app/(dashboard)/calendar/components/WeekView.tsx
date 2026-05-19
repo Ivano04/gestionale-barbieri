@@ -2,6 +2,7 @@
 import { format, startOfWeek, addDays, parseISO, isSameDay } from 'date-fns';
 import { it } from 'date-fns/locale';
 import type { Appointment, User, TimeBlock } from '@/lib/types';
+import { buildSlotTime } from '@/lib/date-utils';
 
 interface Props {
   date: Date;
@@ -70,9 +71,11 @@ export function WeekView({ date, stylists, appointments, timeBlocks, onSlotClick
                       if (b.stylist_id && b.stylist_id !== stylist.id) return false;
                       return isSameDay(parseISO(b.start_time), d) || isSameDay(parseISO(b.end_time), d);
                     });
-                    if (block) onDeleteBlock(block.id);
+                    if (block && confirm(`Rimuovere il blocco${block.reason ? ` "${block.reason}"` : ''}?`)) {
+                      onDeleteBlock(block.id);
+                    }
                   } else {
-                    onSlotClick(stylist.id, format(d, "yyyy-MM-dd'T'08:00:00+02:00"));
+                    onSlotClick(stylist.id, buildSlotTime(format(d, 'yyyy-MM-dd'), '08:00'));
                   }
                 }}>
                 {dayApps.map(app => {
