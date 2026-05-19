@@ -1,12 +1,22 @@
-# Calendar & UX Fix — Design Spec
+# Phase 1 — Stabilize Core & UX — Design Spec
 
 **Date**: 2026-05-19
 **Status**: Approved
-**Approach**: B — Refactor strutturale con mantenimento architettura esistente
+**Parent Vision**: [Hairforce Booking Hub](./2026-05-18-hairforce-booking-hub-design.md)
 
-## Overview
+## Product Vision
 
-Sistemare bug critici di timezone, sync e sicurezza nel calendario, unificare la logica slot, migliorare UX di calendario/modale/navigazione. Mantenere l'architettura attuale (Next.js App Router + Supabase + API routes).
+**LocalVista Gestionale Parrucchieri** — un "Treatwell 2.0 ibrido" multisalone.
+
+- Booking system proprietario con calendario unificato (indipendente da Treatwell)
+- Connessione a **GoHighLevel** (CRM backbone: contatti, appuntamenti, automazioni SMS/WhatsApp)
+- Connessione a **n8n** (webhook per automazioni: `appointment.created`, `appointment.cancelled`, `client.created`)
+- Integrazione **Treatwell** in lettura (reverse-engineered API) per onboardare clienti dal marketplace
+- L'integrazione Treatwell è SECONDARIA — l'app deve funzionare in maniera perfetta da sola per tutte le funzioni base
+
+## Phase 1 Goal
+
+Prima di espandere integrazioni e multi-salone: rendere il core PERFETTO. Calendario, booking, clienti, servizi devono funzionare senza bug e con UX eccellente. Le integrazioni (Treatwell, GHL, n8n) restano attive ma non vengono modificate in questa fase.
 
 ## 1. Timezone & Date Utils
 
@@ -120,12 +130,14 @@ Consumer:
 
 **File toccati**: `app/layout.tsx` (metadata), `app/favicon.ico`, `login/page.tsx`
 
-## Out of Scope
+## Out of Scope (Phase 2+)
 
-- Supabase Realtime (non necessario, focus+refresh basta)
-- Riscrittura completa UI (troppo rischioso in una passata)
-- Modifiche a Treatwell/GHL sync
-- Multi-tenant avanzato (resta come oggi: un salone per login)
+- Integrazione Treatwell attiva (polling, sync, write-back) — resta spenta
+- GHL sync — resta com'è, non si tocca
+- n8n webhook — restano com'è, non si tocca
+- Vista multi-salone centralizzata
+- Supabase Realtime
+- App mobile / notifiche push
 
 ## Implementation Order
 
