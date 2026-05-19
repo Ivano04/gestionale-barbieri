@@ -110,7 +110,28 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createServerSupabase();
-  const { error } = await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', id);
+
+  // Fetch external IDs before cancelling
+  const { data: existing } = await supabase
+    .from('appointments')
+    .select('ghl_appointment_id, treatwell_appointment_id, salon_id')
+    .eq('id', id)
+    .single();
+
+  const { error } = await supabase
+    .from('appointments')
+    .update({ status: 'cancelled' })
+    .eq('id', id);
+
   if (error) return Response.json({ error: error.message }, { status: 500 });
+
+  // Fire-and-forget n8n event so it can cancel on GHL + release Treatwell slot
+  sendN8nEvent('appointment.cancelled', {
+    id,
+    salon_id: existing?.salon_id,
+    ghl_appointment_id: existing?.ghl_appointment_id,
+    treatwell_appointment_id: existing?.treatwell_appointment_id,
+  });
+
   return Response.json({ status: 'ok' });
 }
