@@ -1,5 +1,3 @@
-// src/lib/sync-webhook.ts
-
 export type N8nEvent =
   | 'appointment.created'
   | 'appointment.updated'
@@ -31,7 +29,8 @@ export function sendN8nEvent(event: N8nEvent, data: Record<string, unknown>): vo
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
-  }).catch(() => {
-    // n8n unreachable — salon keeps working, n8n will catch up via polling or retry
+    signal: AbortSignal.timeout(5000),
+  }).catch((err) => {
+    console.warn('[n8n] webhook send failed (salon operations unaffected):', err);
   });
 }
