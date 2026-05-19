@@ -1,12 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 
-export interface SlotRequest {
-  salon_id: string;
-  service_id: string;
-  stylist_id?: string;
-  date: string;
-}
-
 export async function fetchSalonHours(salonId: string, dayName: string) {
   const supabase = createAdminClient();
   const { data: salon } = await supabase
