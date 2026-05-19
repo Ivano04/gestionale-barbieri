@@ -6,7 +6,7 @@ import { buildSlotTime } from '@/lib/date-utils';
 
 interface Props {
   date: Date;
-  stylists: Pick<User, 'id' | 'full_name'>[];
+  stylists: Pick<User, 'id' | 'full_name' | 'working_hours'>[];
   appointments: Appointment[];
   timeBlocks: TimeBlock[];
   onSlotClick: (stylistId: string, time: string) => void;
@@ -25,6 +25,14 @@ export function WeekView({ date, stylists, appointments, timeBlocks, onSlotClick
   const weekStart = startOfWeek(date, { weekStartsOn: 1 });
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const today = new Date();
+
+  function isDayOff(stylist: typeof stylists[0], d: Date): boolean {
+    const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    const dayName = dayNames[d.getDay()];
+    let swh = (stylist.working_hours || {}) as Record<string, any>;
+    if (typeof swh === 'string') try { swh = JSON.parse(swh); } catch {}
+    return Object.keys(swh).length > 0 && swh?.[dayName] === null;
+  }
 
   if (stylists.length === 0) {
     return <div className="p-12 text-center text-gray-400 bg-white rounded-xl border">Nessun operatore configurato</div>;
@@ -53,6 +61,7 @@ export function WeekView({ date, stylists, appointments, timeBlocks, onSlotClick
             <span className="text-xs text-gray-400 ml-auto">{appointments.filter(a => a.stylist_id === stylist.id && a.status !== 'cancelled' && isSameDay(parseISO(a.start_time), weekStart) || isSameDay(parseISO(a.start_time), addDays(weekStart, 1))).length || ''}</span>
           </div>
           {days.map((d, di) => {
+            const dayOff = isDayOff(stylist, d);
             const dayApps = appointments.filter(a =>
               a.status !== 'cancelled' && a.stylist_id === stylist.id && isSameDay(parseISO(a.start_time), d)
             );
@@ -62,10 +71,14 @@ export function WeekView({ date, stylists, appointments, timeBlocks, onSlotClick
             });
             return (
               <div key={di}
-                className={`border-l p-1.5 min-h-[80px] cursor-pointer transition-colors ${
-                  dayBlocked ? 'bg-red-50/30' : isSameDay(d, today) ? 'bg-blue-50/10' : 'hover:bg-gray-50/50'
+                className={`border-l p-1.5 min-h-[80px] ${
+                  dayOff ? 'bg-gray-100/70 cursor-default' :
+                  dayBlocked ? 'bg-red-50/30 cursor-pointer' :
+                  isSameDay(d, today) ? 'bg-blue-50/10 cursor-pointer' :
+                  'hover:bg-gray-50/50 cursor-pointer'
                 }`}
                 onClick={() => {
+                  if (dayOff) return;
                   if (dayBlocked) {
                     const block = timeBlocks.find(b => {
                       if (b.stylist_id && b.stylist_id !== stylist.id) return false;
@@ -78,7 +91,10 @@ export function WeekView({ date, stylists, appointments, timeBlocks, onSlotClick
                     onSlotClick(stylist.id, buildSlotTime(format(d, 'yyyy-MM-dd'), '08:00'));
                   }
                 }}>
-                {dayApps.map(app => {
+                {dayOff && (
+                  <div className="text-[10px] text-gray-400 text-center py-4">Riposo</div>
+                )}
+                {!dayOff && dayApps.map(app => {
                   const sc = sourceColors[app.source] || '#6b7280';
                   return (
                     <div key={app.id}

@@ -9,7 +9,7 @@ export interface CalendarData {
   appointments: Appointment[];
   services: Service[];
   clients: Client[];
-  stylists: Pick<User, 'id' | 'full_name'>[];
+  stylists: Pick<User, 'id' | 'full_name' | 'working_hours'>[];
   timeBlocks: TimeBlock[];
   salonHours: { open: string; close: string };
   loading: boolean;
@@ -49,7 +49,7 @@ export function useCalendarData(salonId: string, date: Date | null) {
         { data: salonData },
       ] = await Promise.all([
         supabase.from('clients').select('*').eq('salon_id', salonId).order('last_name'),
-        supabase.from('users').select('id, full_name').eq('salon_id', salonId).eq('role', 'stylist'),
+        supabase.from('users').select('id, full_name, working_hours').eq('salon_id', salonId).eq('role', 'stylist'),
         supabase.from('salons').select('working_hours, open_time, close_time').eq('id', salonId).single(),
       ]);
 

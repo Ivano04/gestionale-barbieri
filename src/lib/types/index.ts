@@ -27,6 +27,7 @@ export interface User {
   role: UserRole;
   full_name: string;
   avatar_url: string | null;
+  working_hours: Record<string, { open: string; close: string } | null> | null;
   created_at: string;
 }
 

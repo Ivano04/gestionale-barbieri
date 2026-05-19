@@ -5,7 +5,7 @@ import type { Appointment, User, TimeBlock } from '@/lib/types';
 
 interface Props {
   date: Date;
-  stylists: Pick<User, 'id' | 'full_name'>[];
+  stylists: Pick<User, 'id' | 'full_name' | 'working_hours'>[];
   appointments: Appointment[];
   timeBlocks: TimeBlock[];
   salonHours: { open: string; close: string };
@@ -18,6 +18,27 @@ const STYLIST_COLORS = ['#f472b6', '#60a5fa', '#34d399', '#a78bfa', '#fbbf24'];
 
 function isToday(d: Date): boolean {
   return format(d, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
+}
+
+function getStylistHours(
+  stylist: Pick<User, 'id' | 'full_name' | 'working_hours'>,
+  salonHours: { open: string; close: string },
+  date: Date
+): { open: string; close: string } | null {
+  const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+  const dayName = dayNames[date.getDay()];
+
+  let swh = (stylist.working_hours || {}) as Record<string, any>;
+  if (typeof swh === 'string') try { swh = JSON.parse(swh); } catch {}
+  const stylistDay = swh?.[dayName];
+
+  // null means day off
+  if (Object.keys(swh).length > 0 && stylistDay === null) return null;
+
+  return {
+    open: stylistDay?.open || salonHours.open,
+    close: stylistDay?.close || salonHours.close,
+  };
 }
 
 export function DayView({ date, stylists, appointments, timeBlocks, salonHours, onSlotClick, onAppointmentClick, onDeleteBlock }: Props) {
@@ -57,7 +78,21 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonHours, 
           ))}
         </div>
 
-        {stylists.map(stylist => (
+        {stylists.map(stylist => {
+          const stHours = getStylistHours(stylist, salonHours, date);
+          const openH = stHours ? parseInt(stHours.open.split(':')[0]) : 0;
+          const closeH = stHours ? parseInt(stHours.close.split(':')[0]) : 0;
+          const hours = stHours ? Array.from({ length: closeH - openH }, (_, i) => i + openH) : [];
+
+          if (stHours === null) {
+            return (
+              <div key={stylist.id} className="flex-1 border-l border-gray-100">
+                <div className="p-4 text-center text-sm text-gray-400">Giorno libero</div>
+              </div>
+            );
+          }
+
+          return (
           <div key={stylist.id} className="flex-1 border-l border-gray-100">
             {hours.map(h => {
               const slotStart = setMinutes(setHours(date, h), 0);
@@ -116,7 +151,8 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonHours, 
               );
             })}
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
