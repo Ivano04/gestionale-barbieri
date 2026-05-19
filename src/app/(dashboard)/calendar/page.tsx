@@ -76,14 +76,20 @@ export default function CalendarPage() {
     }
   }
 
-  function handleDelete(id: string) {
+  async function handleDelete(id: string) {
     setSelectedAppointment(null);
-    fetch(`/api/appointments/${id}`, { method: 'DELETE' }).then(() => {
-      refresh();
-    }).catch(() => {
-      toast.error('Errore cancellazione');
-      refresh();
-    });
+    try {
+      const res = await fetch(`/api/appointments/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast.success('Appuntamento cancellato');
+      } else {
+        const err = await res.json();
+        toast.error(err.error || 'Errore cancellazione');
+      }
+    } catch {
+      toast.error('Errore di connessione');
+    }
+    refresh();
   }
 
   return (
