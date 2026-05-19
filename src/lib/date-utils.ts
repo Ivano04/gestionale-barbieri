@@ -8,7 +8,8 @@ export function toLocalTimeString(iso: string): string {
 
 /** Build a full ISO string from a date string and a HH:mm time, using the local timezone offset */
 export function buildSlotTime(dateStr: string, time: string): string {
-  const offsetMin = -new Date().getTimezoneOffset();
+  const slotDate = new Date(`${dateStr}T${time}:00`);
+  const offsetMin = -slotDate.getTimezoneOffset();
   const sign = offsetMin >= 0 ? '+' : '-';
   const absMin = Math.abs(offsetMin);
   const hh = String(Math.floor(absMin / 60)).padStart(2, '0');
