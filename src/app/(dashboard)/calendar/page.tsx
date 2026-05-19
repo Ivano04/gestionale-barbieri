@@ -1,31 +1,26 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { CalendarHeader } from './components/CalendarHeader';
 import { DayView } from './components/DayView';
 import { WeekView } from './components/WeekView';
 import { AppointmentModal } from './components/AppointmentModal';
-import type { Appointment, Service, Client, User, TimeBlock } from '@/lib/types';
+import type { Appointment } from '@/lib/types';
 import { format, parseISO } from 'date-fns';
 import { Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { todayDateStr, buildSlotTime } from '@/lib/date-utils';
+import { useCalendarData } from '@/lib/hooks/useCalendarData';
 
 export default function CalendarPage() {
   const [date, setDate] = useState<Date | null>(null);
   // Hydration-safe: initialize date on client only
   useEffect(() => { if (!date) setDate(new Date()); }, []);
   const [view, setView] = useState<'day' | 'week'>('day');
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [services, setServices] = useState<Service[]>([]);
-  const [clients, setClients] = useState<Client[]>([]);
-  const [stylists, setStylists] = useState<Pick<User, 'id' | 'full_name'>[]>([]);
-  const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([]);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [showBlockModal, setShowBlockModal] = useState(false);
   const [blockForm, setBlockForm] = useState({ stylist_id: '', date: todayDateStr(), start: '12:00', end: '13:00', reason: '' });
   const [salonId, setSalonId] = useState('');
-  const [salonHours, setSalonHours] = useState({ open: '09:00', close: '19:00' });
   const supabase = createClient();
 
   useEffect(() => {
@@ -37,47 +32,14 @@ export default function CalendarPage() {
     });
   }, []);
 
+  const { appointments, services, clients, stylists, timeBlocks, salonHours, loading, refresh } = useCalendarData(salonId, date);
+
   if (!date) return <div className="p-8 text-center text-gray-400">Caricamento calendario...</div>;
-
-  const loadData = useCallback(async () => {
-    if (!salonId || !date) return;
-    const dateStr = format(date, 'yyyy-MM-dd');
-    const [appsRes, svcRes] = await Promise.all([
-      fetch(`/api/appointments?salon_id=${salonId}&date=${dateStr}`).then(r => r.json()),
-      fetch(`/api/services?salon_id=${salonId}`).then(r => r.json()),
-    ]);
-    const { data: clientsData } = await supabase.from('clients').select('*').eq('salon_id', salonId).order('last_name');
-    const { data: stylistsData } = await supabase.from('users').select('id, full_name').eq('salon_id', salonId).eq('role', 'stylist');
-    setAppointments(Array.isArray(appsRes) ? appsRes : []);
-    setServices(Array.isArray(svcRes) ? svcRes : []);
-    setClients(clientsData || []);
-    setStylists(stylistsData || []);
-    // Fetch time blocks & salon hours
-    fetch(`/api/time-blocks?salon_id=${salonId}`).then(r => r.json()).then(d => {
-      if (Array.isArray(d)) setTimeBlocks(d);
-    });
-    const { data: salonData } = await supabase.from('salons').select('working_hours, open_time, close_time').eq('id', salonId).single();
-    if (salonData) {
-      const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-      const todayName = dayNames[date.getDay()];
-      const dayHours = salonData.working_hours?.[todayName];
-      if (salonData.working_hours?.[todayName] === null) {
-        setSalonHours({ open: '00:00', close: '00:00' }); // closed
-      } else {
-        setSalonHours({
-          open: dayHours?.open || salonData.open_time || '09:00',
-          close: dayHours?.close || salonData.close_time || '19:00'
-        });
-      }
-    }
-  }, [salonId, date]);
-
-  useEffect(() => { loadData(); }, [loadData]);
 
   // Time block handler
   async function handleDeleteBlock(blockId: string) {
-    setTimeBlocks(prev => prev.filter(b => b.id !== blockId));
     await fetch(`/api/time-blocks?id=${blockId}`, { method: 'DELETE' });
+    refresh();
   }
 
   function handleNewAppointment() {
@@ -97,67 +59,36 @@ export default function CalendarPage() {
     // Close modal instantly
     setSelectedAppointment(null);
 
-    // Optimistic: add to state immediately with temp ID
-    const tempId = 'temp_' + Date.now();
-    const optimistic: Appointment = {
-      id: tempId,
-      salon_id: salonId,
-      client_id: form.client_id || null,
-      stylist_id: form.stylist_id,
-      service_id: form.service_id,
-      start_time: form.start_time,
-      end_time: '', // will be fixed on reload
-      status: 'confirmed',
-      source: body.source,
-      notes: form.notes || null,
-      treatwell_appointment_id: null,
-      ghl_appointment_id: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      // Attach partial relations for display
-      client: form.client ? { id: '', salon_id: salonId, first_name: form.client.first_name, last_name: form.client.last_name, phone: form.client.phone || '', email: null, notes: null, ghl_contact_id: null, treatwell_client_id: null, created_at: '' } : undefined,
-      service: services.find(s => s.id === form.service_id),
-      stylist: stylists.find(s => s.id === form.stylist_id) as any,
-    };
-
-    if (isNew) setAppointments(prev => [...prev, optimistic]);
-
     // Save in background
     const url = isNew ? '/api/appointments' : `/api/appointments/${form.id}`;
     const method = isNew ? 'POST' : 'PATCH';
     try {
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       if (res.ok) {
-        const saved = await res.json();
-        if (isNew) {
-          setAppointments(prev => prev.map(a => a.id === tempId ? saved : a));
-        } else {
-          setAppointments(prev => prev.map(a => a.id === saved.id ? { ...a, ...saved } : a));
-        }
         toast.success(isNew ? 'Creato' : 'Aggiornato');
+        refresh();
       } else {
-        setAppointments(prev => prev.filter(a => a.id !== tempId));
         const err = await res.json();
         toast.error(err.error || 'Errore');
-        if (isNew) setSelectedAppointment(form as any);
       }
     } catch {
-      setAppointments(prev => prev.filter(a => a.id !== tempId));
       toast.error('Errore di connessione');
     }
   }
 
   function handleDelete(id: string) {
     setSelectedAppointment(null);
-    setAppointments(prev => prev.map(a => a.id === id ? { ...a, status: 'cancelled' } : a));
-    fetch(`/api/appointments/${id}`, { method: 'DELETE' }).catch(() => {
-      loadData(); // reload on failure
+    fetch(`/api/appointments/${id}`, { method: 'DELETE' }).then(() => {
+      refresh();
+    }).catch(() => {
       toast.error('Errore cancellazione');
+      refresh();
     });
   }
 
   return (
     <div>
+      {loading && <div className="h-1 bg-blue-100 w-full overflow-hidden"><div className="h-full bg-blue-500 animate-pulse" style={{ width: '60%' }} /></div>}
       <CalendarHeader date={date} view={view} onDateChange={setDate} onViewChange={setView} onNewAppointment={handleNewAppointment} onNewBlock={() => setShowBlockModal(true)} />
       <div className="mx-0 md:mx-4 mt-0 md:mt-4">
         {view === 'day' && (
@@ -207,8 +138,8 @@ export default function CalendarPage() {
                         {b.reason && <span className="text-gray-400 ml-1">· {b.reason}</span>}
                       </div>
                       <button onClick={async () => {
-                        setTimeBlocks(prev => prev.filter(x => x.id !== b.id));
                         await fetch(`/api/time-blocks?id=${b.id}`, { method: 'DELETE' });
+                        refresh();
                       }} className="text-red-500 hover:bg-red-100 p-1 rounded">
                         <Trash2 size={12} />
                       </button>
@@ -255,9 +186,8 @@ export default function CalendarPage() {
                       }),
                     });
                     if (res.ok) {
-                      const block = await res.json();
-                      setTimeBlocks(prev => [...prev, block]);
                       setBlockForm({ stylist_id: '', date: todayDateStr(), start: '12:00', end: '13:00', reason: '' });
+                      refresh();
                     } else {
                       toast.error('Errore creazione blocco');
                     }
