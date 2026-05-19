@@ -222,56 +222,6 @@ if (blocks?.length) {
 }
 ```
 
-- [ ] **Step 2: Add past booking check + salon hours check to POST**
-
-After the service lookup and before the time_blocks check, add these validations:
-
-```typescript
-// Add after line 43 (after service lookup), before the time_blocks check
-
-// Past booking check
-if (new Date(body.start_time) < new Date()) {
-  return Response.json({ error: 'Non puoi prenotare nel passato' }, { status: 400 });
-}
-
-// Salon hours check
-import { getRomeOffset } from '@/lib/date-utils';
-
-const tzOffset = getRomeOffset(body.start_time.split('T')[0]);
-const dateStr = body.start_time.split('T')[0];
-const { data: salonHours } = await supabase
-  .from('salons')
-  .select('working_hours, open_time, close_time')
-  .eq('id', body.salon_id)
-  .single();
-
-if (salonHours) {
-  const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-  const dayName = dayNames[new Date(dateStr + 'T12:00:00').getDay()];
-  let wh = (salonHours.working_hours || {}) as Record<string, any>;
-  if (typeof wh === 'string') try { wh = JSON.parse(wh); } catch {}
-  const dayHours = wh?.[dayName];
-
-  if (wh?.[dayName] === null) {
-    return Response.json({ error: 'Salone chiuso in questa data' }, { status: 400 });
-  }
-
-  const openTime = dayHours?.open || salonHours.open_time || '09:00';
-  const closeTime = dayHours?.close || salonHours.close_time || '19:00';
-
-  const slotTime = body.start_time.split('T')[1]?.substring(0, 5) || '';
-  if (slotTime < openTime || slotTime >= closeTime) {
-    return Response.json({ error: `Orario fuori dalla fascia ${openTime}-${closeTime}` }, { status: 400 });
-  }
-
-  // Check end_time is also within hours
-  const endSlotTime = endTime.split('T')[1]?.substring(0, 5) || '';
-  if (endSlotTime > closeTime) {
-    return Response.json({ error: `L'appuntamento sfora l'orario di chiusura (${closeTime})` }, { status: 400 });
-  }
-}
-```
-
 - [ ] **Step 2: Add past booking and salon hours validation to POST**
 
 Insert these lines in `src/app/api/appointments/route.ts` after line 45 (`const endTime = ...`) and before line 47 (the time_blocks check):
