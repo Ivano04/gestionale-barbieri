@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Hairforce',
-  description: 'Gestione salone parrucchieri',
+  title: 'LocalVista Gestionale Parrucchieri',
+  description: 'Piattaforma gestionale per saloni di parrucchieri',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
