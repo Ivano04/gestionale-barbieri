@@ -152,8 +152,11 @@ export default function CalendarPage() {
                         {b.reason && <span className="text-gray-400 ml-1">· {b.reason}</span>}
                       </div>
                       <button onClick={async () => {
-                        await fetch(`/api/time-blocks?id=${b.id}`, { method: 'DELETE' });
-                        refresh();
+                        try {
+                          const res = await fetch(`/api/time-blocks?id=${b.id}`, { method: 'DELETE' });
+                          if (res.ok) { toast.success('Blocco rimosso'); refresh(); }
+                          else { const err = await res.json(); toast.error(err.error || 'Errore'); }
+                        } catch { toast.error('Errore di connessione'); }
                       }} className="text-red-500 hover:bg-red-100 p-1 rounded">
                         <Trash2 size={12} />
                       </button>

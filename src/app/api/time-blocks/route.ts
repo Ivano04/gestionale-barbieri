@@ -28,9 +28,10 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json();
+  const adminSupabase = createAdminClient();
 
-  // Check for conflicting appointments
-  const conflictQuery = supabase
+  // Check for conflicting appointments (admin client bypasses RLS)
+  const conflictQuery = adminSupabase
     .from('appointments')
     .select('id')
     .eq('salon_id', body.salon_id)
@@ -50,7 +51,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const { data, error } = await supabase
+  // Insert with admin client (bypass RLS)
+  const { data, error } = await adminSupabase
     .from('time_blocks')
     .insert(body)
     .select()

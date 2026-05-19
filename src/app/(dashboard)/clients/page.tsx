@@ -1,11 +1,12 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { Search, Plus, X, Pencil, Trash2, History, Phone } from 'lucide-react';
+import { Search, Plus, X, Pencil, Trash2, History } from 'lucide-react';
 import type { Client, Appointment } from '@/lib/types';
 import { formatPhone, countryCodes } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 import { it } from 'date-fns/locale';
+import { toast } from 'sonner';
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([]);
@@ -55,9 +56,17 @@ export default function ClientsPage() {
     const data = { ...form, phone: formatPhone(prefix + form.phone) };
     setSaving(true);
     if (editing) {
-      await supabase.from('clients').update(data).eq('id', editing.id);
+      await fetch('/api/clients', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editing.id, ...data }),
+      });
     } else {
-      await supabase.from('clients').insert({ salon_id: salonId, ...data });
+      await fetch('/api/clients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ salon_id: salonId, ...data }),
+      });
     }
     setSaving(false);
     setShowForm(false);
@@ -66,15 +75,19 @@ export default function ClientsPage() {
 
   async function handleDelete(id: string) {
     setDeleting(id);
-    // Check if client has appointments
-    const { data: apps } = await supabase.from('appointments').select('id').eq('client_id', id).limit(1);
-    if (apps?.length) {
-      // Soft delete: just mark as inactive (or we could disallow)
-      if (!confirm('Questo cliente ha appuntamenti. Vuoi comunque eliminarlo?')) { setDeleting(null); return; }
+    try {
+      const res = await fetch(`/api/clients?id=${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast.success('Cliente eliminato');
+        loadClients(salonId);
+      } else {
+        const err = await res.json();
+        toast.error(err.error || 'Errore eliminazione');
+      }
+    } catch {
+      toast.error('Errore di connessione');
     }
-    await supabase.from('clients').delete().eq('id', id);
     setDeleting(null);
-    loadClients(salonId);
   }
 
   async function showHistory(c: Client) {
