@@ -102,12 +102,15 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonHours, 
                 const start = parseISO(a.start_time);
                 return a.stylist_id === stylist.id && start >= slotStart && start < slotEnd;
               });
-              const isBlocked = timeBlocks.some(b => {
-                if (b.stylist_id && b.stylist_id !== stylist.id) return false;
+              const matchingBlock = timeBlocks.find(b => {
                 const bStart = parseISO(b.start_time);
                 const bEnd = parseISO(b.end_time);
-                return slotStart < bEnd && slotEnd > bStart;
+                if (!(slotStart < bEnd && slotEnd > bStart)) return false;
+                const bStylist = b.stylist_id;
+                return bStylist === stylist.id || bStylist === null;
               });
+              const isBlocked = !!matchingBlock;
+              const blockLabel = matchingBlock?.reason || 'Non disp.';
               const isCurrentHour = today && new Date().getHours() === h;
               const isPastHour = today && slotEnd < new Date();
 
@@ -120,11 +123,9 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonHours, 
                   onClick={() => {
                     if (isPastHour) return;
                     if (isBlocked) {
-                      const block = timeBlocks.find(b => {
-                        const bStart = parseISO(b.start_time); const bEnd = parseISO(b.end_time);
-                        return b.stylist_id === stylist.id && slotStart < bEnd && slotEnd > bStart;
-                      });
-                      if (block && confirm('Rimuovere il blocco...?')) onDeleteBlock(block.id);
+                      if (matchingBlock && confirm(
+                        `Rimuovere il blocco${matchingBlock.reason ? ` "${matchingBlock.reason}"` : ''}${matchingBlock.stylist_id ? '' : ' (tutto il salone)'}?`
+                      )) onDeleteBlock(matchingBlock.id);
                     } else if (slotApps.length === 0) {
                       onSlotClick(stylist.id, format(slotStart, "yyyy-MM-dd'T'HH:mm:ssXXX"));
                     }
@@ -133,7 +134,9 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonHours, 
                   {isBlocked && (
                     <div className="absolute inset-0 flex items-center justify-center z-10">
                       <div className="w-full border-t-2 border-red-300 rotate-12" />
-                      <span className="absolute text-[10px] text-red-400 font-medium bg-white/80 px-1 rounded">{(timeBlocks.find(b => { const bStart = parseISO(b.start_time); const bEnd = parseISO(b.end_time); return b.stylist_id === stylist.id && slotStart < bEnd && slotEnd > bStart; })?.reason) || 'Non disp.'}</span>
+                      <span className="absolute text-[10px] text-red-400 font-medium bg-white/80 px-1 rounded">
+                        {blockLabel}
+                      </span>
                     </div>
                   )}
 
