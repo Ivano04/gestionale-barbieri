@@ -2,6 +2,7 @@ import { createServerSupabase } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { addMinutes } from 'date-fns';
 import { getRomeOffset } from '@/lib/date-utils';
+import { sendN8nEvent } from '@/lib/sync-webhook';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -140,5 +141,20 @@ export async function POST(request: Request) {
     .single();
 
   if (error) return Response.json({ error: error.message }, { status: 500 });
+
+  // Fire-and-forget n8n webhook for external sync
+  sendN8nEvent('appointment.created', {
+    id: appointment.id,
+    salon_id: appointment.salon_id,
+    stylist_id: appointment.stylist_id,
+    client_id: appointment.client_id,
+    service_id: appointment.service_id,
+    start_time: appointment.start_time,
+    end_time: appointment.end_time,
+    source: appointment.source,
+    ghl_appointment_id: appointment.ghl_appointment_id,
+    treatwell_appointment_id: appointment.treatwell_appointment_id,
+  });
+
   return Response.json(appointment, { status: 201 });
 }

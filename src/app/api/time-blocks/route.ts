@@ -77,13 +77,26 @@ export async function DELETE(request: Request) {
 
   const supabase = await createServerSupabase();
 
-  // Auth check
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  // Fetch salon_id before deleting (for n8n event)
+  const { data: existing } = await supabase
+    .from('time_blocks')
+    .select('salon_id')
+    .eq('id', id)
+    .single();
+
   const { error } = await supabase.from('time_blocks').delete().eq('id', id);
   if (error) return Response.json({ error: error.message }, { status: 500 });
+
+  // Fire-and-forget n8n webhook
+  sendN8nEvent('time_block.deleted', {
+    id,
+    salon_id: existing?.salon_id,
+  });
+
   return Response.json({ status: 'ok' });
 }
