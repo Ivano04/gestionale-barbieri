@@ -26,6 +26,10 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonHours, 
   const hours = Array.from({ length: closeH - openH }, (_, i) => i + openH);
   const today = isToday(date);
 
+  if (closeH <= openH) {
+    return <div className="p-12 text-center text-gray-400 bg-white rounded-xl border">Salone chiuso</div>;
+  }
+
   if (stylists.length === 0) {
     return <div className="p-12 text-center text-gray-400 bg-white rounded-xl border">Nessun operatore configurato</div>;
   }
@@ -85,7 +89,7 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonHours, 
                         const bStart = parseISO(b.start_time); const bEnd = parseISO(b.end_time);
                         return b.stylist_id === stylist.id && slotStart < bEnd && slotEnd > bStart;
                       });
-                      if (block) onDeleteBlock(block.id);
+                      if (block && confirm('Rimuovere il blocco...?')) onDeleteBlock(block.id);
                     } else if (slotApps.length === 0) {
                       onSlotClick(stylist.id, format(slotStart, "yyyy-MM-dd'T'HH:mm:ssXXX"));
                     }
@@ -94,7 +98,7 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonHours, 
                   {isBlocked && (
                     <div className="absolute inset-0 flex items-center justify-center z-10">
                       <div className="w-full border-t-2 border-red-300 rotate-12" />
-                      <span className="absolute text-[10px] text-red-400 font-medium bg-white/80 px-1 rounded">Non disp. (click rimuove)</span>
+                      <span className="absolute text-[10px] text-red-400 font-medium bg-white/80 px-1 rounded">{(timeBlocks.find(b => { const bStart = parseISO(b.start_time); const bEnd = parseISO(b.end_time); return b.stylist_id === stylist.id && slotStart < bEnd && slotEnd > bStart; })?.reason) || 'Non disp.'}</span>
                     </div>
                   )}
 
@@ -104,8 +108,8 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonHours, 
                   ))}
 
                   {slotApps.length === 0 && !isBlocked && (
-                    <div className="h-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <span className="text-[10px] text-gray-300">+</span>
+                    <div className="h-full flex items-center justify-center">
+                      <span className="text-[10px] text-gray-300 border border-dashed border-gray-200 rounded px-2 py-1 opacity-60 group-hover:opacity-100 group-hover:border-blue-300 group-hover:text-blue-400 group-hover:bg-blue-50/50 transition-all">+ Prenota</span>
                     </div>
                   )}
                 </div>
