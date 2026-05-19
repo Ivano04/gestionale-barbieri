@@ -178,7 +178,7 @@ export function AppointmentModal({ appointment, services, clients, stylists, sal
               })}
             </div>
 
-            {/* Slot grid — 3 columns */}
+            {/* Slot list — single column, shows time range */}
             {!form.service_id || !form.stylist_id ? (
               <p className="text-xs text-gray-400 text-center py-2">Seleziona servizio e operatore</p>
             ) : slotsLoading ? (
@@ -186,20 +186,30 @@ export function AppointmentModal({ appointment, services, clients, stylists, sal
             ) : slots.length === 0 ? (
               <p className="text-xs text-gray-400 text-center py-2">Nessuno slot disponibile</p>
             ) : (
-              <div className="grid grid-cols-3 gap-1.5 max-h-44 overflow-y-auto">
+              <div className="space-y-1 max-h-52 overflow-y-auto">
                 {slots.map((s, i) => {
+                  // Calculate end time from service duration
+                  const svc = services.find(svc => svc.id === form.service_id);
+                  const duration = svc?.duration_minutes || 0;
+                  const [h, m] = s.time.split(':').map(Number);
+                  const endM = h * 60 + m + duration;
+                  const endTime = `${String(Math.floor(endM / 60)).padStart(2, '0')}:${String(endM % 60).padStart(2, '0')}`;
+
                   const isSelected = form.start_time
                     ? form.start_time.startsWith(`${slotDate}T${s.time}:00`)
                     : false;
                   return (
                     <button key={i} type="button"
                       onClick={() => { setForm(f => ({ ...f, start_time: buildSlotTime(slotDate, s.time) })); clearError('time'); }}
-                      className={`py-2.5 px-1 rounded-lg text-xs font-semibold transition-all ${
+                      className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium transition-all ${
                         isSelected
-                          ? 'bg-blue-600 text-white shadow-sm'
-                          : 'bg-green-50 border border-green-200 text-green-800 hover:bg-green-100'
+                          ? 'bg-blue-600 text-white shadow-md scale-[1.02]'
+                          : 'bg-white border border-gray-200 text-gray-700 hover:border-blue-300 hover:bg-blue-50'
                       }`}>
-                      {s.time}
+                      <span>{s.time}</span>
+                      <span className={`text-xs ${isSelected ? 'text-blue-100' : 'text-gray-400'}`}>
+                        → {endTime}
+                      </span>
                     </button>
                   );
                 })}

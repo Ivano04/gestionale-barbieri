@@ -65,12 +65,21 @@ export default function DashboardPage() {
 
   async function cancelAppointment(id: string) {
     if (!confirm('Sicuro di voler cancellare questo appuntamento?')) return;
+    const prevUpcoming = upcoming;
     setUpcoming(prev => prev.map(a => a.id === id ? { ...a, status: 'cancelled' } : a));
-    await fetch(`/api/appointments/${id}`, { method: 'DELETE' });
-    setStats(prev => prev ? {
-      ...prev,
-      today: { ...prev.today, appointments: prev.today.appointments - 1 }
-    } : null);
+    try {
+      const res = await fetch(`/api/appointments/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setStats(prev => prev ? {
+          ...prev,
+          today: { ...prev.today, appointments: prev.today.appointments - 1 }
+        } : null);
+      } else {
+        setUpcoming(prevUpcoming); // revert on failure
+      }
+    } catch {
+      setUpcoming(prevUpcoming); // revert on network error
+    }
   }
 
   if (!stats) return <div className="p-8 text-center text-gray-400">Caricamento dashboard...</div>;

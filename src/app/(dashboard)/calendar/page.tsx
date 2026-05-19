@@ -66,20 +66,18 @@ export default function CalendarPage() {
     const isNew = !form.id;
     const body = { ...form, salon_id: salonId, source: form.source || 'manual' };
 
-    // Close modal instantly
-    setSelectedAppointment(null);
-
-    // Save in background
     const url = isNew ? '/api/appointments' : `/api/appointments/${form.id}`;
     const method = isNew ? 'POST' : 'PATCH';
     try {
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
       if (res.ok) {
-        toast.success(isNew ? 'Creato' : 'Aggiornato');
+        toast.success(isNew ? 'Appuntamento creato' : 'Appuntamento aggiornato');
+        setSelectedAppointment(null);
         refresh();
       } else {
         const err = await res.json();
-        toast.error(err.error || 'Errore');
+        toast.error(err.error || 'Errore salvataggio');
       }
     } catch {
       toast.error('Errore di connessione');
