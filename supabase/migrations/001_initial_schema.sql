@@ -127,12 +127,12 @@ $$;
 -- Users can read other users in same salon
 CREATE POLICY "Users read salon mates" ON users FOR SELECT
   USING (salon_id = get_user_salon_id());
-
+-- Create policy 
 CREATE POLICY "Users read own salon" ON salons FOR SELECT
   USING (id = get_user_salon_id());
 
 CREATE POLICY "Services read salon" ON services FOR SELECT
-  USING (salon_id IN get_user_salon_id());
+  USING (salon_id IN (get_user_salon_id()));
 CREATE POLICY "Services write admin" ON services FOR INSERT
   WITH CHECK (EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND salon_id = services.salon_id AND role IN ('owner', 'admin')));
 CREATE POLICY "Services update admin" ON services FOR UPDATE
@@ -141,21 +141,21 @@ CREATE POLICY "Services delete admin" ON services FOR DELETE
   USING (EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND salon_id = services.salon_id AND role IN ('owner', 'admin')));
 
 CREATE POLICY "Clients read salon" ON clients FOR SELECT
-  USING (salon_id IN get_user_salon_id());
+  USING (salon_id IN (get_user_salon_id()));
 CREATE POLICY "Clients write staff" ON clients FOR INSERT
   WITH CHECK (EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND salon_id = clients.salon_id AND role IN ('owner', 'admin', 'receptionist')));
 CREATE POLICY "Clients update staff" ON clients FOR UPDATE
   USING (EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND salon_id = clients.salon_id AND role IN ('owner', 'admin', 'receptionist')));
 
 CREATE POLICY "Appointments read salon" ON appointments FOR SELECT
-  USING (salon_id IN get_user_salon_id());
+  USING (salon_id IN (get_user_salon_id()));
 CREATE POLICY "Appointments write staff" ON appointments FOR INSERT
   WITH CHECK (EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND salon_id = appointments.salon_id AND role IN ('owner', 'admin', 'receptionist')));
 CREATE POLICY "Appointments update staff" ON appointments FOR UPDATE
   USING (EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND salon_id = appointments.salon_id AND role IN ('owner', 'admin', 'receptionist')));
 
 CREATE POLICY "Time blocks read salon" ON time_blocks FOR SELECT
-  USING (salon_id IN get_user_salon_id());
+  USING (salon_id IN (get_user_salon_id()));
 CREATE POLICY "Time blocks write admin" ON time_blocks FOR INSERT
   WITH CHECK (EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND salon_id = time_blocks.salon_id AND role IN ('owner', 'admin')));
 CREATE POLICY "Time blocks update admin" ON time_blocks FOR UPDATE
