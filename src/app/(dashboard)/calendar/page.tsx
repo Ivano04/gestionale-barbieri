@@ -14,7 +14,6 @@ import { useCalendarData } from '@/lib/hooks/useCalendarData';
 
 export default function CalendarPage() {
   const [date, setDate] = useState<Date | null>(null);
-  // Hydration-safe: initialize date on client only
   useEffect(() => { if (!date) setDate(new Date()); }, []);
   const [view, setView] = useState<'day' | 'week'>('day');
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
@@ -36,7 +35,6 @@ export default function CalendarPage() {
 
   if (!date) return <div className="p-8 text-center text-gray-400">Caricamento calendario...</div>;
 
-  // Time block handler
   async function handleDeleteBlock(blockId: string) {
     try {
       const res = await fetch(`/api/time-blocks?id=${blockId}`, { method: 'DELETE' });
@@ -57,7 +55,6 @@ export default function CalendarPage() {
   }
 
   async function handleSave(form: Record<string, any>) {
-    // Block past bookings
     if (form.start_time && new Date(form.start_time) < new Date()) {
       toast.error('Non puoi prenotare nel passato');
       return;
@@ -70,14 +67,21 @@ export default function CalendarPage() {
     const method = isNew ? 'POST' : 'PATCH';
     try {
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await res.json();
 
       if (res.ok) {
         toast.success(isNew ? 'Appuntamento creato' : 'Appuntamento aggiornato');
+        if (data.warnings?.length) {
+          data.warnings.forEach((w: any) => toast.warning(w.message || 'Attenzione: possibile sovrapposizione'));
+        }
         setSelectedAppointment(null);
         refresh();
       } else {
-        const err = await res.json();
-        toast.error(err.error || 'Errore salvataggio');
+        toast.error(data.error || 'Errore salvataggio');
+        // If soft conflict came back but was rejected for another reason
+        if (data.conflict) {
+          toast.warning(`Conflitto rilevato: ${data.conflict.overlapPhase || 'sconosciuto'}`);
+        }
       }
     } catch {
       toast.error('Errore di connessione');
@@ -100,6 +104,66 @@ export default function CalendarPage() {
     refresh();
   }
 
+  async function handleAppointmentMove(appointmentId: string, newStylistId: string, newStartTime: string, newEndTime?: string) {
+    const body: Record<string, any> = { stylist_id: newStylistId, start_time: newStartTime };
+    if (newEndTime) body.end_time = newEndTime;
+    const res = await fetch(`/api/appointments/${appointmentId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      refresh();
+      return { warnings: data.warnings };
+    }
+    return { error: data.error, warnings: data.warnings };
+  }
+
+  async function handleAppointmentResize(appointmentId: string, newEndTime: string) {
+    const res = await fetch(`/api/appointments/${appointmentId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ end_time: newEndTime }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      refresh();
+      return { warnings: data.warnings };
+    }
+    return { error: data.error, warnings: data.warnings };
+  }
+
+  async function handleAddService(appointmentId: string, serviceId: string) {
+    const res = await fetch(`/api/appointments/${appointmentId}/add-service`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ service_id: serviceId }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Errore');
+    refresh();
+    return data;
+  }
+
+  async function handleSwapRequest(appointmentId: string, targetStylistId: string) {
+    // Move the conflicting appointment to another stylist
+    const app = appointments.find(a => a.id === appointmentId);
+    if (!app) return;
+    const res = await fetch(`/api/appointments/${appointmentId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stylist_id: targetStylistId }),
+    });
+    if (res.ok) {
+      toast.success(`Appuntamento spostato su ${stylists.find(s => s.id === targetStylistId)?.full_name}`);
+      refresh();
+    } else {
+      const err = await res.json();
+      toast.error(err.error || 'Spostamento fallito');
+    }
+  }
+
   return (
     <div>
       {loading && <div className="h-1 bg-blue-100 w-full overflow-hidden"><div className="h-full bg-blue-500 animate-pulse" style={{ width: '60%' }} /></div>}
@@ -110,7 +174,10 @@ export default function CalendarPage() {
             date={date} stylists={stylists} appointments={appointments} timeBlocks={timeBlocks} salonHours={salonHours}
             onSlotClick={(stylist_id, start_time) => setSelectedAppointment({ stylist_id, start_time } as Appointment)}
             onAppointmentClick={setSelectedAppointment}
+            onAppointmentMove={handleAppointmentMove}
+            onAppointmentResize={handleAppointmentResize}
             onDeleteBlock={handleDeleteBlock}
+            onSwapRequest={handleSwapRequest}
           />
         )}
         {view === 'week' && (
@@ -118,6 +185,7 @@ export default function CalendarPage() {
             date={date} stylists={stylists} appointments={appointments} timeBlocks={timeBlocks}
             onSlotClick={(stylist_id, start_time) => setSelectedAppointment({ stylist_id, start_time } as Appointment)}
             onAppointmentClick={setSelectedAppointment}
+            onAppointmentMove={handleAppointmentMove}
             onDeleteBlock={handleDeleteBlock}
           />
         )}
@@ -128,16 +196,16 @@ export default function CalendarPage() {
           services={services} clients={clients} stylists={stylists} salonId={salonId}
           onClose={() => setSelectedAppointment(null)}
           onSave={handleSave} onDelete={handleDelete}
+          onAddService={handleAddService}
         />
       )}
 
-      {/* Time block modal */}
+      {/* Time block modal — unchanged */}
       {showBlockModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowBlockModal(false)}>
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 mx-4 max-h-[80vh] overflow-auto" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-semibold mb-4">Blocca / Sblocca fasce</h3>
 
-            {/* Existing blocks */}
             {timeBlocks.length > 0 && (
               <div className="mb-4">
                 <h4 className="text-sm font-medium text-gray-500 mb-2">Fasce attive</h4>
@@ -166,7 +234,6 @@ export default function CalendarPage() {
               </div>
             )}
 
-            {/* New block form */}
             <div className="border-t pt-4">
               <h4 className="text-sm font-medium text-gray-500 mb-3">Nuova fascia</h4>
               <div className="space-y-3">

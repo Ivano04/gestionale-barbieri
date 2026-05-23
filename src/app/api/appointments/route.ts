@@ -3,6 +3,10 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { addMinutes } from 'date-fns';
 import { getRomeOffset } from '@/lib/date-utils';
 import { sendN8nEvent } from '@/lib/sync-webhook';
+import { fetchServiceWithPhases, fetchServiceOverride } from '@/services/booking-engine/queries';
+import { computePhaseBreakdown } from '@/services/booking-engine/phase-calculator';
+import { checkSlotConflict } from '@/services/booking-engine/overlap';
+import type { Service } from '@/lib/types';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -38,15 +42,22 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const body = await request.json();
   const supabase = await createServerSupabase();
+  const adminSupabase = createAdminClient();
 
-  const { data: service } = await supabase
-    .from('services').select('duration_minutes').eq('id', body.service_id).single();
+  // Fetch service with phase info
+  const service = await fetchServiceWithPhases(body.service_id);
   if (!service) return Response.json({ error: 'Servizio non trovato' }, { status: 404 });
 
-  const endTime = addMinutes(new Date(body.start_time), service.duration_minutes).toISOString();
+  const phases = computePhaseBreakdown(service);
+  const clientDuration = phases.totalClientVisible;
+  const totalDuration = phases.totalInternal;
+
+  const startTime = new Date(body.start_time);
+  const endTime = addMinutes(startTime, clientDuration).toISOString();
+  const bufferEndTime = addMinutes(startTime, totalDuration).toISOString();
 
   // Past booking check
-  if (new Date(body.start_time) < new Date()) {
+  if (startTime < new Date()) {
     return Response.json({ error: 'Non puoi prenotare nel passato' }, { status: 400 });
   }
 
@@ -77,19 +88,18 @@ export async function POST(request: Request) {
       return Response.json({ error: `Orario fuori dalla fascia ${openTime}-${closeTime}` }, { status: 400 });
     }
 
-    const endSlotTime = endTime.split('T')[1]?.substring(0, 5) || '';
+    const endSlotTime = bufferEndTime.split('T')[1]?.substring(0, 5) || '';
     if (endSlotTime > closeTime) {
       return Response.json({ error: `L'appuntamento sfora l'orario di chiusura (${closeTime})` }, { status: 400 });
     }
   }
 
-  // Check time blocks using admin client (bypass RLS)
-  const adminSupabase = createAdminClient();
+  // Check time blocks (hard conflicts only — blocks have no phase decomposition)
   let blockQuery = adminSupabase
     .from('time_blocks')
     .select('id')
     .eq('salon_id', body.salon_id)
-    .lt('start_time', endTime)
+    .lt('start_time', bufferEndTime)
     .gt('end_time', body.start_time);
   if (body.stylist_id) blockQuery = blockQuery.or(`stylist_id.eq.${body.stylist_id},stylist_id.is.null`);
   else blockQuery = blockQuery.is('stylist_id', null);
@@ -98,18 +108,50 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Questo slot non è disponibile (fascia bloccata)' }, { status: 409 });
   }
 
-  const { data: conflict } = await supabase
-    .from('appointments').select('id')
-    .eq('stylist_id', body.stylist_id)
-    .eq('salon_id', body.salon_id)
-    .lt('start_time', endTime)
-    .gt('end_time', body.start_time)
-    .neq('status', 'cancelled')
-    .limit(1);
-  if (conflict?.length) {
-    return Response.json({ error: 'Slot già occupato' }, { status: 409 });
+  // Phase-aware conflict detection
+  const warnings: any[] = [];
+  if (body.stylist_id) {
+    // Fetch occupied slots for conflict analysis
+    const { data: existingApps } = await supabase
+      .from('appointments')
+      .select('id, stylist_id, start_time, end_time, buffer_end_time, client:clients(first_name, last_name), service:services(duration_minutes, duration_application, duration_processing, duration_finishing, buffer_time_minutes)')
+      .eq('stylist_id', body.stylist_id)
+      .eq('salon_id', body.salon_id)
+      .lt('start_time', bufferEndTime)
+      .gt('end_time', body.start_time)
+      .neq('status', 'cancelled');
+
+    if (existingApps?.length) {
+      for (const existing of existingApps as any[]) {
+        const svc = existing.service as any;
+        const occBlock = {
+          stylist_id: existing.stylist_id as string,
+          start_time: new Date(existing.start_time),
+          end_time: existing.buffer_end_time ? new Date(existing.buffer_end_time) : new Date(existing.end_time),
+          service: svc ?? null,
+        };
+        const conflict = checkSlotConflict(body.stylist_id, startTime, new Date(endTime), [occBlock]);
+
+        if (conflict.severity === 'hard') {
+          const cli = existing.client as any;
+          return Response.json({
+            error: `Conflitto con appuntamento di ${cli?.first_name || 'cliente'} (${conflict.overlapPhase === 'application' ? 'fase attiva' : conflict.overlapPhase === 'buffer' ? 'buffer time' : 'finitura'})`,
+            conflict: { severity: 'hard', appointmentId: existing.id, overlapPhase: conflict.overlapPhase },
+          }, { status: 409 });
+        }
+        if (conflict.severity === 'soft') {
+          warnings.push({
+            type: 'soft_conflict',
+            message: `Lo slot si sovrappone alla fase di posa di un altro appuntamento`,
+            appointmentId: existing.id,
+            overlapPhase: conflict.overlapPhase,
+          });
+        }
+      }
+    }
   }
 
+  // Resolve client
   let clientId = body.client_id;
   if (!clientId && body.client) {
     const { data: existing } = await supabase
@@ -134,8 +176,10 @@ export async function POST(request: Request) {
       service_id: body.service_id,
       start_time: body.start_time,
       end_time: endTime,
+      buffer_end_time: bufferEndTime,
       source: body.source || 'manual',
       notes: body.notes,
+      added_services: [],
     })
     .select('*')
     .single();
@@ -151,10 +195,11 @@ export async function POST(request: Request) {
     service_id: appointment.service_id,
     start_time: appointment.start_time,
     end_time: appointment.end_time,
+    buffer_end_time: appointment.buffer_end_time,
     source: appointment.source,
     ghl_appointment_id: appointment.ghl_appointment_id,
     treatwell_appointment_id: appointment.treatwell_appointment_id,
   });
 
-  return Response.json(appointment, { status: 201 });
+  return Response.json({ ...appointment, warnings: warnings.length > 0 ? warnings : undefined }, { status: 201 });
 }

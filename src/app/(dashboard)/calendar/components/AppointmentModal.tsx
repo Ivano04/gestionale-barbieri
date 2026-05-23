@@ -1,11 +1,12 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { X, Trash2, Loader2, ChevronDown } from 'lucide-react';
-import type { Appointment, Service, Client, User } from '@/lib/types';
-import { format, parseISO, addDays } from 'date-fns';
+import { X, Trash2, Loader2, ChevronDown, Plus, Clock, Scissors } from 'lucide-react';
+import type { Appointment, Service, Client, User, AddedService, PhaseBreakdown } from '@/lib/types';
+import { format, parseISO, addDays, addMinutes } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { formatPhone, countryCodes } from '@/lib/utils';
 import { todayDateStr, buildSlotTime } from '@/lib/date-utils';
+import { toast } from 'sonner';
 
 interface Props {
   appointment: Appointment | null;
@@ -16,9 +17,10 @@ interface Props {
   onClose: () => void;
   onSave: (data: Record<string, any>) => void;
   onDelete: (id: string) => void;
+  onAddService?: (appointmentId: string, serviceId: string) => Promise<any>;
 }
 
-export function AppointmentModal({ appointment, services, clients, stylists, salonId, onClose, onSave, onDelete }: Props) {
+export function AppointmentModal({ appointment, services, clients, stylists, salonId, onClose, onSave, onDelete, onAddService }: Props) {
   const [form, setForm] = useState<Partial<Appointment>>({});
   const [clientMode, setClientMode] = useState<'existing' | 'new'>('existing');
   const [newClient, setNewClient] = useState({ first_name: '', last_name: '', phone: '' });
@@ -29,6 +31,9 @@ export function AppointmentModal({ appointment, services, clients, stylists, sal
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [addingService, setAddingService] = useState(false);
+  const [newServiceId, setNewServiceId] = useState('');
+  const [durationPreview, setDurationPreview] = useState<PhaseBreakdown | null>(null);
   const isNew = !appointment?.id;
 
   useEffect(() => {
@@ -44,6 +49,28 @@ export function AppointmentModal({ appointment, services, clients, stylists, sal
       .then(r => r.json())
       .then(d => { setSlots(Array.isArray(d) ? d : []); setSlotsLoading(false); });
   }, [salonId, form.service_id, form.stylist_id, slotDate]);
+
+  // Compute duration preview when service changes
+  useEffect(() => {
+    if (!form.service_id) { setDurationPreview(null); return; }
+    const svc = services.find(s => s.id === form.service_id);
+    if (!svc) { setDurationPreview(null); return; }
+
+    const hasPhases = svc.duration_application != null || svc.duration_processing != null || svc.duration_finishing != null;
+    const app = hasPhases ? (svc.duration_application ?? 0) : svc.duration_minutes;
+    const proc = hasPhases ? (svc.duration_processing ?? 0) : 0;
+    const fin = hasPhases ? (svc.duration_finishing ?? 0) : 0;
+    const buf = svc.buffer_time_minutes ?? 0;
+
+    setDurationPreview({
+      application: app,
+      processing: proc,
+      finishing: fin,
+      buffer: buf,
+      totalClientVisible: app + proc + fin,
+      totalInternal: app + proc + fin + buf,
+    });
+  }, [form.service_id, services]);
 
   if (!appointment) return null;
 
@@ -72,6 +99,25 @@ export function AppointmentModal({ appointment, services, clients, stylists, sal
       setSaving(false);
     }
   }
+
+  async function handleAddService() {
+    if (!newServiceId || !appointment?.id || !onAddService) return;
+    setAddingService(true);
+    try {
+      const updated = await onAddService(appointment.id, newServiceId);
+      setForm(updated);
+      setNewServiceId('');
+      toast.success('Servizio aggiunto in poltrona');
+    } catch {
+      toast.error('Errore aggiunta servizio');
+    }
+    setAddingService(false);
+  }
+
+  const addedServices: AddedService[] = Array.isArray(appointment.added_services) ? appointment.added_services : [];
+  const isInProgress = appointment.status === 'confirmed' &&
+    appointment.start_time && new Date(appointment.start_time) < new Date() &&
+    appointment.end_time && new Date(appointment.end_time) > new Date();
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
@@ -132,16 +178,58 @@ export function AppointmentModal({ appointment, services, clients, stylists, sal
             )}
           </div>
 
-          {/* 2. Servizio */}
+          {/* 2. Servizio + Duration Preview */}
           <div>
             <label className="text-sm font-medium text-gray-700">Servizio</label>
             <select className={`w-full border rounded-lg px-3 py-2 mt-1 text-sm ${errors.service ? 'border-red-400' : ''}`}
               value={form.service_id || ''}
               onChange={e => { setForm(f => ({ ...f, service_id: e.target.value, start_time: '' })); clearError('service'); }}>
               <option value="">Seleziona servizio...</option>
-              {services.map(s => <option key={s.id} value={s.id}>{s.name} · {s.duration_minutes}min · €{(s.price_cents/100).toFixed(2)}</option>)}
+              {services.map(s => {
+                const hasPhases = s.duration_application != null || s.duration_processing != null || s.duration_finishing != null;
+                const dur = hasPhases
+                  ? (s.duration_application ?? 0) + (s.duration_processing ?? 0) + (s.duration_finishing ?? 0)
+                  : s.duration_minutes;
+                return <option key={s.id} value={s.id}>{s.name} · {dur}min · €{(s.price_cents/100).toFixed(2)}</option>;
+              })}
             </select>
             {errors.service && <p className="text-red-500 text-xs mt-1">{errors.service}</p>}
+
+            {/* Duration phase breakdown */}
+            {durationPreview && (
+              <div className="mt-2 p-3 bg-gray-50 rounded-lg text-xs">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-medium text-gray-700">Durata totale: {durationPreview.totalClientVisible} min</span>
+                  {durationPreview.buffer > 0 && (
+                    <span className="text-gray-400 flex items-center gap-1">
+                      <Clock size={10} /> +{durationPreview.buffer} min buffer
+                    </span>
+                  )}
+                </div>
+                {durationPreview.processing > 0 && (
+                  <div className="flex items-center gap-2 text-[11px]">
+                    <div className="flex-1 h-4 rounded bg-blue-200 flex items-center justify-center text-blue-800 font-medium"
+                      style={{ flex: durationPreview.application }}>
+                      {durationPreview.application > 0 ? `${durationPreview.application}m attivi` : ''}
+                    </div>
+                    <div className="flex-1 h-4 rounded bg-green-200 flex items-center justify-center text-green-800 font-medium"
+                      style={{ flex: durationPreview.processing }}>
+                      {durationPreview.processing > 0 ? `${durationPreview.processing}m posa` : ''}
+                    </div>
+                    <div className="flex-1 h-4 rounded bg-purple-200 flex items-center justify-center text-purple-800 font-medium"
+                      style={{ flex: durationPreview.finishing }}>
+                      {durationPreview.finishing > 0 ? `${durationPreview.finishing}m finitura` : ''}
+                    </div>
+                    {durationPreview.buffer > 0 && (
+                      <div className="h-4 rounded bg-gray-300 flex items-center justify-center text-gray-600 font-medium"
+                        style={{ width: `${Math.max(20, durationPreview.buffer * 2)}px` }}>
+                        {durationPreview.buffer}m
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* 3. Operatore */}
@@ -161,7 +249,6 @@ export function AppointmentModal({ appointment, services, clients, stylists, sal
             <label className="text-sm font-medium text-gray-700">Data e orario</label>
             {errors.time && <p className="text-red-500 text-xs mt-1">{errors.time}</p>}
 
-            {/* Date picker — 7 days, 2-row layout */}
             <div className="flex gap-1.5 overflow-x-auto mt-1.5 mb-2">
               {Array.from({ length: 7 }, (_, i) => addDays(new Date(), i)).map(d => {
                 const ds = format(d, 'yyyy-MM-dd');
@@ -178,7 +265,6 @@ export function AppointmentModal({ appointment, services, clients, stylists, sal
               })}
             </div>
 
-            {/* Slot list — single column, shows time range */}
             {!form.service_id || !form.stylist_id ? (
               <p className="text-xs text-gray-400 text-center py-2">Seleziona servizio e operatore</p>
             ) : slotsLoading ? (
@@ -188,9 +274,8 @@ export function AppointmentModal({ appointment, services, clients, stylists, sal
             ) : (
               <div className="space-y-1 max-h-52 overflow-y-auto">
                 {slots.map((s, i) => {
-                  // Calculate end time from service duration
                   const svc = services.find(svc => svc.id === form.service_id);
-                  const duration = svc?.duration_minutes || 0;
+                  const duration = durationPreview?.totalClientVisible || svc?.duration_minutes || 0;
                   const [h, m] = s.time.split(':').map(Number);
                   const endM = h * 60 + m + duration;
                   const endTime = `${String(Math.floor(endM / 60)).padStart(2, '0')}:${String(endM % 60).padStart(2, '0')}`;
@@ -217,7 +302,49 @@ export function AppointmentModal({ appointment, services, clients, stylists, sal
             )}
           </div>
 
-          {/* 5. Collapsible: Canale + Note */}
+          {/* 5. In-chair added services */}
+          {!isNew && addedServices.length > 0 && (
+            <div className="p-3 bg-amber-50 rounded-lg">
+              <h4 className="text-xs font-semibold text-amber-800 mb-2 flex items-center gap-1">
+                <Scissors size={12} /> Servizi aggiunti in poltrona
+              </h4>
+              {addedServices.map((as, i) => (
+                <div key={i} className="flex items-center justify-between text-xs text-amber-700 py-0.5">
+                  <span>{as.name}</span>
+                  <span className="text-amber-500">+{as.duration_added} min</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 6. Add service (in-chair upselling) — only for existing, in-progress appointments */}
+          {!isNew && isInProgress && onAddService && (
+            <div className="border-t pt-3">
+              <label className="text-sm font-medium text-gray-700 flex items-center gap-1">
+                <Plus size={14} /> Aggiungi servizio in poltrona
+              </label>
+              <div className="flex gap-2 mt-1.5">
+                <select className="flex-1 border rounded-lg px-3 py-2 text-sm"
+                  value={newServiceId}
+                  onChange={e => setNewServiceId(e.target.value)}>
+                  <option value="">Seleziona servizio...</option>
+                  {services.filter(s => s.id !== form.service_id).map(s => (
+                    <option key={s.id} value={s.id}>{s.name} · {s.duration_minutes}min</option>
+                  ))}
+                </select>
+                <button onClick={handleAddService} disabled={!newServiceId || addingService}
+                  className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 text-sm font-medium flex items-center gap-1">
+                  {addingService ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                  Aggiungi
+                </button>
+              </div>
+              <p className="text-[10px] text-gray-400 mt-1">
+                Il servizio parte dalla fine dell'appuntamento corrente e blocca immediatamente gli slot esterni
+              </p>
+            </div>
+          )}
+
+          {/* 7. Collapsible: Canale + Note */}
           <div>
             <button type="button" onClick={() => setAdvancedOpen(!advancedOpen)}
               className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">

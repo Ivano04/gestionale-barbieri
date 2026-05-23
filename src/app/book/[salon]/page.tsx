@@ -7,6 +7,15 @@ import { ArrowLeft, Check, Clock } from 'lucide-react';
 import type { Service } from '@/lib/types';
 import { countryCodes, formatPhone } from '@/lib/utils';
 
+/** Compute client-visible duration (excludes buffer, respects phases) */
+function getClientDuration(s: Service): number {
+  const hasPhases = s.duration_application != null || s.duration_processing != null || s.duration_finishing != null;
+  if (hasPhases) {
+    return (s.duration_application ?? 0) + (s.duration_processing ?? 0) + (s.duration_finishing ?? 0);
+  }
+  return s.duration_minutes;
+}
+
 export default function BookPage() {
   const params = useParams();
   const searchParams = useSearchParams();
@@ -114,19 +123,22 @@ export default function BookPage() {
             <h3 className="font-semibold mb-3">Scegli il servizio</h3>
             {services.length === 0 && <p className="text-gray-400 text-center py-4">Nessun servizio disponibile</p>}
             <div className="space-y-2">
-              {services.map(s => (
-                <button key={s.id} onClick={() => { setSelectedService(s); setStep('datetime'); }}
-                  className="w-full flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition-colors text-left">
-                  <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: s.color_hex }} />
-                    <div>
-                      <div className="font-medium">{s.name}</div>
-                      <div className="text-sm text-gray-500 flex items-center gap-1"><Clock size={12} />{s.duration_minutes} min</div>
+              {services.map(s => {
+                const clientDuration = getClientDuration(s);
+                return (
+                  <button key={s.id} onClick={() => { setSelectedService(s); setStep('datetime'); }}
+                    className="w-full flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition-colors text-left">
+                    <div className="flex items-center gap-3">
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: s.color_hex }} />
+                      <div>
+                        <div className="font-medium">{s.name}</div>
+                        <div className="text-sm text-gray-500 flex items-center gap-1"><Clock size={12} />{clientDuration} min</div>
+                      </div>
                     </div>
-                  </div>
-                  <div className="font-semibold">&euro;{(s.price_cents / 100).toFixed(2)}</div>
-                </button>
-              ))}
+                    <div className="font-semibold">&euro;{(s.price_cents / 100).toFixed(2)}</div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -134,7 +146,7 @@ export default function BookPage() {
         {step === 'datetime' && selectedService && (
           <div className="bg-white rounded-xl shadow-sm p-4">
             <button onClick={() => setStep('service')} className="flex items-center gap-1 text-sm text-gray-500 mb-3 hover:text-gray-700">
-              <ArrowLeft size={14} /> {selectedService.name} &middot; {selectedService.duration_minutes}min &middot; &euro;{(selectedService.price_cents / 100).toFixed(2)}
+              <ArrowLeft size={14} /> {selectedService.name} &middot; {getClientDuration(selectedService)}min &middot; &euro;{(selectedService.price_cents / 100).toFixed(2)}
             </button>
             <div className="flex gap-2 overflow-x-auto mb-4 pb-2">
               {Array.from({ length: 14 }, (_, i) => addDays(new Date(), i)).map(d => (
@@ -148,12 +160,12 @@ export default function BookPage() {
             </div>
             {/* Stylist filter */}
             {slots.length > 0 && (() => {
-              const stylists = [...new Set(slots.map(s => s.stylist_name))];
+              const stylistNames = [...new Set(slots.map(s => s.stylist_name))];
               return (
                 <div className="mb-3">
                   <div className="font-semibold mb-2 text-sm">Operatore</div>
                   <div className="flex gap-2 flex-wrap">
-                    {stylists.map(st => (
+                    {stylistNames.map(st => (
                       <button key={st} onClick={() => setSelectedStylist(selectedStylist === st ? null : st)}
                         className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
                           selectedStylist === st ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'

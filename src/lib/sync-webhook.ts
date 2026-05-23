@@ -2,6 +2,9 @@ export type N8nEvent =
   | 'appointment.created'
   | 'appointment.updated'
   | 'appointment.cancelled'
+  | 'appointment.extended'        // drag/resize changed end_time
+  | 'appointment.service_added'   // in-chair upselling
+  | 'appointment.moved'           // drag changed stylist or start_time
   | 'time_block.created'
   | 'time_block.deleted';
 
