@@ -5,15 +5,28 @@ import { sendN8nEvent } from '@/lib/sync-webhook';
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const salon_id = searchParams.get('salon_id');
+  const date = searchParams.get('date');
   if (!salon_id) return Response.json({ error: 'salon_id required' }, { status: 400 });
 
   const supabase = await createServerSupabase();
-  const { data, error } = await supabase
+
+  let query = supabase
     .from('time_blocks')
     .select('*')
-    .eq('salon_id', salon_id)
-    .gte('end_time', new Date().toISOString())
-    .order('start_time');
+    .eq('salon_id', salon_id);
+
+  if (date) {
+    // Return all blocks overlapping with this date (including past ones for today)
+    const dayStart = new Date(`${date}T00:00:00`);
+    const dayEnd = new Date(`${date}T23:59:59`);
+    query = query.lt('start_time', dayEnd.toISOString()).gt('end_time', dayStart.toISOString());
+  } else {
+    // No date specified — return only future blocks
+    query = query.gte('end_time', new Date().toISOString());
+  }
+
+  query = query.order('start_time');
+  const { data, error } = await query;
 
   if (error) return Response.json({ error: error.message }, { status: 500 });
   return Response.json(data || []);

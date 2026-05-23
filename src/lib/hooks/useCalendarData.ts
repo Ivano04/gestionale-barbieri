@@ -53,10 +53,10 @@ export function useCalendarData(salonId: string, date: Date | null) {
         supabase.from('salons').select('working_hours, open_time, close_time').eq('id', salonId).single(),
       ]);
 
-      // Fetch time blocks
+      // Fetch time blocks (pass date to include today's blocks even if past)
       let timeBlocks: TimeBlock[] = [];
       try {
-        const tbRes = await fetch(`/api/time-blocks?salon_id=${salonId}`);
+        const tbRes = await fetch(`/api/time-blocks?salon_id=${salonId}&date=${dateStr}`);
         if (tbRes.ok) timeBlocks = await tbRes.json();
       } catch { /* time blocks are non-critical */ }
 

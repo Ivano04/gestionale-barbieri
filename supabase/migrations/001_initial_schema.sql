@@ -188,9 +188,22 @@ CREATE TRIGGER set_appointments_updated_at
 -- Auto-create user profile on signup
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+  v_salon_id uuid;
 BEGIN
-  INSERT INTO users (id, email, role, full_name)
-  VALUES (NEW.id, NEW.email, 'stylist', COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.email));
+  BEGIN
+    v_salon_id := (NEW.raw_user_meta_data->>'salon_id')::uuid;
+  EXCEPTION WHEN OTHERS THEN
+    v_salon_id := NULL;
+  END;
+  INSERT INTO users (id, email, role, full_name, salon_id)
+  VALUES (
+    NEW.id,
+    NEW.email,
+    COALESCE((NEW.raw_user_meta_data->>'role')::user_role, 'stylist'),
+    COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.email),
+    v_salon_id
+  );
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

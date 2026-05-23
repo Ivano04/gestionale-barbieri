@@ -1,7 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { Users, Clock } from 'lucide-react';
+import { Users, Clock, Plus, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 const DAYS = [
   { key: 'mon', label: 'Lun' },
@@ -21,6 +22,9 @@ export default function StaffPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [hours, setHours] = useState<Record<string, Record<string, { open: string; close: string } | null>>>({});
   const [saving, setSaving] = useState<string | null>(null);
+  const [showNewForm, setShowNewForm] = useState(false);
+  const [newStylist, setNewStylist] = useState({ full_name: '', email: '', password: '' });
+  const [creating, setCreating] = useState(false);
   const supabase = createClient();
 
   useEffect(() => {
@@ -65,11 +69,82 @@ export default function StaffPage() {
     setSaving(null);
   }
 
+  async function createStylist() {
+    if (!newStylist.full_name || !newStylist.email || !newStylist.password) {
+      toast.error('Compila tutti i campi');
+      return;
+    }
+    setCreating(true);
+    try {
+      const res = await fetch('/api/staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newStylist),
+      });
+      if (res.ok) {
+        toast.success('Operatore creato');
+        setNewStylist({ full_name: '', email: '', password: '' });
+        setShowNewForm(false);
+        // Reload the staff list
+        const { data: staff } = await supabase.from('users').select('id, full_name, email, role, working_hours').eq('salon_id', salonId).eq('role', 'stylist').order('full_name');
+        setStylists(staff || []);
+        const h: Record<string, any> = {};
+        (staff || []).forEach((s: any) => { h[s.id] = s.working_hours || {}; });
+        setHours(prev => ({ ...prev, ...h }));
+      } else {
+        const err = await res.json();
+        toast.error(err.error || 'Errore creazione');
+      }
+    } catch {
+      toast.error('Errore di connessione');
+    }
+    setCreating(false);
+  }
+
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold mb-6 flex items-center gap-2"><Users size={24} /> Staff</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold flex items-center gap-2"><Users size={24} /> Staff</h1>
+        <button onClick={() => setShowNewForm(!showNewForm)}
+          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
+          <Plus size={16} /> Aggiungi operatore
+        </button>
+      </div>
+
+      {showNewForm && (
+        <div className="bg-white rounded-xl border p-4 mb-6">
+          <h3 className="font-semibold text-sm text-gray-700 mb-3">Nuovo operatore</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+            <input type="text" placeholder="Nome e cognome *" value={newStylist.full_name}
+              onChange={e => setNewStylist({ ...newStylist, full_name: e.target.value })}
+              className="px-3 py-2 border rounded-lg text-sm" />
+            <input type="email" placeholder="Email *" value={newStylist.email}
+              onChange={e => setNewStylist({ ...newStylist, email: e.target.value })}
+              className="px-3 py-2 border rounded-lg text-sm" />
+            <input type="password" placeholder="Password *" value={newStylist.password}
+              onChange={e => setNewStylist({ ...newStylist, password: e.target.value })}
+              className="px-3 py-2 border rounded-lg text-sm" />
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => { setShowNewForm(false); setNewStylist({ full_name: '', email: '', password: '' }); }}
+              className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm">Annulla</button>
+            <button onClick={createStylist} disabled={creating}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium">
+              {creating ? <Loader2 size={14} className="animate-spin inline mr-1" /> : null}
+              {creating ? 'Creazione...' : 'Crea operatore'}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-4">
+        {stylists.length === 0 && (
+          <div className="bg-white rounded-xl border p-12 text-center text-gray-400">
+            <Users size={32} className="mx-auto mb-3 opacity-40" />
+            <p className="font-medium">Nessun operatore</p>
+            <p className="text-sm mt-1">Clicca "Aggiungi operatore" per creare il primo membro dello staff.</p>
+          </div>
+        )}
         {stylists.map(stylist => (
           <div key={stylist.id} className="bg-white rounded-xl border overflow-hidden">
             <button
