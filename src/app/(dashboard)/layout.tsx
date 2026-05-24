@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter, usePathname } from 'next/navigation';
-import { CalendarDays, Users, Settings, LogOut, Menu, X, LayoutDashboard, Scissors, UserCog } from 'lucide-react';
+import { CalendarDays, Users, Settings, LogOut, Menu, X, LayoutDashboard, Scissors, UserCog, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 
 const navItems = [

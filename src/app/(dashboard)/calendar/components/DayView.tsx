@@ -1,7 +1,7 @@
 'use client';
 import { useState, useRef, useCallback } from 'react';
 import { format, setHours, setMinutes, parseISO, addMinutes, differenceInMinutes } from 'date-fns';
-import type { Appointment, User, TimeBlock, ConflictResult } from '@/lib/types';
+import type { Appointment, User, TimeBlock } from '@/lib/types';
 import { toast } from 'sonner';
 
 interface Props {
@@ -20,7 +20,7 @@ interface Props {
 
 const STYLIST_COLORS = ['#f472b6', '#60a5fa', '#34d399', '#a78bfa', '#fbbf24'];
 const HOUR_HEIGHT = 80; // px per hour
-const MIN_HEIGHT = 24;  // min card height in px
+const MIN_HEIGHT = 44;  // min card height — ensures 2 lines of text fit
 
 function isToday(d: Date): boolean {
   return format(d, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
@@ -337,9 +337,10 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonHours, 
                 const isConflicting = conflictAppointments.has(app.id);
                 const hasBuffer = app.buffer_end_time && app.buffer_end_time !== app.end_time;
 
+                const cardHeight = parseFloat(style?.height as string) || MIN_HEIGHT;
                 return (
                   <div key={app.id}
-                    className={`absolute left-1 right-1 rounded-lg px-2 py-1 cursor-pointer transition-shadow z-10 border-l-[3px] text-xs
+                    className={`absolute left-1 right-1 rounded-lg px-1.5 py-0.5 cursor-pointer transition-shadow z-10 border-l-[3px] text-xs overflow-hidden flex flex-col
                       ${isDragging ? 'opacity-70 shadow-xl z-30 ring-2 ring-blue-400 scale-[1.02]' : 'hover:shadow-md'}
                       ${isConflicting ? 'ring-2 ring-red-400 border-red-500' : ''}`}
                     style={{
@@ -354,17 +355,17 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonHours, 
                       onAppointmentClick(app);
                     }}
                     onPointerDown={(e) => handlePointerDownCard(e, app, 'move')}>
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium truncate text-[11px]">
+                    <div className="flex items-center justify-between gap-1 leading-tight">
+                      <span className="font-medium truncate text-[10px]">
                         {app.client?.first_name} {app.client?.last_name || ''}
                       </span>
-                      <span className="text-[10px] text-gray-400">
+                      <span className="text-[9px] text-gray-400 flex-shrink-0">
                         {format(parseISO(app.start_time), 'HH:mm')}
                       </span>
                     </div>
-                    <div className="text-gray-500 truncate text-[10px]">{app.service?.name}</div>
-                    {app.service?.price_cents != null && (
-                      <div className="text-[10px] font-medium text-green-600">€{(app.service.price_cents / 100).toFixed(0)}</div>
+                    <div className="text-gray-500 truncate text-[9px] leading-tight">{app.service?.name}</div>
+                    {app.service?.price_cents != null && cardHeight >= 38 && (
+                      <div className="text-[9px] font-medium text-green-600 leading-tight">€{(app.service.price_cents / 100).toFixed(0)}</div>
                     )}
 
                     {/* Buffer indicator */}

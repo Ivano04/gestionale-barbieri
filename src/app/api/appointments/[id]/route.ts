@@ -2,9 +2,7 @@ import { createServerSupabase } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { addMinutes, format } from 'date-fns';
 import { sendN8nEvent } from '@/lib/sync-webhook';
-import { fetchServiceWithPhases } from '@/services/booking-engine/queries';
-import { computePhaseBreakdown } from '@/services/booking-engine/phase-calculator';
-import { checkSlotConflict } from '@/services/booking-engine/overlap';
+import { fetchServiceDuration } from '@/services/booking-engine/queries';
 import { matchWaitlist } from '@/services/waitlist-engine';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -28,28 +26,27 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const newStylistId = body.stylist_id ?? existing.stylist_id;
   const newStartTime = body.start_time ?? existing.start_time;
 
-  // If start_time/stylist/service changed, recalculate durations
-  if (body.start_time || body.stylist_id || body.service_id) {
+  // Recalculate end times if service changed or start moved
+  if (body.start_time || body.service_id) {
     const serviceId = body.service_id ?? existing.service_id;
     if (!serviceId) {
       return Response.json({ error: 'Servizio non specificato' }, { status: 400 });
     }
 
-    const service = await fetchServiceWithPhases(serviceId);
-    if (!service) return Response.json({ error: 'Servizio non trovato' }, { status: 404 });
+    const duration = await fetchServiceDuration(serviceId);
+    if (!duration) return Response.json({ error: 'Servizio non trovato' }, { status: 404 });
 
-    const phases = computePhaseBreakdown(service);
+    const bufferMinutes = body.buffer_time_minutes ?? 0;
     const startTimeDate = new Date(newStartTime);
-    newEndTime = addMinutes(startTimeDate, phases.totalClientVisible).toISOString();
-    newBufferEndTime = addMinutes(startTimeDate, phases.totalInternal).toISOString();
+    newEndTime = addMinutes(startTimeDate, duration).toISOString();
+    newBufferEndTime = addMinutes(startTimeDate, duration + bufferMinutes).toISOString();
   }
 
-  // Validate past booking
   if (new Date(newStartTime) < new Date()) {
     return Response.json({ error: 'Non puoi spostare un appuntamento nel passato' }, { status: 400 });
   }
 
-  // Check time blocks (hard block)
+  // Time blocks check
   let blockQuery = adminSupabase
     .from('time_blocks')
     .select('id')
@@ -67,57 +64,33 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return Response.json({ error: 'Questo slot non è disponibile (fascia bloccata)' }, { status: 409 });
   }
 
-  // Phase-aware conflict detection (soft = warning, hard = block)
-  const warnings: any[] = [];
+  // Simple conflict check
   if (newStylistId) {
-    const { data: conflicting } = await supabase
+    const { data: conflict } = await supabase
       .from('appointments')
-      .select('id, stylist_id, start_time, end_time, buffer_end_time, client:clients(first_name, last_name), service:services(duration_minutes, duration_application, duration_processing, duration_finishing, buffer_time_minutes)')
+      .select('id, client:clients(first_name)')
       .eq('stylist_id', newStylistId)
       .eq('salon_id', existing.salon_id)
       .lt('start_time', newBufferEndTime || newEndTime)
       .gt('end_time', newStartTime)
       .neq('status', 'cancelled')
-      .neq('id', id);
+      .neq('id', id)
+      .limit(1);
 
-    if (conflicting?.length) {
-      for (const c of conflicting as any[]) {
-        const svc = c.service as any;
-        const cli = c.client as any;
-        const occBlock = {
-          stylist_id: c.stylist_id as string,
-          start_time: new Date(c.start_time),
-          end_time: c.buffer_end_time ? new Date(c.buffer_end_time) : new Date(c.end_time),
-          service: svc ?? null,
-        };
-        const conflict = checkSlotConflict(newStylistId, new Date(newStartTime), new Date(newEndTime!), [occBlock]);
-
-        if (conflict.severity === 'hard') {
-          return Response.json({
-            error: `Conflitto con appuntamento di ${cli?.first_name || 'cliente'} (${conflict.overlapPhase === 'application' ? 'fase attiva' : conflict.overlapPhase === 'buffer' ? 'buffer time' : 'finitura'})`,
-            conflict: { severity: 'hard', appointmentId: c.id, overlapPhase: conflict.overlapPhase, stylistName: cli?.first_name },
-          }, { status: 409 });
-        }
-        if (conflict.severity === 'soft') {
-          warnings.push({
-            type: 'soft_conflict',
-            message: `Sovrapposizione con fase di posa`,
-            appointmentId: c.id,
-            clientName: cli?.first_name,
-            overlapPhase: conflict.overlapPhase,
-          });
-        }
-      }
+    if (conflict?.length) {
+      const cli = conflict[0].client as any;
+      return Response.json({
+        error: `Conflitto con appuntamento di ${cli?.first_name || 'cliente'}`,
+        conflict: { appointmentId: conflict[0].id },
+      }, { status: 409 });
     }
   }
 
-  // Cleanup empty strings
   const clean: Record<string, any> = {};
   for (const [k, v] of Object.entries(body)) {
     clean[k] = v === '' ? null : v;
   }
 
-  // Always include recalculated times
   if (newEndTime) clean.end_time = newEndTime;
   if (newBufferEndTime) clean.buffer_end_time = newBufferEndTime;
 
@@ -130,7 +103,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
-  // Determine event type
   const moved = body.start_time || body.stylist_id;
   const extended = body.end_time && !moved;
   const eventType: any = moved ? 'appointment.moved' : extended ? 'appointment.extended' : 'appointment.updated';
@@ -143,7 +115,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     changes: clean,
   });
 
-  return Response.json({ ...data, warnings: warnings.length > 0 ? warnings : undefined });
+  return Response.json(data);
 }
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -157,7 +129,6 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     .eq('id', id)
     .single();
 
-  // Fetch service info for waitlist matching
   let freedServiceId: string | null = null;
   if (existing?.service_id) {
     const { data: svc } = await adminSupabase
@@ -179,7 +150,6 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     treatwell_appointment_id: existing?.treatwell_appointment_id,
   });
 
-  // Trigger waitlist matching for the freed slot
   if (existing?.salon_id && existing?.start_time) {
     const startDate = new Date(existing.start_time);
     const dateStr = format(startDate, 'yyyy-MM-dd');
@@ -191,21 +161,18 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       start_time: existing.start_time,
       end_time: existing.end_time,
     }).then(matched => {
-      if (matched.length > 0) {
-        // Notify n8n for each matched waitlist entry — n8n handles SMS/email delivery
-        matched.forEach(entry => {
-          sendN8nEvent('waitlist.slot_available', {
-            salon_id: existing.salon_id,
-            entry_id: entry.id,
-            client_name: entry.first_name || '',
-            phone: entry.phone,
-            service_id: entry.service_id,
-            stylist_id: existing.stylist_id,
-            date: dateStr,
-          });
+      matched.forEach(entry => {
+        sendN8nEvent('waitlist.slot_available', {
+          salon_id: existing.salon_id,
+          entry_id: entry.id,
+          client_name: entry.first_name || '',
+          phone: entry.phone,
+          service_id: entry.service_id,
+          stylist_id: existing.stylist_id,
+          date: dateStr,
         });
-      }
-    }).catch(() => { /* silent — waitlist failure must not block delete */ });
+      });
+    }).catch(() => {});
   }
 
   return Response.json({ status: 'ok' });

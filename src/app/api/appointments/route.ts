@@ -3,10 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { addMinutes } from 'date-fns';
 import { getRomeOffset } from '@/lib/date-utils';
 import { sendN8nEvent } from '@/lib/sync-webhook';
-import { fetchServiceWithPhases, fetchServiceOverride } from '@/services/booking-engine/queries';
-import { computePhaseBreakdown } from '@/services/booking-engine/phase-calculator';
-import { checkSlotConflict } from '@/services/booking-engine/overlap';
-import type { Service } from '@/lib/types';
+import { fetchServiceDuration } from '@/services/booking-engine/queries';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -44,19 +41,14 @@ export async function POST(request: Request) {
   const supabase = await createServerSupabase();
   const adminSupabase = createAdminClient();
 
-  // Fetch service with phase info
-  const service = await fetchServiceWithPhases(body.service_id);
-  if (!service) return Response.json({ error: 'Servizio non trovato' }, { status: 404 });
+  const duration = await fetchServiceDuration(body.service_id);
+  if (!duration) return Response.json({ error: 'Servizio non trovato' }, { status: 404 });
 
-  const phases = computePhaseBreakdown(service);
-  const clientDuration = phases.totalClientVisible;
-  const totalDuration = phases.totalInternal;
-
+  const bufferMinutes = body.buffer_time_minutes ?? 0;
   const startTime = new Date(body.start_time);
-  const endTime = addMinutes(startTime, clientDuration).toISOString();
-  const bufferEndTime = addMinutes(startTime, totalDuration).toISOString();
+  const endTime = addMinutes(startTime, duration).toISOString();
+  const bufferEndTime = addMinutes(startTime, duration + bufferMinutes).toISOString();
 
-  // Past booking check
   if (startTime < new Date()) {
     return Response.json({ error: 'Non puoi prenotare nel passato' }, { status: 400 });
   }
@@ -94,7 +86,7 @@ export async function POST(request: Request) {
     }
   }
 
-  // Check time blocks (hard conflicts only — blocks have no phase decomposition)
+  // Time blocks check
   let blockQuery = adminSupabase
     .from('time_blocks')
     .select('id')
@@ -108,46 +100,24 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Questo slot non è disponibile (fascia bloccata)' }, { status: 409 });
   }
 
-  // Phase-aware conflict detection
-  const warnings: any[] = [];
+  // Simple conflict check — any overlap is a hard block
   if (body.stylist_id) {
-    // Fetch occupied slots for conflict analysis
-    const { data: existingApps } = await supabase
+    const { data: conflict } = await supabase
       .from('appointments')
-      .select('id, stylist_id, start_time, end_time, buffer_end_time, client:clients(first_name, last_name), service:services(duration_minutes, duration_application, duration_processing, duration_finishing, buffer_time_minutes)')
+      .select('id, client:clients(first_name)')
       .eq('stylist_id', body.stylist_id)
       .eq('salon_id', body.salon_id)
       .lt('start_time', bufferEndTime)
       .gt('end_time', body.start_time)
-      .neq('status', 'cancelled');
+      .neq('status', 'cancelled')
+      .limit(1);
 
-    if (existingApps?.length) {
-      for (const existing of existingApps as any[]) {
-        const svc = existing.service as any;
-        const occBlock = {
-          stylist_id: existing.stylist_id as string,
-          start_time: new Date(existing.start_time),
-          end_time: existing.buffer_end_time ? new Date(existing.buffer_end_time) : new Date(existing.end_time),
-          service: svc ?? null,
-        };
-        const conflict = checkSlotConflict(body.stylist_id, startTime, new Date(endTime), [occBlock]);
-
-        if (conflict.severity === 'hard') {
-          const cli = existing.client as any;
-          return Response.json({
-            error: `Conflitto con appuntamento di ${cli?.first_name || 'cliente'} (${conflict.overlapPhase === 'application' ? 'fase attiva' : conflict.overlapPhase === 'buffer' ? 'buffer time' : 'finitura'})`,
-            conflict: { severity: 'hard', appointmentId: existing.id, overlapPhase: conflict.overlapPhase },
-          }, { status: 409 });
-        }
-        if (conflict.severity === 'soft') {
-          warnings.push({
-            type: 'soft_conflict',
-            message: `Lo slot si sovrappone alla fase di posa di un altro appuntamento`,
-            appointmentId: existing.id,
-            overlapPhase: conflict.overlapPhase,
-          });
-        }
-      }
+    if (conflict?.length) {
+      const cli = conflict[0].client as any;
+      return Response.json({
+        error: `Conflitto con appuntamento di ${cli?.first_name || 'cliente'}`,
+        conflict: { appointmentId: conflict[0].id },
+      }, { status: 409 });
     }
   }
 
@@ -186,7 +156,6 @@ export async function POST(request: Request) {
 
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
-  // Fire-and-forget n8n webhook for external sync
   sendN8nEvent('appointment.created', {
     id: appointment.id,
     salon_id: appointment.salon_id,
@@ -201,5 +170,5 @@ export async function POST(request: Request) {
     treatwell_appointment_id: appointment.treatwell_appointment_id,
   });
 
-  return Response.json({ ...appointment, warnings: warnings.length > 0 ? warnings : undefined }, { status: 201 });
+  return Response.json(appointment, { status: 201 });
 }

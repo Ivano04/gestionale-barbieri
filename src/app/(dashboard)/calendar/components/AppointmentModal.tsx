@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { X, Trash2, Loader2, ChevronDown, Plus, Clock, Scissors } from 'lucide-react';
-import type { Appointment, Service, Client, User, AddedService, PhaseBreakdown } from '@/lib/types';
+import type { Appointment, Service, Client, User, AddedService } from '@/lib/types';
 import { format, parseISO, addDays, addMinutes } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { formatPhone, countryCodes } from '@/lib/utils';
@@ -33,7 +33,6 @@ export function AppointmentModal({ appointment, services, clients, stylists, sal
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [addingService, setAddingService] = useState(false);
   const [newServiceId, setNewServiceId] = useState('');
-  const [durationPreview, setDurationPreview] = useState<PhaseBreakdown | null>(null);
   const isNew = !appointment?.id;
 
   useEffect(() => {
@@ -49,28 +48,6 @@ export function AppointmentModal({ appointment, services, clients, stylists, sal
       .then(r => r.json())
       .then(d => { setSlots(Array.isArray(d) ? d : []); setSlotsLoading(false); });
   }, [salonId, form.service_id, form.stylist_id, slotDate]);
-
-  // Compute duration preview when service changes
-  useEffect(() => {
-    if (!form.service_id) { setDurationPreview(null); return; }
-    const svc = services.find(s => s.id === form.service_id);
-    if (!svc) { setDurationPreview(null); return; }
-
-    const hasPhases = svc.duration_application != null || svc.duration_processing != null || svc.duration_finishing != null;
-    const app = hasPhases ? (svc.duration_application ?? 0) : svc.duration_minutes;
-    const proc = hasPhases ? (svc.duration_processing ?? 0) : 0;
-    const fin = hasPhases ? (svc.duration_finishing ?? 0) : 0;
-    const buf = svc.buffer_time_minutes ?? 0;
-
-    setDurationPreview({
-      application: app,
-      processing: proc,
-      finishing: fin,
-      buffer: buf,
-      totalClientVisible: app + proc + fin,
-      totalInternal: app + proc + fin + buf,
-    });
-  }, [form.service_id, services]);
 
   if (!appointment) return null;
 
@@ -195,41 +172,22 @@ export function AppointmentModal({ appointment, services, clients, stylists, sal
             </select>
             {errors.service && <p className="text-red-500 text-xs mt-1">{errors.service}</p>}
 
-            {/* Duration phase breakdown */}
-            {durationPreview && (
-              <div className="mt-2 p-3 bg-gray-50 rounded-lg text-xs">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-medium text-gray-700">Durata totale: {durationPreview.totalClientVisible} min</span>
-                  {durationPreview.buffer > 0 && (
+            {/* Duration + buffer display */}
+            {form.service_id && (() => {
+              const svc = services.find(s => s.id === form.service_id);
+              if (!svc) return null;
+              const buf = svc.buffer_time_minutes ?? 0;
+              return (
+                <div className="mt-2 p-2 bg-gray-50 rounded-lg text-xs flex items-center justify-between">
+                  <span className="font-medium text-gray-700">Durata: {svc.duration_minutes} min</span>
+                  {buf > 0 && (
                     <span className="text-gray-400 flex items-center gap-1">
-                      <Clock size={10} /> +{durationPreview.buffer} min buffer
+                      <Clock size={10} /> +{buf} min buffer
                     </span>
                   )}
                 </div>
-                {durationPreview.processing > 0 && (
-                  <div className="flex items-center gap-2 text-[11px]">
-                    <div className="flex-1 h-4 rounded bg-blue-200 flex items-center justify-center text-blue-800 font-medium"
-                      style={{ flex: durationPreview.application }}>
-                      {durationPreview.application > 0 ? `${durationPreview.application}m attivi` : ''}
-                    </div>
-                    <div className="flex-1 h-4 rounded bg-green-200 flex items-center justify-center text-green-800 font-medium"
-                      style={{ flex: durationPreview.processing }}>
-                      {durationPreview.processing > 0 ? `${durationPreview.processing}m posa` : ''}
-                    </div>
-                    <div className="flex-1 h-4 rounded bg-purple-200 flex items-center justify-center text-purple-800 font-medium"
-                      style={{ flex: durationPreview.finishing }}>
-                      {durationPreview.finishing > 0 ? `${durationPreview.finishing}m finitura` : ''}
-                    </div>
-                    {durationPreview.buffer > 0 && (
-                      <div className="h-4 rounded bg-gray-300 flex items-center justify-center text-gray-600 font-medium"
-                        style={{ width: `${Math.max(20, durationPreview.buffer * 2)}px` }}>
-                        {durationPreview.buffer}m
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
+              );
+            })()}
           </div>
 
           {/* 3. Operatore */}
@@ -275,7 +233,7 @@ export function AppointmentModal({ appointment, services, clients, stylists, sal
               <div className="space-y-1 max-h-52 overflow-y-auto">
                 {slots.map((s, i) => {
                   const svc = services.find(svc => svc.id === form.service_id);
-                  const duration = durationPreview?.totalClientVisible || svc?.duration_minutes || 0;
+                  const duration = svc?.duration_minutes || 0;
                   const [h, m] = s.time.split(':').map(Number);
                   const endM = h * 60 + m + duration;
                   const endTime = `${String(Math.floor(endM / 60)).padStart(2, '0')}:${String(endM % 60).padStart(2, '0')}`;

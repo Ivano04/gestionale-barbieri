@@ -31,16 +31,6 @@ export interface User {
   created_at: string;
 }
 
-/** Breakdown of service duration into phases */
-export interface PhaseBreakdown {
-  application: number;
-  processing: number;
-  finishing: number;
-  buffer: number;
-  totalClientVisible: number;   // application + processing + finishing
-  totalInternal: number;         // application + processing + finishing + buffer
-}
-
 export interface Service {
   id: string;
   salon_id: string;
@@ -135,17 +125,6 @@ export interface SyncLog {
   error_message: string | null;
   retry_count: number;
   created_at: string;
-}
-
-/** Overlap severity for conflict engine */
-export type ConflictSeverity = 'none' | 'soft' | 'hard';
-
-export interface ConflictResult {
-  severity: ConflictSeverity;
-  conflictingAppointment?: Appointment;
-  conflictingStylistName?: string;
-  /** If soft conflict, which phase overlaps */
-  overlapPhase?: 'application' | 'processing' | 'finishing' | 'buffer';
 }
 
 /** Smart swap suggestion */

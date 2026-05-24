@@ -2,18 +2,14 @@ import { createServerSupabase } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { addMinutes } from 'date-fns';
 import { sendN8nEvent } from '@/lib/sync-webhook';
-import { fetchServiceWithPhases } from '@/services/booking-engine/queries';
-import { computePhaseBreakdown } from '@/services/booking-engine/phase-calculator';
-import { checkSlotConflict } from '@/services/booking-engine/overlap';
+import { fetchServiceDuration } from '@/services/booking-engine/queries';
 import type { AddedService } from '@/lib/types';
 
 /**
  * POST /api/appointments/[id]/add-service
  *
  * In-chair upselling: add a service to an ongoing appointment.
- * Duration logic uses precedence — the new service starts from the end
- * of the current appointment, avoiding simple arithmetic summation
- * that would create unrealistic gaps.
+ * New service starts from buffer_end_time, avoiding gaps.
  */
 export async function POST(
   request: Request,
@@ -28,10 +24,9 @@ export async function POST(
     return Response.json({ error: 'service_id richiesto' }, { status: 400 });
   }
 
-  // Fetch current appointment
   const { data: appointment } = await supabase
     .from('appointments')
-    .select('id, salon_id, stylist_id, start_time, end_time, buffer_end_time, added_services, service:services(name)')
+    .select('id, salon_id, stylist_id, start_time, end_time, buffer_end_time, added_services')
     .eq('id', id)
     .single();
 
@@ -39,89 +34,54 @@ export async function POST(
     return Response.json({ error: 'Appuntamento non trovato' }, { status: 404 });
   }
 
-  // Fetch the new service with phases
-  const service = await fetchServiceWithPhases(newServiceId);
-  if (!service) return Response.json({ error: 'Servizio non trovato' }, { status: 404 });
+  const duration = await fetchServiceDuration(newServiceId);
+  if (!duration) return Response.json({ error: 'Servizio non trovato' }, { status: 404 });
 
-  const phases = computePhaseBreakdown(service);
-
-  // Precedence logic: new service starts from current end_time (client-visible),
-  // not from now — this avoids gaps. For buffer, new service's active phases
-  // extend from current buffer_end_time (stylist is still cleaning).
+  // New service starts from current buffer_end_time (stylist free after cleanup)
   const currentBufferEnd = appointment.buffer_end_time || appointment.end_time;
   const startBase = new Date(currentBufferEnd);
+  const newClientEnd = addMinutes(startBase, duration);
+  const newBufferEnd = addMinutes(startBase, duration);
 
-  const newClientEnd = addMinutes(startBase, phases.totalClientVisible);
-  const newBufferEnd = addMinutes(startBase, phases.totalInternal);
-
-  // Check for conflicts with other appointments in the extended window
+  // Check conflicts in the extended window
   if (appointment.stylist_id) {
     const { data: conflicts } = await supabase
       .from('appointments')
-      .select('id, start_time, end_time, buffer_end_time, client:clients(first_name), service:services(duration_minutes, duration_application, duration_processing, duration_finishing, buffer_time_minutes)')
+      .select('id, client:clients(first_name)')
       .eq('stylist_id', appointment.stylist_id)
       .eq('salon_id', appointment.salon_id)
       .lt('start_time', newBufferEnd.toISOString())
-      .gt('end_time', appointment.end_time) // Only check after current appt ends
+      .gt('end_time', appointment.end_time)
       .neq('status', 'cancelled')
       .neq('id', id);
 
     if (conflicts?.length) {
-      for (const c of conflicts as any[]) {
-        const svc = c.service as any;
-        const cli = c.client as any;
-        const occBlock = {
-          stylist_id: appointment.stylist_id,
-          start_time: new Date(c.start_time),
-          end_time: c.buffer_end_time ? new Date(c.buffer_end_time) : new Date(c.end_time),
-          service: svc ?? null,
-        };
-        const conflict = checkSlotConflict(
-          appointment.stylist_id!,
-          startBase,
-          newClientEnd,
-          [occBlock],
-        );
-
-        if (conflict.severity === 'hard') {
-          return Response.json({
-            error: `Conflitto con appuntamento successivo di ${cli?.first_name || 'cliente'}`,
-            conflict: { severity: 'hard', appointmentId: c.id },
-          }, { status: 409 });
-        }
-      }
+      const cli = conflicts[0].client as any;
+      return Response.json({
+        error: `Conflitto con appuntamento successivo di ${cli?.first_name || 'cliente'}`,
+      }, { status: 409 });
     }
   }
 
-  // Build added_services array
   const existingAdded: AddedService[] = Array.isArray(appointment.added_services)
-    ? appointment.added_services
-    : [];
+    ? appointment.added_services : [];
+
+  const { data: serviceInfo } = await supabase
+    .from('services').select('name').eq('id', newServiceId).single();
 
   const newAddedService: AddedService = {
     service_id: newServiceId,
-    name: service.duration_minutes ? `Servizio ${newServiceId.slice(0, 8)}` : 'Servizio aggiunto',
-    duration_added: phases.totalClientVisible,
+    name: serviceInfo?.name || 'Servizio aggiunto',
+    duration_added: duration,
     added_at: new Date().toISOString(),
   };
 
-  // Also fetch the service name for the record
-  const { data: serviceInfo } = await supabase
-    .from('services')
-    .select('name')
-    .eq('id', newServiceId)
-    .single();
-  if (serviceInfo) newAddedService.name = serviceInfo.name;
-
-  const updatedAdded = [...existingAdded, newAddedService];
-
-  // Update appointment with new end times and added services
   const { data: updated, error } = await supabase
     .from('appointments')
     .update({
       end_time: newClientEnd.toISOString(),
       buffer_end_time: newBufferEnd.toISOString(),
-      added_services: updatedAdded,
+      added_services: [...existingAdded, newAddedService],
     })
     .eq('id', id)
     .select('*, client:clients(*), stylist:users(*), service:services(*)')
@@ -129,7 +89,6 @@ export async function POST(
 
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
-  // Fire sync webhook — block external slots immediately
   sendN8nEvent('appointment.service_added', {
     id: updated.id,
     salon_id: updated.salon_id,
