@@ -2,11 +2,14 @@ export type N8nEvent =
   | 'appointment.created'
   | 'appointment.updated'
   | 'appointment.cancelled'
-  | 'appointment.extended'        // drag/resize changed end_time
-  | 'appointment.service_added'   // in-chair upselling
-  | 'appointment.moved'           // drag changed stylist or start_time
+  | 'appointment.extended'
+  | 'appointment.service_added'
+  | 'appointment.moved'
   | 'time_block.created'
-  | 'time_block.deleted';
+  | 'time_block.deleted'
+  | 'waitlist.joined'
+  | 'waitlist.slot_available'
+  | 'notification.send';
 
 interface N8nPayload {
   event: N8nEvent;

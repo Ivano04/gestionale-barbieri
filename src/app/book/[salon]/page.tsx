@@ -21,7 +21,7 @@ export default function BookPage() {
   const searchParams = useSearchParams();
   const salon = params.salon as string;
 
-  const [step, setStep] = useState<'service' | 'datetime' | 'details'>('service');
+  const [step, setStep] = useState<'service' | 'datetime' | 'details' | 'waitlist'>('service');
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedSlot, setSelectedSlot] = useState<{ time: string; stylist_id: string; stylist_name: string } | null>(null);
@@ -37,6 +37,8 @@ export default function BookPage() {
   const [done, setDone] = useState(false);
   const [error, setError] = useState('');
   const [selectedStylist, setSelectedStylist] = useState<string | null>(null);
+  const [waitlistDone, setWaitlistDone] = useState(false);
+  const [waitlistSaving, setWaitlistSaving] = useState(false);
 
   const preselectedService = searchParams.get('service');
 
@@ -84,6 +86,30 @@ export default function BookPage() {
     setLoading(false);
   }
 
+  async function handleJoinWaitlist() {
+    if (!salonData || !selectedService) return;
+    setWaitlistSaving(true);
+    setError('');
+    try {
+      const res = await fetch('/api/waitlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          salon_id: salonData.id,
+          service_id: selectedService.id,
+          stylist_id: selectedStylist || null,
+          preferred_date: format(selectedDate, 'yyyy-MM-dd'),
+          first_name: name,
+          last_name: surname,
+          phone: formatPhone(phonePrefix + phone),
+        }),
+      });
+      if (res.ok) { setWaitlistDone(true); }
+      else { const err = await res.json(); setError(err.error || 'Errore'); }
+    } catch { setError('Errore di connessione'); }
+    setWaitlistSaving(false);
+  }
+
   if (done) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50 p-4">
@@ -94,6 +120,21 @@ export default function BookPage() {
           <h2 className="text-2xl font-bold mb-2">Prenotazione Confermata!</h2>
           <p className="text-gray-600 mb-4">{selectedService?.name} &mdash; {format(selectedDate, 'EEEE d MMMM', { locale: it })} alle {selectedSlot?.time}</p>
           <p className="text-sm text-gray-500">Riceverai una conferma via SMS</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (waitlistDone) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-amber-50 to-orange-50 p-4">
+        <div className="text-center max-w-sm">
+          <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Clock size={32} className="text-amber-600" />
+          </div>
+          <h2 className="text-2xl font-bold mb-2">Lista d'attesa!</h2>
+          <p className="text-gray-600 mb-4">{selectedService?.name} &mdash; {format(selectedDate, 'EEEE d MMMM', { locale: it })}</p>
+          <p className="text-sm text-gray-500">Ti avviseremo via SMS quando si libera uno slot</p>
         </div>
       </div>
     );
@@ -176,7 +217,15 @@ export default function BookPage() {
               );
             })()}
             <h3 className="font-semibold mb-2 text-sm">Orari disponibili</h3>
-            {slots.length === 0 && <p className="text-center text-gray-400 py-4 text-sm">Nessuno slot disponibile</p>}
+            {slots.length === 0 && (
+              <div className="text-center py-4 space-y-3">
+                <p className="text-gray-400 text-sm">Nessuno slot disponibile</p>
+                <button onClick={() => setStep('waitlist')}
+                  className="px-6 py-2.5 bg-amber-500 text-white rounded-xl font-medium text-sm hover:bg-amber-600 transition-colors">
+                  Entra in lista d'attesa
+                </button>
+              </div>
+            )}
             <div className="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto">
               {slots.filter(s => !selectedStylist || s.stylist_name === selectedStylist).map((s, i) => (
                 <button key={`${s.time}-${s.stylist_id}-${i}`} onClick={() => { setSelectedSlot(s); setStep('details'); }}
@@ -218,6 +267,40 @@ export default function BookPage() {
                 {loading ? 'Prenotazione...' : 'Conferma Prenotazione'}
               </button>
               <p className="text-xs text-center text-gray-400">Riceverai conferma via SMS</p>
+            </div>
+          </div>
+        )}
+
+        {step === 'waitlist' && selectedService && (
+          <div className="bg-white rounded-xl shadow-sm p-4">
+            <button onClick={() => setStep('datetime')} className="flex items-center gap-1 text-sm text-gray-500 mb-3">
+              <ArrowLeft size={14} /> {selectedService.name} &middot; {format(selectedDate, 'EEEE d MMMM', { locale: it })}
+            </button>
+            <div className="bg-amber-50 rounded-lg p-3 mb-4 text-sm text-amber-800">
+              <p className="font-medium mb-1">Lista d'attesa</p>
+              <p>Ti avviseremo via SMS appena si libera uno slot per questo servizio.</p>
+            </div>
+            <h3 className="font-semibold mb-3">I tuoi dati</h3>
+            <div className="space-y-3">
+              <input type="text" placeholder="Nome *" value={name} onChange={e => setName(e.target.value)}
+                className="w-full px-4 py-3 border rounded-lg text-sm" />
+              <input type="text" placeholder="Cognome *" value={surname} onChange={e => setSurname(e.target.value)}
+                className="w-full px-4 py-3 border rounded-lg text-sm" />
+              <div className="flex gap-2">
+                <select value={phonePrefix} onChange={e => setPhonePrefix(e.target.value)}
+                  className="px-2 py-3 border rounded-lg text-sm bg-gray-50 w-24">
+                  {countryCodes.slice(0, 8).map(c => (
+                    <option key={c.code} value={c.code}>{c.flag} {c.code}</option>
+                  ))}
+                </select>
+                <input type="tel" placeholder="Telefono *" value={phone}
+                  onChange={e => setPhone(e.target.value.replace(/[^\d\s\-\(\)]/g, ''))}
+                  className="flex-1 px-4 py-3 border rounded-lg text-sm" />
+              </div>
+              <button onClick={handleJoinWaitlist} disabled={!name || !phone || waitlistSaving}
+                className="w-full bg-amber-500 text-white py-3 rounded-lg font-semibold hover:bg-amber-600 disabled:opacity-50">
+                {waitlistSaving ? 'Salvataggio...' : 'Entra in lista d\'attesa'}
+              </button>
             </div>
           </div>
         )}

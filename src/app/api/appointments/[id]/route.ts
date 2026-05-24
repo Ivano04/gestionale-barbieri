@@ -1,10 +1,11 @@
 import { createServerSupabase } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { addMinutes } from 'date-fns';
+import { addMinutes, format } from 'date-fns';
 import { sendN8nEvent } from '@/lib/sync-webhook';
 import { fetchServiceWithPhases } from '@/services/booking-engine/queries';
 import { computePhaseBreakdown } from '@/services/booking-engine/phase-calculator';
 import { checkSlotConflict } from '@/services/booking-engine/overlap';
+import { matchWaitlist } from '@/services/waitlist-engine';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -152,9 +153,17 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   const adminSupabase = createAdminClient();
   const { data: existing } = await adminSupabase
     .from('appointments')
-    .select('ghl_appointment_id, treatwell_appointment_id, salon_id')
+    .select('ghl_appointment_id, treatwell_appointment_id, salon_id, stylist_id, service_id, start_time, end_time')
     .eq('id', id)
     .single();
+
+  // Fetch service info for waitlist matching
+  let freedServiceId: string | null = null;
+  if (existing?.service_id) {
+    const { data: svc } = await adminSupabase
+      .from('services').select('id').eq('id', existing.service_id).single();
+    freedServiceId = svc?.id || null;
+  }
 
   const { error } = await adminSupabase
     .from('appointments')
@@ -169,6 +178,35 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     ghl_appointment_id: existing?.ghl_appointment_id,
     treatwell_appointment_id: existing?.treatwell_appointment_id,
   });
+
+  // Trigger waitlist matching for the freed slot
+  if (existing?.salon_id && existing?.start_time) {
+    const startDate = new Date(existing.start_time);
+    const dateStr = format(startDate, 'yyyy-MM-dd');
+    matchWaitlist({
+      salon_id: existing.salon_id,
+      stylist_id: existing.stylist_id,
+      service_id: freedServiceId,
+      date: dateStr,
+      start_time: existing.start_time,
+      end_time: existing.end_time,
+    }).then(matched => {
+      if (matched.length > 0) {
+        // Notify n8n for each matched waitlist entry — n8n handles SMS/email delivery
+        matched.forEach(entry => {
+          sendN8nEvent('waitlist.slot_available', {
+            salon_id: existing.salon_id,
+            entry_id: entry.id,
+            client_name: entry.first_name || '',
+            phone: entry.phone,
+            service_id: entry.service_id,
+            stylist_id: existing.stylist_id,
+            date: dateStr,
+          });
+        });
+      }
+    }).catch(() => { /* silent — waitlist failure must not block delete */ });
+  }
 
   return Response.json({ status: 'ok' });
 }

@@ -78,6 +78,7 @@ export interface Client {
   phone: string | null;
   email: string | null;
   notes: string | null;
+  notification_preference: 'sms' | 'email' | 'both' | 'none';
   ghl_contact_id: string | null;
   treatwell_client_id: string | null;
   created_at: string;
@@ -153,4 +154,54 @@ export interface SwapSuggestion {
   targetStylistId: string;
   targetStylistName: string;
   reason: string;
+}
+
+/** Waitlist */
+export type WaitlistStatus = 'waiting' | 'notified' | 'booked' | 'expired' | 'cancelled';
+
+export interface WaitlistEntry {
+  id: string;
+  salon_id: string;
+  client_id: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  phone: string | null;
+  service_id: string;
+  stylist_id: string | null;
+  preferred_date: string;
+  preferred_time_start: string | null;
+  preferred_time_end: string | null;
+  status: WaitlistStatus;
+  notified_at: string | null;
+  booked_appointment_id: string | null;
+  created_at: string;
+  expires_at: string;
+  // Joined
+  service?: Service;
+  stylist?: Pick<User, 'id' | 'full_name'>;
+}
+
+/** Notification */
+export type NotificationType =
+  | 'appointment_confirmed'
+  | 'appointment_reminder'
+  | 'appointment_cancelled'
+  | 'appointment_updated'
+  | 'waitlist_slot_available';
+
+export type NotificationChannel = 'sms' | 'email';
+
+export interface Notification {
+  id: string;
+  salon_id: string;
+  appointment_id: string | null;
+  waitlist_entry_id: string | null;
+  client_id: string | null;
+  type: NotificationType;
+  channel: NotificationChannel;
+  recipient: string;
+  status: 'pending' | 'sent' | 'failed';
+  error_message: string | null;
+  sent_at: string | null;
+  created_at: string;
 }
