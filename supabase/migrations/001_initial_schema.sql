@@ -16,6 +16,9 @@ CREATE TABLE salons (
   ghl_subaccount_id text,
   treatwell_salon_id text,
   treatwell_api_enabled boolean DEFAULT false,
+  open_time text DEFAULT '09:00',
+  close_time text DEFAULT '19:00',
+  working_hours jsonb DEFAULT null,
   created_at timestamptz DEFAULT now()
 );
 
