@@ -25,10 +25,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Nome, email e password obbligatori' }, { status: 400 });
   }
 
+  if (!process.env.DATABASE_URL) {
+    return NextResponse.json({ error: 'DATABASE_URL non configurata' }, { status: 500 });
+  }
+
   const pool = new Pool({
-    connectionString: process.env.DATABASE_URL!,
+    connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false },
-    family: 4, // Force IPv4 (Hetzner server doesn't reach Supabase IPv6)
   });
 
   try {
