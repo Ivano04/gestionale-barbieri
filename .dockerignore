@@ -4,7 +4,6 @@ node_modules
 .env.local
 .env
 *.log
-*.png
 *.yml
 *.yaml
 !docker-compose.yml
