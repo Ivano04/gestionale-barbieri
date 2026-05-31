@@ -6,6 +6,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3002
+      - HOSTNAME=0.0.0.0
     env_file:
       - .env.production
     restart: unless-stopped
