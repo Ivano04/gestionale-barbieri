@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.env.local
+.env
+*.log
+*.png
+*.yml
+*.yaml
+!docker-compose.yml
+docs
+.claude
+.playwright-mcp
+.superpowers
