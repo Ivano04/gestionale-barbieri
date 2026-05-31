@@ -13,8 +13,8 @@ rsync -avz --delete \
   --exclude '.env.local' \
   --exclude '*.log' \
   --exclude '*.png' \
+  --include 'docker-compose.yml' \
   --exclude '*.yml' \
-  --exclude '!docker-compose.yml' \
   ./ "$SERVER:$PROJECT_DIR/"
 
 echo "🔨 Rebuild e riavvio container..."
