@@ -1,17 +1,15 @@
 import { createServerSupabase } from '@/lib/supabase/server';
-import { createAdminClient } from '@/lib/supabase/admin';
 import { NextResponse } from 'next/server';
+import { Pool } from 'pg';
 
 export async function POST(request: Request) {
   const supabase = await createServerSupabase();
 
-  // Get current user
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) {
     return NextResponse.json({ error: 'Non autenticato' }, { status: 401 });
   }
 
-  // Get user's profile (role + salon_id)
   const { data: profile } = await supabase
     .from('users')
     .select('role, salon_id')
@@ -23,50 +21,48 @@ export async function POST(request: Request) {
   }
 
   const { full_name, email, password } = await request.json();
-
   if (!full_name || !email || !password) {
     return NextResponse.json({ error: 'Nome, email e password obbligatori' }, { status: 400 });
   }
 
-  const adminSupabase = createAdminClient();
-
-  // Create user in Supabase Auth
-  const { data, error } = await adminSupabase.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-    user_metadata: {
-      full_name,
-      salon_id: profile.salon_id,
-      role: 'stylist',
-    },
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL!,
+    ssl: { rejectUnauthorized: false },
   });
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
+  try {
+    const result = await pool.query(
+      `INSERT INTO auth.users (
+        instance_id, id, aud, role, email, encrypted_password,
+        email_confirmed_at, raw_user_meta_data, created_at, updated_at,
+        confirmation_token, recovery_token, email_change_token_new, email_change
+      ) VALUES (
+        '00000000-0000-0000-0000-000000000000',
+        gen_random_uuid(),
+        'authenticated',
+        'authenticated',
+        $1,
+        crypt($2, gen_salt('bf')),
+        now(),
+        jsonb_build_object('salon_id', $3::text, 'full_name', $4::text, 'role', 'stylist'),
+        now(), now(),
+        '', '', '', ''
+      )
+      RETURNING id`,
+      [email, password, profile.salon_id, full_name]
+    );
+
+    return NextResponse.json(
+      { id: result.rows[0].id, email, full_name },
+      { status: 201 }
+    );
+  } catch (error: any) {
+    console.error('Errore creazione operatore:', error);
+    return NextResponse.json(
+      { error: error.message || 'Errore creazione utente' },
+      { status: 500 }
+    );
+  } finally {
+    await pool.end();
   }
-
-  const userId = data.user?.id;
-  if (!userId) {
-    return NextResponse.json({ error: 'Errore creazione utente' }, { status: 500 });
-  }
-
-  // Ensure public.users row (in case the trigger didn't fire)
-  const { error: upsertError } = await adminSupabase
-    .from('users')
-    .upsert({
-      id: userId,
-      salon_id: profile.salon_id,
-      email,
-      role: 'stylist',
-      full_name,
-    }, { onConflict: 'id' });
-
-  if (upsertError) {
-    // Clean up the auth user if profile creation fails
-    await adminSupabase.auth.admin.deleteUser(userId);
-    return NextResponse.json({ error: upsertError.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ id: userId, email, full_name }, { status: 201 });
 }
