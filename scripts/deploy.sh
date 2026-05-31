@@ -17,7 +17,10 @@ rsync -avz --delete \
   --exclude '*.yml' \
   ./ "$SERVER:$PROJECT_DIR/"
 
-echo "🔨 Rebuild e riavvio container..."
+echo "🔨 Rebuild e riavvio container Next.js..."
 ssh "$SERVER" "cd $PROJECT_DIR && docker compose up --build -d --remove-orphans"
+
+echo "🔄 Reload Caddy (reverse proxy)..."
+ssh "$SERVER" "caddy reload --config /etc/caddy/Caddyfile || systemctl reload caddy || true"
 
 echo "✅ Deploy completato: https://gestionale-parrucchiere.localvista.it"
