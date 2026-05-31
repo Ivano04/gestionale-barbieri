@@ -5,8 +5,8 @@ services:
       dockerfile: Dockerfile
     environment:
       - NODE_ENV=production
+      - PORT=3002
     env_file:
       - .env.production
     restart: unless-stopped
-    ports:
-      - "3002:3000"
+    network_mode: host
