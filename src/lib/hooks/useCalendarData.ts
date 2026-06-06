@@ -31,13 +31,14 @@ export function useCalendarData(salonId: string, date: Date | null) {
 
     try {
       const dateStr = format(date, 'yyyy-MM-dd');
+      const cacheBuster = Date.now(); // Bypassa la cache del browser e di Next.js
 
       const [appsRes, svcRes] = await Promise.all([
-        fetch(`/api/appointments?salon_id=${salonId}&date=${dateStr}`).then(r => {
+        fetch(`/api/appointments?salon_id=${salonId}&date=${dateStr}&_t=${cacheBuster}`).then(r => {
           if (!r.ok) throw new Error(`Appointments: ${r.status}`);
           return r.json();
         }),
-        fetch(`/api/services?salon_id=${salonId}`).then(r => {
+        fetch(`/api/services?salon_id=${salonId}&_t=${cacheBuster}`).then(r => {
           if (!r.ok) throw new Error(`Services: ${r.status}`);
           return r.json();
         }),
@@ -49,14 +50,14 @@ export function useCalendarData(salonId: string, date: Date | null) {
         { data: salonData },
       ] = await Promise.all([
         supabase.from('clients').select('*').eq('salon_id', salonId).order('last_name'),
-        supabase.from('users').select('id, full_name, working_hours').eq('salon_id', salonId).eq('role', 'stylist'),
+        supabase.from('users').select('id, full_name, working_hours').eq('salon_id', salonId).eq('role', 'stylist').limit(50),
         supabase.from('salons').select('working_hours, open_time, close_time').eq('id', salonId).single(),
       ]);
 
       // Fetch time blocks (pass date to include today's blocks even if past)
       let timeBlocks: TimeBlock[] = [];
       try {
-        const tbRes = await fetch(`/api/time-blocks?salon_id=${salonId}&date=${dateStr}`);
+        const tbRes = await fetch(`/api/time-blocks?salon_id=${salonId}&date=${dateStr}&_t=${cacheBuster}`);
         if (tbRes.ok) timeBlocks = await tbRes.json();
       } catch { /* time blocks are non-critical */ }
 
@@ -98,11 +99,20 @@ export function useCalendarData(salonId: string, date: Date | null) {
   // Load on mount and when dependencies change
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Refresh on window focus (sync across tabs/pages)
+  // Refresh on window focus OR page becoming visible
+  // (Next.js Router Cache keeps pages alive in background —
+  //  without this, navigating back shows stale data)
   useEffect(() => {
     const onFocus = () => loadData();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') loadData();
+    };
     window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [loadData]);
 
   return { ...data, refresh: loadData };

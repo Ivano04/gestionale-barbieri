@@ -6,6 +6,7 @@ import { it } from 'date-fns/locale';
 import { ArrowLeft, Check, Clock } from 'lucide-react';
 import type { Service } from '@/lib/types';
 import { countryCodes, formatPhone } from '@/lib/utils';
+import { buildSlotTime } from '@/lib/date-utils';
 
 /** Compute client-visible duration (excludes buffer, respects phases) */
 function getClientDuration(s: Service): number {
@@ -74,7 +75,7 @@ export default function BookPage() {
           salon_id: salonData.id,
           service_id: selectedService!.id,
           stylist_id: selectedSlot!.stylist_id,
-          start_time: `${format(selectedDate, 'yyyy-MM-dd')}T${selectedSlot!.time}:00+02:00`,
+          start_time: buildSlotTime(format(selectedDate, 'yyyy-MM-dd'), selectedSlot!.time),
           source: 'widget',
           client: { first_name: name, last_name: surname, phone: formatPhone(phonePrefix + phone) },
           notes: note,

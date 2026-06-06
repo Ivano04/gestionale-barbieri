@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Users, Clock, Plus, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -25,6 +26,7 @@ export default function StaffPage() {
   const [showNewForm, setShowNewForm] = useState(false);
   const [newStylist, setNewStylist] = useState({ full_name: '', email: '', password: '' });
   const [creating, setCreating] = useState(false);
+  const router = useRouter();
   const supabase = createClient();
 
   useEffect(() => {
@@ -67,6 +69,10 @@ export default function StaffPage() {
     setSaving(id);
     await supabase.from('users').update({ working_hours: hours[id] || {} }).eq('id', id);
     setSaving(null);
+    // Segnala al calendario che i dati sono cambiati
+    sessionStorage.setItem('staff_updated', Date.now().toString());
+    toast.success('Orari salvati');
+    router.refresh();
   }
 
   async function createStylist() {

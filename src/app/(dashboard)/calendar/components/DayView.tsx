@@ -397,7 +397,13 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonHours, 
                   const h = Math.floor(minute / 60);
                   const m = minute % 60;
                   const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`;
-                  onSlotClick(stylist.id, format(date, `yyyy-MM-dd`) + `T${timeStr}+02:00`);
+                  const offsetMin = -date.getTimezoneOffset();
+                  const sign = offsetMin >= 0 ? '+' : '-';
+                  const absMin = Math.abs(offsetMin);
+                  const offH = String(Math.floor(absMin / 60)).padStart(2, '0');
+                  const offM = String(absMin % 60).padStart(2, '0');
+                  const tz = `${sign}${offH}:${offM}`;
+                  onSlotClick(stylist.id, format(date, `yyyy-MM-dd`) + `T${timeStr}${tz}`);
                 }} />
             </div>
           );
