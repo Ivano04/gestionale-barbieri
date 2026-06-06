@@ -65,20 +65,23 @@ export async function fetchOccupiedSlots(
   dayEnd: Date,
 ) {
   const supabase = createAdminClient();
+  // Use overlap queries: fetch any block/appointment that overlaps the day,
+  // not just those starting within the day. A block from 23:00 yesterday to
+  // 02:00 today must still block today's 01:00 slot.
   const [appsRes, blocksRes] = await Promise.all([
     supabase
       .from('appointments')
       .select('stylist_id, start_time, end_time, buffer_end_time')
       .eq('salon_id', salonId)
-      .gte('start_time', dayStart.toISOString())
-      .lte('start_time', dayEnd.toISOString())
+      .lt('start_time', dayEnd.toISOString())
+      .gt('end_time', dayStart.toISOString())
       .neq('status', 'cancelled'),
     supabase
       .from('time_blocks')
       .select('stylist_id, start_time, end_time')
       .eq('salon_id', salonId)
-      .gte('start_time', dayStart.toISOString())
-      .lte('start_time', dayEnd.toISOString()),
+      .lt('start_time', dayEnd.toISOString())
+      .gt('end_time', dayStart.toISOString()),
   ]);
 
   const mapBlock = (b: any) => ({
