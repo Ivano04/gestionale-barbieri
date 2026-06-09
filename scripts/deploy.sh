@@ -7,6 +7,9 @@ SSH_KEY="$HOME/.ssh/hetzner_deploy_key"
 
 echo "📦 Sincronizzazione file su $SERVER..."
 
+# Clean stale src files from previous deploys (tar --overwrite doesn't delete removed files)
+ssh -i "$SSH_KEY" "$SERVER" "cd $PROJECT_DIR && rm -rf src node_modules && echo 'cleaned'"
+
 tar czf - \
   --exclude='node_modules' \
   --exclude='./.next' \
