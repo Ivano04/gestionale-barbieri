@@ -5,9 +5,9 @@ import { CalendarHeader } from './components/CalendarHeader';
 import { DayView } from './components/DayView';
 import { WeekView } from './components/WeekView';
 import { AppointmentModal } from './components/AppointmentModal';
-import type { Appointment, WaitlistEntry } from '@/lib/types';
+import type { Appointment } from '@/lib/types';
 import { format, parseISO } from 'date-fns';
-import { Trash2, X, Phone, User } from 'lucide-react';
+import { Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { todayDateStr, buildSlotTime } from '@/lib/date-utils';
 import { useCalendarData } from '@/lib/hooks/useCalendarData';
@@ -20,9 +20,6 @@ export default function CalendarPage() {
   const [showBlockModal, setShowBlockModal] = useState(false);
   const [blockForm, setBlockForm] = useState({ stylist_id: '', date: todayDateStr(), start: '12:00', end: '13:00', reason: '' });
   const [salonId, setSalonId] = useState('');
-  const [showWaitlistModal, setShowWaitlistModal] = useState(false);
-  const [waitlistEntries, setWaitlistEntries] = useState<WaitlistEntry[]>([]);
-  const [waitlistLoading, setWaitlistLoading] = useState(false);
   const supabase = createClient();
 
   useEffect(() => {
@@ -167,35 +164,10 @@ export default function CalendarPage() {
     }
   }
 
-  async function loadWaitlist() {
-    if (!salonId) return;
-    setWaitlistLoading(true);
-    try {
-      const res = await fetch(`/api/waitlist?salon_id=${salonId}`);
-      if (res.ok) setWaitlistEntries(await res.json());
-    } catch { /* non-critical */ }
-    setWaitlistLoading(false);
-  }
-
-  async function handleCancelWaitlist(entryId: string) {
-    try {
-      const res = await fetch(`/api/waitlist/${entryId}`, { method: 'DELETE' });
-      if (res.ok) {
-        toast.success('Rimosso dalla lista d\'attesa');
-        setWaitlistEntries(prev => prev.filter(e => e.id !== entryId));
-      }
-    } catch { toast.error('Errore'); }
-  }
-
-  function openWaitlist() {
-    setShowWaitlistModal(true);
-    loadWaitlist();
-  }
-
   return (
     <div>
       {loading && <div className="h-1 bg-blue-100 w-full overflow-hidden"><div className="h-full bg-blue-500 animate-pulse" style={{ width: '60%' }} /></div>}
-      <CalendarHeader date={date} view={view} onDateChange={setDate} onViewChange={setView} onNewAppointment={handleNewAppointment} onNewBlock={() => setShowBlockModal(true)} onWaitlist={openWaitlist} />
+      <CalendarHeader date={date} view={view} onDateChange={setDate} onViewChange={setView} onNewAppointment={handleNewAppointment} onNewBlock={() => setShowBlockModal(true)} />
       <div className="mx-0 md:mx-4 mt-0 md:mt-4">
         {view === 'day' && (
           <DayView
@@ -313,75 +285,6 @@ export default function CalendarPage() {
         </div>
       )}
 
-      {/* Waitlist modal */}
-      {showWaitlistModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowWaitlistModal(false)}>
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 mx-4 max-h-[80vh] overflow-auto" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-amber-700">Lista d'attesa</h3>
-              <button onClick={() => setShowWaitlistModal(false)} className="p-1 hover:bg-gray-100 rounded"><X size={20} /></button>
-            </div>
-
-            {waitlistLoading ? (
-              <p className="text-center text-gray-400 py-4">Caricamento...</p>
-            ) : waitlistEntries.length === 0 ? (
-              <div className="text-center py-8">
-                <p className="text-gray-400 text-sm">Nessun cliente in attesa</p>
-                <p className="text-gray-300 text-xs mt-1">I clienti possono iscriversi quando non ci sono slot disponibili</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {waitlistEntries.map(entry => (
-                  <div key={entry.id} className="flex items-center justify-between p-3 bg-amber-50 rounded-lg border border-amber-100">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <User size={12} className="text-amber-600 flex-shrink-0" />
-                        <span className="font-medium text-sm truncate">
-                          {entry.first_name} {entry.last_name}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
-                        <span className="flex items-center gap-1">
-                          <Phone size={10} /> {entry.phone || '—'}
-                        </span>
-                        <span>{entry.service?.name}</span>
-                        {entry.stylist?.full_name && (
-                          <span>· {entry.stylist.full_name}</span>
-                        )}
-                      </div>
-                      <div className="text-[10px] text-gray-400 mt-0.5">
-                        {format(new Date(entry.preferred_date + 'T12:00:00'), 'dd/MM/yyyy')}
-                        {entry.preferred_time_start && ` · ${entry.preferred_time_start?.substring(0, 5)}–${entry.preferred_time_end?.substring(0, 5) || ''}`}
-                        {entry.status === 'notified' && (
-                          <span className="ml-2 text-amber-600 font-medium">Notificato</span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 ml-3">
-                      {entry.phone && (
-                        <a href={`tel:${entry.phone}`} className="p-1.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200"
-                          title="Chiama">
-                          <Phone size={14} />
-                        </a>
-                      )}
-                      <button onClick={() => handleCancelWaitlist(entry.id)}
-                        className="p-1.5 bg-red-50 text-red-500 rounded-lg hover:bg-red-100"
-                        title="Rimuovi">
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="mt-4 pt-3 border-t flex justify-end">
-              <button onClick={() => setShowWaitlistModal(false)}
-                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm">Chiudi</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

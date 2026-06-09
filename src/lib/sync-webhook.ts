@@ -7,8 +7,6 @@ export type N8nEvent =
   | 'appointment.moved'
   | 'time_block.created'
   | 'time_block.deleted'
-  | 'waitlist.joined'
-  | 'waitlist.slot_available'
   | 'notification.send';
 
 interface N8nPayload {

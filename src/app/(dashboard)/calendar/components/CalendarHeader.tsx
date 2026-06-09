@@ -1,7 +1,7 @@
 'use client';
 import { format, addDays, subDays, addWeeks, subWeeks } from 'date-fns';
 import { it } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, Plus, Lock, ListOrdered } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Lock } from 'lucide-react';
 
 interface Props {
   date: Date;
@@ -10,10 +10,9 @@ interface Props {
   onViewChange: (v: 'day' | 'week') => void;
   onNewAppointment: () => void;
   onNewBlock: () => void;
-  onWaitlist?: () => void;
 }
 
-export function CalendarHeader({ date, view, onDateChange, onViewChange, onNewAppointment, onNewBlock, onWaitlist }: Props) {
+export function CalendarHeader({ date, view, onDateChange, onViewChange, onNewAppointment, onNewBlock }: Props) {
   const prev = () => onDateChange(view === 'day' ? subDays(date, 1) : subWeeks(date, 1));
   const next = () => onDateChange(view === 'day' ? addDays(date, 1) : addWeeks(date, 1));
 
@@ -37,12 +36,6 @@ export function CalendarHeader({ date, view, onDateChange, onViewChange, onNewAp
             </button>
           ))}
         </div>
-        {onWaitlist && (
-          <button onClick={onWaitlist}
-            className="flex items-center gap-2 bg-amber-50 text-amber-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-amber-100 border border-amber-200">
-            <ListOrdered size={14} /> Lista d'attesa
-          </button>
-        )}
         <button onClick={onNewBlock}
           className="flex items-center gap-2 bg-red-50 text-red-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-red-100 border border-red-200">
           <Lock size={14} /> Blocca/Sblocca
