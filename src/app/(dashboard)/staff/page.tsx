@@ -22,7 +22,8 @@ export default function StaffPage() {
   const [stylists, setStylists] = useState<any[]>([]);
   const [salonId, setSalonId] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [openSection, setOpenSection] = useState<Record<string, 'hours' | 'services'>>({});
+  const [openHours, setOpenHours] = useState<Set<string>>(new Set());
+  const [openServices, setOpenServices] = useState<Set<string>>(new Set());
   const [hours, setHours] = useState<Record<string, Record<string, { open: string; close: string } | null>>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
@@ -30,6 +31,7 @@ export default function StaffPage() {
   const [creating, setCreating] = useState(false);
   const [allServices, setAllServices] = useState<Service[]>([]);
   const [assignments, setAssignments] = useState<Record<string, string[]>>({});
+  const [allServicesMode, setAllServicesMode] = useState<Record<string, boolean>>({});
   const [savingServices, setSavingServices] = useState<string | null>(null);
   const router = useRouter();
   const supabase = createClient();
@@ -60,6 +62,13 @@ export default function StaffPage() {
         if (assignMap[a.stylist_id]) assignMap[a.stylist_id].push(a.service_id);
       });
       setAssignments(assignMap);
+
+      // Initialize allServicesMode: true if stylist has zero assignments
+      const modeMap: Record<string, boolean> = {};
+      (staff || []).forEach((s: any) => {
+        modeMap[s.id] = (assignMap[s.id] || []).length === 0;
+      });
+      setAllServicesMode(modeMap);
     });
   }, []);
 
@@ -210,16 +219,20 @@ export default function StaffPage() {
 
             {expanded === stylist.id && (
               <div className="border-t">
-                {/* Sezione Orari — accordion */}
+                {/* Sezione Orari — accordion indipendente */}
                 <button
-                  onClick={() => setOpenSection(prev => ({ ...prev, [stylist.id]: prev[stylist.id] === 'hours' ? 'services' : 'hours' }))}
+                  onClick={() => setOpenHours(prev => {
+                    const next = new Set(prev);
+                    next.has(stylist.id) ? next.delete(stylist.id) : next.add(stylist.id);
+                    return next;
+                  })}
                   className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors">
                   <span className="text-sm font-medium text-gray-700 flex items-center gap-2">
                     <Clock size={14} /> Orari settimanali
                   </span>
-                  <ChevronDown size={14} className={`text-gray-400 transition-transform ${openSection[stylist.id] === 'hours' ? 'rotate-180' : ''}`} />
+                  <ChevronDown size={14} className={`text-gray-400 transition-transform ${openHours.has(stylist.id) ? 'rotate-180' : ''}`} />
                 </button>
-                {openSection[stylist.id] === 'hours' && (
+                {openHours.has(stylist.id) && (
                   <div className="px-4 pb-4 bg-gray-50/50">
                     <div className="space-y-1.5">
                       {DAYS.map(day => {
@@ -257,16 +270,20 @@ export default function StaffPage() {
                   </div>
                 )}
 
-                {/* Sezione Servizi — accordion */}
+                {/* Sezione Servizi — accordion indipendente */}
                 <button
-                  onClick={() => setOpenSection(prev => ({ ...prev, [stylist.id]: prev[stylist.id] === 'services' ? 'hours' : 'services' }))}
+                  onClick={() => setOpenServices(prev => {
+                    const next = new Set(prev);
+                    next.has(stylist.id) ? next.delete(stylist.id) : next.add(stylist.id);
+                    return next;
+                  })}
                   className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors border-t">
                   <span className="text-sm font-medium text-gray-700 flex items-center gap-2">
                     <Scissors size={14} /> Servizi
                   </span>
-                  <ChevronDown size={14} className={`text-gray-400 transition-transform ${openSection[stylist.id] === 'services' ? 'rotate-180' : ''}`} />
+                  <ChevronDown size={14} className={`text-gray-400 transition-transform ${openServices.has(stylist.id) ? 'rotate-180' : ''}`} />
                 </button>
-                {openSection[stylist.id] === 'services' && (
+                {openServices.has(stylist.id) && (
                   <div className="px-4 pb-4 bg-gray-50/50">
                     {allServices.length === 0 ? (
                       <p className="text-xs text-gray-400 py-2">Nessun servizio configurato</p>
@@ -275,14 +292,15 @@ export default function StaffPage() {
                         {/* "Tutti i servizi" master checkbox */}
                         <label className="flex items-center gap-2 p-2 bg-white rounded-lg border cursor-pointer text-sm font-medium">
                           <input type="checkbox"
-                            checked={(assignments[stylist.id] || []).length === 0}
+                            checked={allServicesMode[stylist.id] !== false}
                             onChange={async () => {
-                              const currentlyAll = (assignments[stylist.id] || []).length === 0;
-                              if (currentlyAll) {
-                                // Uncheck: enable individual selection (start with empty)
-                                setAssignments(prev => ({ ...prev, [stylist.id]: [] }));
+                              const isAll = allServicesMode[stylist.id] !== false;
+                              if (isAll) {
+                                // Uncheck: switch to individual mode (start with current or empty)
+                                setAllServicesMode(prev => ({ ...prev, [stylist.id]: false }));
                               } else {
-                                // Check: save all services
+                                // Check: save empty = all services
+                                setAllServicesMode(prev => ({ ...prev, [stylist.id]: true }));
                                 setAssignments(prev => ({ ...prev, [stylist.id]: [] }));
                                 setSavingServices(stylist.id);
                                 await fetch('/api/stylist-services', {
@@ -298,8 +316,8 @@ export default function StaffPage() {
                           <span>Tutti i servizi</span>
                         </label>
 
-                        {/* Individual checkboxes — only when not "all" */}
-                        {(assignments[stylist.id] || []).length > 0 && (
+                        {/* Individual checkboxes — only in manual mode */}
+                        {allServicesMode[stylist.id] === false && (
                           <div className="space-y-1 mt-2 max-h-48 overflow-y-auto">
                             {allServices.map(svc => {
                               const checked = (assignments[stylist.id] || []).includes(svc.id);
@@ -317,7 +335,7 @@ export default function StaffPage() {
                           </div>
                         )}
                         <p className="text-[10px] text-gray-400 mt-2">
-                          {(assignments[stylist.id] || []).length === 0
+                          {allServicesMode[stylist.id] !== false
                             ? 'Operatore abilitato a tutti i servizi'
                             : `${(assignments[stylist.id] || []).length} servizio/i assegnato/i`}
                         </p>
