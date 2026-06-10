@@ -2,7 +2,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { Users, Clock, Plus, Loader2 } from 'lucide-react';
+import type { Service } from '@/lib/types';
+import { Users, Clock, Plus, Loader2, Scissors } from 'lucide-react';
 import { toast } from 'sonner';
 
 const DAYS = [
@@ -26,6 +27,9 @@ export default function StaffPage() {
   const [showNewForm, setShowNewForm] = useState(false);
   const [newStylist, setNewStylist] = useState({ full_name: '', email: '', password: '' });
   const [creating, setCreating] = useState(false);
+  const [allServices, setAllServices] = useState<Service[]>([]);
+  const [assignments, setAssignments] = useState<Record<string, string[]>>({});
+  const [savingServices, setSavingServices] = useState<string | null>(null);
   const router = useRouter();
   const supabase = createClient();
 
@@ -42,6 +46,19 @@ export default function StaffPage() {
         h[s.id] = s.working_hours || {};
       });
       setHours(h);
+
+      // Load services
+      const { data: svcs } = await supabase.from('services').select('*').eq('salon_id', users.salon_id).order('name');
+      setAllServices(svcs || []);
+
+      // Load assignments for all stylists
+      const { data: assignData } = await supabase.from('stylist_services').select('stylist_id, service_id');
+      const assignMap: Record<string, string[]> = {};
+      (staff || []).forEach((s: any) => { assignMap[s.id] = []; });
+      (assignData || []).forEach((a: any) => {
+        if (assignMap[a.stylist_id]) assignMap[a.stylist_id].push(a.service_id);
+      });
+      setAssignments(assignMap);
     });
   }, []);
 
@@ -73,6 +90,28 @@ export default function StaffPage() {
     sessionStorage.setItem('staff_updated', Date.now().toString());
     toast.success('Orari salvati');
     router.refresh();
+  }
+
+  function toggleService(stylistId: string, serviceId: string) {
+    setAssignments(prev => {
+      const current = prev[stylistId] || [];
+      const updated = current.includes(serviceId)
+        ? current.filter(id => id !== serviceId)
+        : [...current, serviceId];
+      return { ...prev, [stylistId]: updated };
+    });
+  }
+
+  async function saveServices(stylistId: string) {
+    setSavingServices(stylistId);
+    const serviceIds = assignments[stylistId] || [];
+    await fetch('/api/stylist-services', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stylist_id: stylistId, service_ids: serviceIds }),
+    });
+    setSavingServices(null);
+    toast.success('Servizi salvati');
   }
 
   async function createStylist() {
@@ -206,6 +245,40 @@ export default function StaffPage() {
                   className="mt-3 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
                   {saving === stylist.id ? 'Salvataggio...' : 'Salva orari'}
                 </button>
+
+                <div className="mt-4 pt-4 border-t">
+                  <h4 className="text-sm font-medium text-gray-500 mb-3 flex items-center gap-2">
+                    <Scissors size={14} /> Servizi
+                  </h4>
+                  {allServices.length === 0 ? (
+                    <p className="text-xs text-gray-400">Nessun servizio configurato</p>
+                  ) : (
+                    <div className="space-y-1 max-h-48 overflow-y-auto">
+                      {allServices.map(svc => {
+                        const checked = (assignments[stylist.id] || []).includes(svc.id);
+                        return (
+                          <label key={svc.id} className="flex items-center gap-2 p-1.5 hover:bg-white rounded-lg cursor-pointer text-sm">
+                            <input type="checkbox" checked={checked}
+                              onChange={() => toggleService(stylist.id, svc.id)}
+                              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                            <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: svc.color_hex }} />
+                            <span>{svc.name}</span>
+                            <span className="text-gray-400 text-xs ml-auto">{svc.duration_minutes}min</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <p className="text-[10px] text-gray-400 mt-2">
+                    {(assignments[stylist.id] || []).length === 0
+                      ? 'Nessuna selezione = tutti i servizi disponibili'
+                      : `${(assignments[stylist.id] || []).length} servizio/i assegnato/i`}
+                  </p>
+                  <button onClick={() => saveServices(stylist.id)} disabled={savingServices === stylist.id}
+                    className="mt-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+                    {savingServices === stylist.id ? 'Salvataggio...' : 'Salva servizi'}
+                  </button>
+                </div>
               </div>
             )}
           </div>
