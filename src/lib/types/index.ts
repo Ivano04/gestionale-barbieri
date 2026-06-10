@@ -133,3 +133,9 @@ export interface SwapSuggestion {
   targetStylistName: string;
   reason: string;
 }
+
+/** Stylist-service assignment */
+export interface StylistServiceAssignment {
+  stylist_id: string;
+  service_id: string;
+}
