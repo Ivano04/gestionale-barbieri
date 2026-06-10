@@ -47,13 +47,48 @@ export async function fetchServiceOverride(
   return data;
 }
 
-export async function fetchStylists(salonId: string, stylistId?: string) {
+export async function fetchStylists(salonId: string, stylistId?: string, serviceId?: string) {
   const supabase = createAdminClient();
+
+  // If a service is specified, check which stylists are explicitly assigned to it
+  if (serviceId) {
+    const { data: assignments } = await supabase
+      .from('stylist_services')
+      .select('stylist_id');
+
+    // If any stylist has explicit assignments, filter by those
+    if (assignments && assignments.length > 0) {
+      // Get the service-specific assignments
+      const { data: serviceAssignments } = await supabase
+        .from('stylist_services')
+        .select('stylist_id')
+        .eq('service_id', serviceId);
+
+      const eligibleIds = serviceAssignments?.map(a => a.stylist_id) || [];
+
+      // If no stylist is assigned to this specific service, return empty
+      if (eligibleIds.length === 0) return [];
+
+      let query = supabase
+        .from('users')
+        .select('id, full_name, working_hours')
+        .eq('salon_id', salonId)
+        .eq('role', 'stylist')
+        .in('id', eligibleIds);
+
+      if (stylistId) query = query.eq('id', stylistId);
+      const { data: stylists } = await query;
+      return stylists || [];
+    }
+  }
+
+  // Default: no filtering — all stylists can do all services
   let query = supabase
     .from('users')
     .select('id, full_name, working_hours')
     .eq('salon_id', salonId)
     .eq('role', 'stylist');
+
   if (stylistId) query = query.eq('id', stylistId);
   const { data: stylists } = await query;
   return stylists || [];

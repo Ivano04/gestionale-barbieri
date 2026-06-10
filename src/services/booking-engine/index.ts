@@ -27,7 +27,7 @@ export async function getAvailableSlots(params: GetAvailableSlotsParams): Promis
   const duration = await fetchServiceDuration(service_id);
   if (!duration) return [];
 
-  const stylists = await fetchStylists(salon_id, stylist_id);
+  const stylists = await fetchStylists(salon_id, stylist_id, service_id);
   if (!stylists.length) return [];
 
   const dayStart = new Date(`${date}T${hours.open}:00${tzOffset}`);
