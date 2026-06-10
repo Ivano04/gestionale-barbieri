@@ -33,10 +33,12 @@ export function AppointmentModal({ appointment, services, clients, stylists, sal
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [addingService, setAddingService] = useState(false);
   const [newServiceId, setNewServiceId] = useState('');
+  const [filteredStylists, setFilteredStylists] = useState<Pick<User, 'id' | 'full_name'>[]>([]);
   const isNew = !appointment?.id;
 
   useEffect(() => {
     setForm(appointment || {});
+    setFilteredStylists(stylists);
     if (appointment?.client_id) setClientMode('existing');
     if (appointment?.start_time) setSlotDate(format(parseISO(appointment.start_time), 'yyyy-MM-dd'));
   }, [appointment]);
@@ -48,6 +50,34 @@ export function AppointmentModal({ appointment, services, clients, stylists, sal
       .then(r => r.json())
       .then(d => { setSlots(Array.isArray(d) ? d : []); setSlotsLoading(false); });
   }, [salonId, form.service_id, form.stylist_id, slotDate]);
+
+  // Load filtered stylists when service changes
+  useEffect(() => {
+    if (!salonId || !form.service_id) {
+      setFilteredStylists(stylists);
+      return;
+    }
+    const controller = new AbortController();
+    fetch(`/api/stylist-services?salon_id=${salonId}&service_id=${form.service_id}`, { signal: controller.signal })
+      .then(r => r.json())
+      .then(ids => {
+        if (!Array.isArray(ids) || ids.length === 0) {
+          setFilteredStylists(stylists);
+        } else {
+          setFilteredStylists(stylists.filter(s => ids.includes(s.id)));
+        }
+      })
+      .catch(() => setFilteredStylists(stylists));
+    return () => controller.abort();
+  }, [salonId, form.service_id, stylists]);
+
+  // Reset stylist if no longer valid for selected service
+  useEffect(() => {
+    if (form.stylist_id && filteredStylists.length > 0 &&
+        !filteredStylists.find(s => s.id === form.stylist_id)) {
+      setForm(f => ({ ...f, stylist_id: '', start_time: '' }));
+    }
+  }, [filteredStylists, form.stylist_id]);
 
   if (!appointment) return null;
 
@@ -197,7 +227,7 @@ export function AppointmentModal({ appointment, services, clients, stylists, sal
               value={form.stylist_id || ''}
               onChange={e => { setForm(f => ({ ...f, stylist_id: e.target.value, start_time: '' })); clearError('stylist'); }}>
               <option value="">Seleziona operatore...</option>
-              {stylists.map(s => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+              {filteredStylists.map(s => <option key={s.id} value={s.id}>{s.full_name}</option>)}
             </select>
             {errors.stylist && <p className="text-red-500 text-xs mt-1">{errors.stylist}</p>}
           </div>
