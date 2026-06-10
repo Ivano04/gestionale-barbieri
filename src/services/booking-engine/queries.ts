@@ -50,24 +50,16 @@ export async function fetchServiceOverride(
 export async function fetchStylists(salonId: string, stylistId?: string, serviceId?: string) {
   const supabase = createAdminClient();
 
-  // If a service is specified, check which stylists are explicitly assigned to it
   if (serviceId) {
-    const { data: assignments } = await supabase
+    // Check if THIS specific service has assigned stylists
+    const { data: serviceAssignments } = await supabase
       .from('stylist_services')
-      .select('stylist_id');
+      .select('stylist_id')
+      .eq('service_id', serviceId);
 
-    // If any stylist has explicit assignments, filter by those
-    if (assignments && assignments.length > 0) {
-      // Get the service-specific assignments
-      const { data: serviceAssignments } = await supabase
-        .from('stylist_services')
-        .select('stylist_id')
-        .eq('service_id', serviceId);
-
-      const eligibleIds = serviceAssignments?.map(a => a.stylist_id) || [];
-
-      // If no stylist is assigned to this specific service, return empty
-      if (eligibleIds.length === 0) return [];
+    if (serviceAssignments && serviceAssignments.length > 0) {
+      // This service has explicit assignees — filter to only those
+      const eligibleIds = serviceAssignments.map(a => a.stylist_id);
 
       let query = supabase
         .from('users')
@@ -80,6 +72,20 @@ export async function fetchStylists(salonId: string, stylistId?: string, service
       const { data: stylists } = await query;
       return stylists || [];
     }
+
+    // This service has no assignees. Check if ANY service has assignments
+    // (meaning filtering is active in the system).
+    const { data: anyAssignments } = await supabase
+      .from('stylist_services')
+      .select('stylist_id')
+      .limit(1);
+
+    if (anyAssignments && anyAssignments.length > 0) {
+      // Filtering is active but no one can do THIS service — return empty
+      return [];
+    }
+
+    // No assignments exist at all — fall through to default (all stylists)
   }
 
   // Default: no filtering — all stylists can do all services
