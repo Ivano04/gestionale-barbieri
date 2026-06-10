@@ -1,8 +1,9 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { Plus, X, Pencil, Trash2 } from 'lucide-react';
+import { Plus, X, Pencil, Trash2, Scissors } from 'lucide-react';
 import type { Service } from '@/lib/types';
+import { toast } from 'sonner';
 
 const DEFAULT_COLORS = ['#f472b6', '#60a5fa', '#34d399', '#a78bfa', '#fbbf24', '#fb923c', '#f87171'];
 
@@ -13,6 +14,10 @@ export default function ServicesPage() {
   const [editing, setEditing] = useState<Service | null>(null);
   const [form, setForm] = useState({ name: '', duration_minutes: 30, price_cents: 0, color_hex: '#60a5fa' });
   const [saving, setSaving] = useState(false);
+  const [expandedService, setExpandedService] = useState<string | null>(null);
+  const [stylists, setStylists] = useState<any[]>([]);
+  const [assignments, setAssignments] = useState<Record<string, string[]>>({});
+  const [savingAssignments, setSavingAssignments] = useState<string | null>(null);
   const supabase = createClient();
 
   useEffect(() => {
@@ -22,6 +27,20 @@ export default function ServicesPage() {
       if (users?.salon_id) {
         setSalonId(users.salon_id);
         loadServices(users.salon_id);
+
+        // Load stylists
+        const { data: staff } = await supabase.from('users')
+          .select('id, full_name').eq('salon_id', users.salon_id).eq('role', 'stylist').order('full_name');
+        setStylists(staff || []);
+
+        // Load assignments (keyed by service_id -> stylist_ids[])
+        const { data: assignData } = await supabase.from('stylist_services').select('stylist_id, service_id');
+        const assignMap: Record<string, string[]> = {};
+        (assignData || []).forEach((a: any) => {
+          if (!assignMap[a.service_id]) assignMap[a.service_id] = [];
+          assignMap[a.service_id].push(a.stylist_id);
+        });
+        setAssignments(assignMap);
       }
     });
   }, []);
@@ -60,6 +79,45 @@ export default function ServicesPage() {
   async function handleDelete(id: string) {
     await supabase.from('services').delete().eq('id', id);
     loadServices(salonId);
+  }
+
+  function toggleStylist(serviceId: string, stylistId: string) {
+    setAssignments(prev => {
+      const current = prev[serviceId] || [];
+      const updated = current.includes(stylistId)
+        ? current.filter(id => id !== stylistId)
+        : [...current, stylistId];
+      return { ...prev, [serviceId]: updated };
+    });
+  }
+
+  async function saveServiceAssignments(serviceId: string) {
+    setSavingAssignments(serviceId);
+    const selectedStylistIds = assignments[serviceId] || [];
+    // Update each stylist's full assignment list
+    for (const stylist of stylists) {
+      const { data: current } = await supabase
+        .from('stylist_services').select('service_id').eq('stylist_id', stylist.id);
+      const currentIds = (current || []).map((r: any) => r.service_id);
+      const shouldHaveIt = selectedStylistIds.includes(stylist.id);
+      const hasIt = currentIds.includes(serviceId);
+
+      if (shouldHaveIt && !hasIt) {
+        await fetch('/api/stylist-services', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ stylist_id: stylist.id, service_ids: [...currentIds, serviceId] }),
+        });
+      } else if (!shouldHaveIt && hasIt) {
+        await fetch('/api/stylist-services', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ stylist_id: stylist.id, service_ids: currentIds.filter(id => id !== serviceId) }),
+        });
+      }
+    }
+    setSavingAssignments(null);
+    toast.success('Assegnazioni salvate');
   }
 
   return (
@@ -119,16 +177,48 @@ export default function ServicesPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {services.map(s => (
-          <div key={s.id} className="bg-white rounded-xl border p-4 flex items-center gap-4 hover:shadow-md transition-shadow">
-            <div className="w-4 h-12 rounded-full" style={{ backgroundColor: s.color_hex }} />
-            <div className="flex-1 min-w-0">
-              <div className="font-semibold truncate">{s.name}</div>
-              <div className="text-sm text-gray-500">{s.duration_minutes} min · €{(s.price_cents / 100).toFixed(2)}</div>
-            </div>
-            <div className="flex gap-1">
-              <button onClick={() => openEdit(s)} className="p-2 hover:bg-gray-100 rounded-lg"><Pencil size={14} /></button>
-              <button onClick={() => handleDelete(s.id)} className="p-2 hover:bg-red-50 text-red-500 rounded-lg"><Trash2 size={14} /></button>
-            </div>
+          <div key={s.id} className="bg-white rounded-xl border hover:shadow-md transition-shadow">
+            <button onClick={() => setExpandedService(expandedService === s.id ? null : s.id)}
+              className="w-full p-4 flex items-center gap-4 text-left">
+              <div className="w-4 h-12 rounded-full" style={{ backgroundColor: s.color_hex }} />
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold truncate">{s.name}</div>
+                <div className="text-sm text-gray-500">{s.duration_minutes} min · €{(s.price_cents / 100).toFixed(2)}</div>
+              </div>
+              <div className="flex gap-1" onClick={e => e.stopPropagation()}>
+                <button onClick={() => openEdit(s)} className="p-2 hover:bg-gray-100 rounded-lg"><Pencil size={14} /></button>
+                <button onClick={() => handleDelete(s.id)} className="p-2 hover:bg-red-50 text-red-500 rounded-lg"><Trash2 size={14} /></button>
+              </div>
+            </button>
+
+            {expandedService === s.id && (
+              <div className="border-t px-4 py-3 bg-gray-50/50">
+                <h4 className="text-sm font-medium text-gray-500 mb-2 flex items-center gap-2">
+                  <Scissors size={14} /> Operatori
+                </h4>
+                {stylists.length === 0 ? (
+                  <p className="text-xs text-gray-400">Nessun operatore configurato</p>
+                ) : (
+                  <div className="space-y-1">
+                    {stylists.map(st => {
+                      const checked = (assignments[s.id] || []).includes(st.id);
+                      return (
+                        <label key={st.id} className="flex items-center gap-2 p-1.5 hover:bg-white rounded-lg cursor-pointer text-sm">
+                          <input type="checkbox" checked={checked}
+                            onChange={() => toggleStylist(s.id, st.id)}
+                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                          <span>{st.full_name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+                <button onClick={() => saveServiceAssignments(s.id)} disabled={savingAssignments === s.id}
+                  className="mt-2 bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-blue-700 disabled:opacity-50">
+                  {savingAssignments === s.id ? 'Salvataggio...' : 'Salva'}
+                </button>
+              </div>
+            )}
           </div>
         ))}
         {services.length === 0 && (
