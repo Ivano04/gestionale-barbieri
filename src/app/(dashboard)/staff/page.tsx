@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import type { Service } from '@/lib/types';
-import { Users, Clock, Plus, Loader2, Scissors } from 'lucide-react';
+import { Users, Clock, Plus, Loader2, Scissors, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 
 const DAYS = [
@@ -22,6 +22,7 @@ export default function StaffPage() {
   const [stylists, setStylists] = useState<any[]>([]);
   const [salonId, setSalonId] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [openSection, setOpenSection] = useState<Record<string, 'hours' | 'services'>>({});
   const [hours, setHours] = useState<Record<string, Record<string, { open: string; close: string } | null>>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
@@ -204,81 +205,130 @@ export default function StaffPage() {
                   <div className="text-sm text-gray-500">{stylist.email}</div>
                 </div>
               </div>
-              <span className="text-sm text-gray-400">{expanded === stylist.id ? 'Chiudi' : 'Orari →'}</span>
+              <span className="text-sm text-gray-400">{expanded === stylist.id ? 'Chiudi' : 'Modifica →'}</span>
             </button>
 
             {expanded === stylist.id && (
-              <div className="border-t p-4 bg-gray-50/50">
-                <h4 className="text-sm font-medium text-gray-500 mb-3 flex items-center gap-2">
-                  <Clock size={14} /> Orari settimanali
-                </h4>
-                <div className="space-y-1.5">
-                  {DAYS.map(day => {
-                    const dayHours = hours[stylist.id]?.[day.key];
-                    const isActive = dayHours !== null && dayHours !== undefined;
-                    return (
-                      <div key={day.key} className={`flex items-center gap-2 p-1.5 rounded-lg ${isActive ? 'bg-blue-50/50' : 'bg-gray-100'}`}>
-                        <button onClick={() => toggleDay(stylist.id, day.key)}
-                          className={`w-14 text-center px-2 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                            isActive ? 'bg-blue-600 text-white' : 'bg-white border text-gray-400'
-                          }`}>
-                          {day.label}
-                        </button>
-                        {isActive && dayHours ? (
-                          <div className="flex items-center gap-1.5">
-                            <input type="time" value={dayHours.open}
-                              onChange={e => updateDay(stylist.id, day.key, 'open', e.target.value)}
-                              className="px-2 py-1 border rounded text-xs w-24" />
-                            <span className="text-gray-400 text-xs">–</span>
-                            <input type="time" value={dayHours.close}
-                              onChange={e => updateDay(stylist.id, day.key, 'close', e.target.value)}
-                              className="px-2 py-1 border rounded text-xs w-24" />
-                          </div>
-                        ) : (
-                          <span className="text-xs text-gray-400">Non disponibile</span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-                <button onClick={() => saveStylist(stylist.id)} disabled={saving === stylist.id}
-                  className="mt-3 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
-                  {saving === stylist.id ? 'Salvataggio...' : 'Salva orari'}
+              <div className="border-t">
+                {/* Sezione Orari — accordion */}
+                <button
+                  onClick={() => setOpenSection(prev => ({ ...prev, [stylist.id]: prev[stylist.id] === 'hours' ? 'services' : 'hours' }))}
+                  className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors">
+                  <span className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                    <Clock size={14} /> Orari settimanali
+                  </span>
+                  <ChevronDown size={14} className={`text-gray-400 transition-transform ${openSection[stylist.id] === 'hours' ? 'rotate-180' : ''}`} />
                 </button>
-
-                <div className="mt-4 pt-4 border-t">
-                  <h4 className="text-sm font-medium text-gray-500 mb-3 flex items-center gap-2">
-                    <Scissors size={14} /> Servizi
-                  </h4>
-                  {allServices.length === 0 ? (
-                    <p className="text-xs text-gray-400">Nessun servizio configurato</p>
-                  ) : (
-                    <div className="space-y-1 max-h-48 overflow-y-auto">
-                      {allServices.map(svc => {
-                        const checked = (assignments[stylist.id] || []).includes(svc.id);
+                {openSection[stylist.id] === 'hours' && (
+                  <div className="px-4 pb-4 bg-gray-50/50">
+                    <div className="space-y-1.5">
+                      {DAYS.map(day => {
+                        const dayHours = hours[stylist.id]?.[day.key];
+                        const isActive = dayHours !== null && dayHours !== undefined;
                         return (
-                          <label key={svc.id} className="flex items-center gap-2 p-1.5 hover:bg-white rounded-lg cursor-pointer text-sm">
-                            <input type="checkbox" checked={checked}
-                              onChange={() => toggleService(stylist.id, svc.id)}
-                              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-                            <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: svc.color_hex }} />
-                            <span>{svc.name}</span>
-                            <span className="text-gray-400 text-xs ml-auto">{svc.duration_minutes}min</span>
-                          </label>
+                          <div key={day.key} className={`flex items-center gap-2 p-1.5 rounded-lg ${isActive ? 'bg-blue-50/50' : 'bg-gray-100'}`}>
+                            <button onClick={() => toggleDay(stylist.id, day.key)}
+                              className={`w-14 text-center px-2 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                                isActive ? 'bg-blue-600 text-white' : 'bg-white border text-gray-400'
+                              }`}>
+                              {day.label}
+                            </button>
+                            {isActive && dayHours ? (
+                              <div className="flex items-center gap-1.5">
+                                <input type="time" value={dayHours.open}
+                                  onChange={e => updateDay(stylist.id, day.key, 'open', e.target.value)}
+                                  className="px-2 py-1 border rounded text-xs w-24" />
+                                <span className="text-gray-400 text-xs">–</span>
+                                <input type="time" value={dayHours.close}
+                                  onChange={e => updateDay(stylist.id, day.key, 'close', e.target.value)}
+                                  className="px-2 py-1 border rounded text-xs w-24" />
+                              </div>
+                            ) : (
+                              <span className="text-xs text-gray-400">Non disponibile</span>
+                            )}
+                          </div>
                         );
                       })}
                     </div>
-                  )}
-                  <p className="text-[10px] text-gray-400 mt-2">
-                    {(assignments[stylist.id] || []).length === 0
-                      ? 'Nessuna selezione = tutti i servizi disponibili'
-                      : `${(assignments[stylist.id] || []).length} servizio/i assegnato/i`}
-                  </p>
-                  <button onClick={() => saveServices(stylist.id)} disabled={savingServices === stylist.id}
-                    className="mt-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
-                    {savingServices === stylist.id ? 'Salvataggio...' : 'Salva servizi'}
-                  </button>
-                </div>
+                    <button onClick={() => saveStylist(stylist.id)} disabled={saving === stylist.id}
+                      className="mt-3 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+                      {saving === stylist.id ? 'Salvataggio...' : 'Salva orari'}
+                    </button>
+                  </div>
+                )}
+
+                {/* Sezione Servizi — accordion */}
+                <button
+                  onClick={() => setOpenSection(prev => ({ ...prev, [stylist.id]: prev[stylist.id] === 'services' ? 'hours' : 'services' }))}
+                  className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors border-t">
+                  <span className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                    <Scissors size={14} /> Servizi
+                  </span>
+                  <ChevronDown size={14} className={`text-gray-400 transition-transform ${openSection[stylist.id] === 'services' ? 'rotate-180' : ''}`} />
+                </button>
+                {openSection[stylist.id] === 'services' && (
+                  <div className="px-4 pb-4 bg-gray-50/50">
+                    {allServices.length === 0 ? (
+                      <p className="text-xs text-gray-400 py-2">Nessun servizio configurato</p>
+                    ) : (
+                      <>
+                        {/* "Tutti i servizi" master checkbox */}
+                        <label className="flex items-center gap-2 p-2 bg-white rounded-lg border cursor-pointer text-sm font-medium">
+                          <input type="checkbox"
+                            checked={(assignments[stylist.id] || []).length === 0}
+                            onChange={async () => {
+                              const currentlyAll = (assignments[stylist.id] || []).length === 0;
+                              if (currentlyAll) {
+                                // Uncheck: enable individual selection (start with empty)
+                                setAssignments(prev => ({ ...prev, [stylist.id]: [] }));
+                              } else {
+                                // Check: save all services
+                                setAssignments(prev => ({ ...prev, [stylist.id]: [] }));
+                                setSavingServices(stylist.id);
+                                await fetch('/api/stylist-services', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ stylist_id: stylist.id, service_ids: [] }),
+                                });
+                                setSavingServices(null);
+                                toast.success('Operatore abilitato a tutti i servizi');
+                              }
+                            }}
+                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                          <span>Tutti i servizi</span>
+                        </label>
+
+                        {/* Individual checkboxes — only when not "all" */}
+                        {(assignments[stylist.id] || []).length > 0 && (
+                          <div className="space-y-1 mt-2 max-h-48 overflow-y-auto">
+                            {allServices.map(svc => {
+                              const checked = (assignments[stylist.id] || []).includes(svc.id);
+                              return (
+                                <label key={svc.id} className="flex items-center gap-2 p-1.5 hover:bg-white rounded-lg cursor-pointer text-sm">
+                                  <input type="checkbox" checked={checked}
+                                    onChange={() => toggleService(stylist.id, svc.id)}
+                                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                                  <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: svc.color_hex }} />
+                                  <span>{svc.name}</span>
+                                  <span className="text-gray-400 text-xs ml-auto">{svc.duration_minutes}min</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+                        <p className="text-[10px] text-gray-400 mt-2">
+                          {(assignments[stylist.id] || []).length === 0
+                            ? 'Operatore abilitato a tutti i servizi'
+                            : `${(assignments[stylist.id] || []).length} servizio/i assegnato/i`}
+                        </p>
+                        <button onClick={() => saveServices(stylist.id)} disabled={savingServices === stylist.id}
+                          className="mt-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+                          {savingServices === stylist.id ? 'Salvataggio...' : 'Salva servizi'}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
