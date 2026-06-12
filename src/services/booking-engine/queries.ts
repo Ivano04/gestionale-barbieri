@@ -51,44 +51,46 @@ export async function fetchStylists(salonId: string, stylistId?: string, service
   const supabase = createAdminClient();
 
   if (serviceId) {
-    // Check if THIS specific service has assigned stylists
+    // Get all stylists
+    const { data: allStylists } = await supabase
+      .from('users')
+      .select('id, full_name, working_hours')
+      .eq('salon_id', salonId)
+      .eq('role', 'stylist');
+
+    if (!allStylists?.length) return [];
+
+    // Get stylists assigned to THIS service
     const { data: serviceAssignments } = await supabase
       .from('stylist_services')
       .select('stylist_id')
       .eq('service_id', serviceId);
 
-    if (serviceAssignments && serviceAssignments.length > 0) {
-      // This service has explicit assignees — filter to only those
-      const eligibleIds = serviceAssignments.map(a => a.stylist_id);
+    const assignedToService = new Set((serviceAssignments || []).map(a => a.stylist_id));
 
-      let query = supabase
-        .from('users')
-        .select('id, full_name, working_hours')
-        .eq('salon_id', salonId)
-        .eq('role', 'stylist')
-        .in('id', eligibleIds);
-
-      if (stylistId) query = query.eq('id', stylistId);
-      const { data: stylists } = await query;
-      return stylists || [];
-    }
-
-    // This service has no assignees. Check if ANY service has assignments
-    // (meaning filtering is active in the system).
-    const { data: anyAssignments } = await supabase
+    // Get ALL stylists who have ANY assignment (these are in manual mode)
+    const { data: allAssigned } = await supabase
       .from('stylist_services')
-      .select('stylist_id')
-      .limit(1);
+      .select('stylist_id');
 
-    if (anyAssignments && anyAssignments.length > 0) {
-      // Filtering is active but no one can do THIS service — return empty
-      return [];
+    const hasAnyAssignment = new Set((allAssigned || []).map(a => a.stylist_id));
+
+    if (hasAnyAssignment.size > 0) {
+      // Filtering is active: eligible = assigned to this service OR in "all services" mode
+      const eligible = allStylists.filter(s =>
+        assignedToService.has(s.id) || !hasAnyAssignment.has(s.id)
+      );
+
+      if (stylistId) return eligible.filter(s => s.id === stylistId);
+      return eligible;
     }
 
-    // No assignments exist at all — fall through to default (all stylists)
+    // No assignments at all — all stylists can do this service
+    if (stylistId) return allStylists.filter(s => s.id === stylistId);
+    return allStylists;
   }
 
-  // Default: no filtering — all stylists can do all services
+  // No service filter — return all stylists
   let query = supabase
     .from('users')
     .select('id, full_name, working_hours')
