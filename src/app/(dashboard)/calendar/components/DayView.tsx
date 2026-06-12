@@ -20,7 +20,7 @@ interface Props {
 
 const STYLIST_COLORS = ['#f472b6', '#60a5fa', '#34d399', '#a78bfa', '#fbbf24'];
 const HOUR_HEIGHT = 80; // px per hour
-const MIN_HEIGHT = 44;  // min card height — ensures 2 lines of text fit
+const MIN_HEIGHT = 22;  // 15min = 20px, 22px gives room for 1 line
 
 function isToday(d: Date): boolean {
   return format(d, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
