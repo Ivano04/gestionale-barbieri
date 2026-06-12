@@ -19,8 +19,8 @@ interface Props {
 }
 
 const STYLIST_COLORS = ['#f472b6', '#60a5fa', '#34d399', '#a78bfa', '#fbbf24'];
-const HOUR_HEIGHT = 80; // px per hour
-const MIN_HEIGHT = 22;  // 15min = 20px, 22px gives room for 1 line
+const HOUR_HEIGHT = 120; // px per hour — 15min = 30px, enough for 2-3 lines
+const MIN_HEIGHT = 30;  // ensures back-to-back 15min slots don't overlap
 
 function isToday(d: Date): boolean {
   return format(d, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
