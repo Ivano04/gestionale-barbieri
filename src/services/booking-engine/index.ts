@@ -49,7 +49,7 @@ export async function getAvailableSlots(params: GetAvailableSlotsParams): Promis
     const sEnd = new Date(`${date}T${sClose}:00${tzOffset}`);
 
     const slots = generateSlots({
-      sStart, sEnd, duration, step: 30, occupied,
+      sStart, sEnd, duration, step: 15, occupied,
       stylistId: stylist.id, stylistName: stylist.full_name,
     });
     allSlots.push(...slots);

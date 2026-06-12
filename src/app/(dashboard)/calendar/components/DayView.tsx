@@ -393,7 +393,7 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonHours, 
                 onClick={(e) => {
                   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
                   const y = e.clientY - rect.top;
-                  const minute = snapMinute(yToMinute(y));
+                  const minute = Math.round(yToMinute(y) / 15) * 15;
                   const h = Math.floor(minute / 60);
                   const m = minute % 60;
                   const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`;
