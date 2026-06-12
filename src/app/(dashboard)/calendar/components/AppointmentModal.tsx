@@ -190,7 +190,7 @@ export function AppointmentModal({ appointment, services, clients, stylists, sal
             <label className="text-sm font-medium text-gray-700">Servizio</label>
             <select className={`w-full border rounded-lg px-3 py-2 mt-1 text-sm ${errors.service ? 'border-red-400' : ''}`}
               value={form.service_id || ''}
-              onChange={e => { setForm(f => ({ ...f, service_id: e.target.value })); clearError('service'); }}>
+              onChange={e => { setForm(f => ({ ...f, service_id: e.target.value, start_time: '' })); clearError('service'); }}>
               <option value="">Seleziona servizio...</option>
               {services.map(s => {
                 const hasPhases = s.duration_application != null || s.duration_processing != null || s.duration_finishing != null;
@@ -254,21 +254,7 @@ export function AppointmentModal({ appointment, services, clients, stylists, sal
             </div>
 
             {!form.service_id || !form.stylist_id ? (
-              form.start_time ? (
-                <div className="p-3 bg-blue-50 rounded-lg text-sm text-blue-700 text-center font-medium">
-                  {form.stylist_id && (
-                    <span className="block text-xs text-blue-500 mb-1">
-                      {stylists.find(s => s.id === form.stylist_id)?.full_name}
-                    </span>
-                  )}
-                  <Clock size={14} className="inline mr-1" />
-                  {format(parseISO(form.start_time), 'EEEE d MMMM', { locale: it })} alle{' '}
-                  {format(parseISO(form.start_time), 'HH:mm')}
-                  <p className="text-xs text-blue-400 mt-1 font-normal">Seleziona il servizio per completare</p>
-                </div>
-              ) : (
-                <p className="text-xs text-gray-400 text-center py-2">Seleziona servizio e operatore</p>
-              )
+              <p className="text-xs text-gray-400 text-center py-2">Seleziona servizio e operatore</p>
             ) : slotsLoading ? (
               <div className="flex items-center justify-center py-3"><Loader2 size={18} className="animate-spin text-gray-400" /></div>
             ) : slots.length === 0 ? (
