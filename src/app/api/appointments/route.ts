@@ -101,7 +101,7 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Questo slot non è disponibile (fascia bloccata)' }, { status: 409 });
   }
 
-  // Simple conflict check — any overlap is a hard block
+  // Simple conflict check
   if (body.stylist_id) {
     const { data: conflict } = await supabase
       .from('appointments')
@@ -171,18 +171,26 @@ export async function POST(request: Request) {
     treatwell_appointment_id: appointment.treatwell_appointment_id,
   });
 
-  // Fire-and-forget sync verso GHL
-  if (clientId) {
+  // Sync to GHL
+  try {
     const { data: fullAppt } = await adminSupabase
       .from('appointments')
       .select('*, client:clients(*), service:services(*)')
       .eq('id', appointment.id)
       .single();
+
     if (fullAppt?.client) {
-      pushToGHL(fullAppt as any, fullAppt.client as any).catch(err => {
-        console.error('[ghl] sync failed:', err);
-      });
+      await pushToGHL(fullAppt as any, fullAppt.client as any);
     }
+  } catch (err: any) {
+    console.error('[ghl] sync error:', err?.message || err);
+    await adminSupabase.from('sync_log').insert({
+      salon_id: appointment.salon_id,
+      direction: 'us->ghl',
+      appointment_id: appointment.id,
+      status: 'failed',
+      error_message: err?.message || String(err),
+    });
   }
 
   return Response.json(appointment, { status: 201 });
