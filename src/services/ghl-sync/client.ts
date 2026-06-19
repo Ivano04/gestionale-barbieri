@@ -11,6 +11,7 @@ export class GHLClient {
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
         'Content-Type': 'application/json',
+        Version: '2021-07-28',
         ...options?.headers,
       },
     });

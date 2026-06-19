@@ -4,6 +4,7 @@ import { addMinutes } from 'date-fns';
 import { getRomeOffset } from '@/lib/date-utils';
 import { sendN8nEvent } from '@/lib/sync-webhook';
 import { fetchServiceDuration } from '@/services/booking-engine/queries';
+import { pushToGHL } from '@/services/ghl-sync/sync';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -169,6 +170,20 @@ export async function POST(request: Request) {
     ghl_appointment_id: appointment.ghl_appointment_id,
     treatwell_appointment_id: appointment.treatwell_appointment_id,
   });
+
+  // Fire-and-forget sync verso GHL
+  if (clientId) {
+    const { data: fullAppt } = await supabase
+      .from('appointments')
+      .select('*, client:clients(*), service:services(*)')
+      .eq('id', appointment.id)
+      .single();
+    if (fullAppt?.client) {
+      pushToGHL(fullAppt as any, fullAppt.client as any).catch(err => {
+        console.error('[ghl] sync failed:', err);
+      });
+    }
+  }
 
   return Response.json(appointment, { status: 201 });
 }
