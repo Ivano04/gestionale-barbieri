@@ -37,6 +37,7 @@ export async function pushToGHL(
 
     console.error('[ghl-v2] ghlContactId:', ghlContactId);
     if (ghlContactId) {
+      console.error('[ghl-v2] creating appointment on GHL...');
       const ghlApptId = await ghl.createAppointment(
         salon.ghl_subaccount_id,
         {
@@ -47,10 +48,12 @@ export async function pushToGHL(
           calendarId: process.env.GHL_CALENDAR_ID || 'zj2Uo3Bd29fSt1xJi3oF',
         },
       );
+      console.error('[ghl-v2] ghlApptId:', ghlApptId);
       await supabase
         .from('appointments')
         .update({ ghl_appointment_id: ghlApptId })
         .eq('id', appointment.id);
+      console.error('[ghl-v2] updated appointment, writing sync_log');
       await supabase.from('sync_log').insert({
         salon_id: appointment.salon_id,
         direction: 'us->ghl',
@@ -58,6 +61,7 @@ export async function pushToGHL(
         status: 'success',
         external_id: ghlApptId,
       });
+      console.error('[ghl-v2] sync_log written');
     }
   } catch (e: any) {
     console.error('[ghl-v2] pushToGHL CATCH:', e.message);
