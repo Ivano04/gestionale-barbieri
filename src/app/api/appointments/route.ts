@@ -171,6 +171,9 @@ export async function POST(request: Request) {
     treatwell_appointment_id: appointment.treatwell_appointment_id,
   });
 
+  // DEBUG: mark that sync code was reached
+  await adminSupabase.from('appointments').update({ notes: '[SYNC_DEBUG] code reached' }).eq('id', appointment.id);
+
   // Sync to GHL
   try {
     const { data: fullAppt } = await adminSupabase
