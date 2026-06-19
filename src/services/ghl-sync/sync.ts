@@ -58,7 +58,6 @@ export async function pushToGHL(
       });
     }
   } catch (e: any) {
-    console.error('[ghl] pushToGHL failed:', e.message, 'appointment:', appointment.id);
     await supabase.from('sync_log').insert({
       salon_id: appointment.salon_id,
       direction: 'us->ghl',

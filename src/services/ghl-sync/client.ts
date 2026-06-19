@@ -46,7 +46,13 @@ export class GHLClient {
       body: JSON.stringify(body),
     });
     const data = await createRes.json();
-    return data.contact.id;
+
+    // Handle duplicate contact: GHL returns 400 with the existing contactId
+    if (!createRes.ok && data.contactId) {
+      return data.contactId;
+    }
+
+    return data.contact?.id;
   }
 
   async createAppointment(
