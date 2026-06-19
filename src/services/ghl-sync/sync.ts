@@ -35,6 +35,7 @@ export async function pushToGHL(
         .eq('id', client.id);
     }
 
+    console.error('[ghl-v2] ghlContactId:', ghlContactId);
     if (ghlContactId) {
       const ghlApptId = await ghl.createAppointment(
         salon.ghl_subaccount_id,
@@ -59,6 +60,7 @@ export async function pushToGHL(
       });
     }
   } catch (e: any) {
+    console.error('[ghl-v2] pushToGHL CATCH:', e.message);
     await supabase.from('sync_log').insert({
       salon_id: appointment.salon_id,
       direction: 'us->ghl',
