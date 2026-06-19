@@ -78,6 +78,9 @@ export class GHLClient {
       }),
     });
     const data = await res.json();
+    if (!res.ok) {
+      throw new Error(`GHL createAppointment failed: ${res.status} ${JSON.stringify(data)}`);
+    }
     return data.appointment?.id || data.id;
   }
 
