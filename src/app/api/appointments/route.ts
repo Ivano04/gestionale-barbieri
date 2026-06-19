@@ -172,7 +172,6 @@ export async function POST(request: Request) {
   });
 
   // Sync to GHL
-  console.error('[ghl-v2] route sync block reached, appointment:', appointment.id);
   try {
     const { data: fullAppt } = await adminSupabase
       .from('appointments')

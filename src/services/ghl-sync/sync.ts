@@ -12,7 +12,6 @@ export async function pushToGHL(
     .select('ghl_subaccount_id')
     .eq('id', appointment.salon_id)
     .single();
-  console.error('[ghl-v2] pushToGHL start, subaccount:', salon?.ghl_subaccount_id);
   if (!salon?.ghl_subaccount_id) return;
 
   const ghl = new GHLClient(process.env.GHL_AGENCY_API_KEY!);
@@ -35,9 +34,7 @@ export async function pushToGHL(
         .eq('id', client.id);
     }
 
-    console.error('[ghl-v2] ghlContactId:', ghlContactId);
     if (ghlContactId) {
-      console.error('[ghl-v2] creating appointment on GHL...');
       const ghlApptId = await ghl.createAppointment(
         salon.ghl_subaccount_id,
         {
@@ -48,12 +45,10 @@ export async function pushToGHL(
           calendarId: process.env.GHL_CALENDAR_ID || 'zj2Uo3Bd29fSt1xJi3oF',
         },
       );
-      console.error('[ghl-v2] ghlApptId:', ghlApptId);
       await supabase
         .from('appointments')
         .update({ ghl_appointment_id: ghlApptId })
         .eq('id', appointment.id);
-      console.error('[ghl-v2] updated appointment, writing sync_log');
       await supabase.from('sync_log').insert({
         salon_id: appointment.salon_id,
         direction: 'us->ghl',
@@ -61,10 +56,8 @@ export async function pushToGHL(
         status: 'success',
         external_id: ghlApptId,
       });
-      console.error('[ghl-v2] sync_log written');
     }
   } catch (e: any) {
-    console.error('[ghl-v2] pushToGHL CATCH:', e.message);
     await supabase.from('sync_log').insert({
       salon_id: appointment.salon_id,
       direction: 'us->ghl',
