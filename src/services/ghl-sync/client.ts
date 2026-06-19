@@ -1,7 +1,6 @@
 export class GHLClient {
   private apiKey: string;
-  private baseUrl = 'https://rest.gohighlevel.com/v1';
-
+  private baseUrl = 'https://services.leadconnectorhq.com';
   constructor(apiKey: string) {
     this.apiKey = apiKey;
   }
