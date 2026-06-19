@@ -12,16 +12,13 @@ export async function pushToGHL(
     .select('ghl_subaccount_id')
     .eq('id', appointment.salon_id)
     .single();
-  console.error('[ghl-debug] pushToGHL: salon found:', !!salon, 'subaccount:', salon?.ghl_subaccount_id);
-  if (!salon?.ghl_subaccount_id) { console.error('[ghl-debug] pushToGHL: NO subaccount, returning'); return; }
+  if (!salon?.ghl_subaccount_id) return;
 
   const ghl = new GHLClient(process.env.GHL_AGENCY_API_KEY!);
 
   try {
     let ghlContactId = client?.ghl_contact_id;
-    console.error('[ghl-debug] pushToGHL: existing ghlContactId:', ghlContactId, 'client phone:', client?.phone);
     if (!ghlContactId && client) {
-      console.error('[ghl-debug] pushToGHL: calling findOrCreateContact...');
       ghlContactId = await ghl.findOrCreateContact(
         salon.ghl_subaccount_id,
         {
@@ -31,14 +28,12 @@ export async function pushToGHL(
           email: client.email || '',
         },
       );
-      console.error('[ghl-debug] pushToGHL: got ghlContactId:', ghlContactId);
       await supabase
         .from('clients')
         .update({ ghl_contact_id: ghlContactId })
         .eq('id', client.id);
     }
 
-    console.error('[ghl-debug] pushToGHL: ghlContactId before appt create:', ghlContactId);
     if (ghlContactId) {
       const ghlApptId = await ghl.createAppointment(
         salon.ghl_subaccount_id,
@@ -63,18 +58,12 @@ export async function pushToGHL(
       });
     }
   } catch (e: any) {
-    console.error('[ghl-debug] pushToGHL CATCH:', e?.message || e, 'stack:', e?.stack?.substring(0, 200));
-    try {
-      await supabase.from('sync_log').insert({
-        salon_id: appointment.salon_id,
-        direction: 'us->ghl',
-        appointment_id: appointment.id,
-        status: 'failed',
-        error_message: e.message || String(e),
-      });
-      console.error('[ghl-debug] sync_log insert ok');
-    } catch (e2: any) {
-      console.error('[ghl-debug] sync_log insert FAILED:', e2?.message || e2);
-    }
+    await supabase.from('sync_log').insert({
+      salon_id: appointment.salon_id,
+      direction: 'us->ghl',
+      appointment_id: appointment.id,
+      status: 'failed',
+      error_message: e.message,
+    });
   }
 }

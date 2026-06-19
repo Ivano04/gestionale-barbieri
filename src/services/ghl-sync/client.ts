@@ -33,15 +33,17 @@ export class GHLClient {
     const searchData = await searchRes.json();
     if (searchData.contacts?.length) return searchData.contacts[0].id;
 
+    const body: Record<string, any> = {
+      firstName: contact.firstName,
+      lastName: contact.lastName,
+      phone: contact.phone,
+      locationId: subaccountId,
+    };
+    if (contact.email) body.email = contact.email;
+
     const createRes = await this.fetch('/contacts/', {
       method: 'POST',
-      body: JSON.stringify({
-        firstName: contact.firstName,
-        lastName: contact.lastName,
-        phone: contact.phone,
-        email: contact.email,
-        locationId: subaccountId,
-      }),
+      body: JSON.stringify(body),
     });
     const data = await createRes.json();
     return data.contact.id;

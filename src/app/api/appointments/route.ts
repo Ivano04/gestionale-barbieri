@@ -172,7 +172,6 @@ export async function POST(request: Request) {
   });
 
   // Sync to GHL
-  console.error('[ghl-debug] START sync, appointment:', appointment.id);
   try {
     const { data: fullAppt } = await adminSupabase
       .from('appointments')
@@ -180,14 +179,11 @@ export async function POST(request: Request) {
       .eq('id', appointment.id)
       .single();
 
-    console.error('[ghl-debug] fullAppt found:', !!fullAppt, 'hasClient:', !!fullAppt?.client);
     if (fullAppt?.client) {
-      console.error('[ghl-debug] calling pushToGHL...');
       await pushToGHL(fullAppt as any, fullAppt.client as any);
-      console.error('[ghl-debug] pushToGHL done');
     }
   } catch (err: any) {
-    console.error('[ghl-debug] CATCH error:', err?.message || err);
+    console.error('[ghl] sync error:', err?.message || err);
     await adminSupabase.from('sync_log').insert({
       salon_id: appointment.salon_id,
       direction: 'us->ghl',
