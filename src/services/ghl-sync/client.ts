@@ -89,15 +89,16 @@ export class GHLClient {
       endTime?: string;
     },
   ): Promise<void> {
-    await this.fetch(`/calendars/events/appointments/${ghlAppointmentId}`, {
+    await this.fetch(`/calendars/events/${ghlAppointmentId}`, {
       method: 'PUT',
       body: JSON.stringify(appointment),
     });
   }
 
   async deleteAppointment(ghlAppointmentId: string): Promise<void> {
-    await this.fetch(`/calendars/events/appointments/${ghlAppointmentId}`, {
-      method: 'DELETE',
+    await this.fetch(`/calendars/events/${ghlAppointmentId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ status: 'cancelled' }),
     });
   }
 }
