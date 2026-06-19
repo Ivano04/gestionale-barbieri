@@ -173,7 +173,7 @@ export async function POST(request: Request) {
 
   // Fire-and-forget sync verso GHL
   if (clientId) {
-    const { data: fullAppt } = await supabase
+    const { data: fullAppt } = await adminSupabase
       .from('appointments')
       .select('*, client:clients(*), service:services(*)')
       .eq('id', appointment.id)
