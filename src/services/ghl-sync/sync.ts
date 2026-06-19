@@ -12,6 +12,7 @@ export async function pushToGHL(
     .select('ghl_subaccount_id')
     .eq('id', appointment.salon_id)
     .single();
+  console.error('[ghl-v2] pushToGHL start, subaccount:', salon?.ghl_subaccount_id);
   if (!salon?.ghl_subaccount_id) return;
 
   const ghl = new GHLClient(process.env.GHL_AGENCY_API_KEY!);
