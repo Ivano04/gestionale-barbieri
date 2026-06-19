@@ -12,13 +12,16 @@ export async function pushToGHL(
     .select('ghl_subaccount_id')
     .eq('id', appointment.salon_id)
     .single();
-  if (!salon?.ghl_subaccount_id) return;
+  console.error('[ghl-debug] pushToGHL: salon found:', !!salon, 'subaccount:', salon?.ghl_subaccount_id);
+  if (!salon?.ghl_subaccount_id) { console.error('[ghl-debug] pushToGHL: NO subaccount, returning'); return; }
 
   const ghl = new GHLClient(process.env.GHL_AGENCY_API_KEY!);
 
   try {
     let ghlContactId = client?.ghl_contact_id;
+    console.error('[ghl-debug] pushToGHL: existing ghlContactId:', ghlContactId, 'client phone:', client?.phone);
     if (!ghlContactId && client) {
+      console.error('[ghl-debug] pushToGHL: calling findOrCreateContact...');
       ghlContactId = await ghl.findOrCreateContact(
         salon.ghl_subaccount_id,
         {
@@ -28,12 +31,14 @@ export async function pushToGHL(
           email: client.email || '',
         },
       );
+      console.error('[ghl-debug] pushToGHL: got ghlContactId:', ghlContactId);
       await supabase
         .from('clients')
         .update({ ghl_contact_id: ghlContactId })
         .eq('id', client.id);
     }
 
+    console.error('[ghl-debug] pushToGHL: ghlContactId before appt create:', ghlContactId);
     if (ghlContactId) {
       const ghlApptId = await ghl.createAppointment(
         salon.ghl_subaccount_id,
