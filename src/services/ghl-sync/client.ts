@@ -54,9 +54,10 @@ export class GHLClient {
       title: string;
       startTime: string;
       endTime: string;
+      calendarId: string;
     },
   ): Promise<string> {
-    const res = await this.fetch('/appointments/', {
+    const res = await this.fetch('/calendars/events/appointments/', {
       method: 'POST',
       body: JSON.stringify({
         contactId: appointment.contactId,
@@ -65,9 +66,10 @@ export class GHLClient {
         startTime: appointment.startTime,
         endTime: appointment.endTime,
         locationId: subaccountId,
+        calendarId: appointment.calendarId,
       }),
     });
     const data = await res.json();
-    return data.appointment.id;
+    return data.appointment?.id || data.id;
   }
 }

@@ -42,6 +42,7 @@ export async function pushToGHL(
           title: appointment.service?.name || 'Appuntamento',
           startTime: appointment.start_time,
           endTime: appointment.end_time,
+          calendarId: process.env.GHL_CALENDAR_ID || 'zj2Uo3Bd29fSt1xJi3oF',
         },
       );
       await supabase
