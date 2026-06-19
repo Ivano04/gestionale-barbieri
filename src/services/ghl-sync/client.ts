@@ -80,4 +80,24 @@ export class GHLClient {
     const data = await res.json();
     return data.appointment?.id || data.id;
   }
+
+  async updateAppointment(
+    ghlAppointmentId: string,
+    appointment: {
+      title?: string;
+      startTime?: string;
+      endTime?: string;
+    },
+  ): Promise<void> {
+    await this.fetch(`/calendars/events/appointments/${ghlAppointmentId}`, {
+      method: 'PUT',
+      body: JSON.stringify(appointment),
+    });
+  }
+
+  async deleteAppointment(ghlAppointmentId: string): Promise<void> {
+    await this.fetch(`/calendars/events/appointments/${ghlAppointmentId}`, {
+      method: 'DELETE',
+    });
+  }
 }

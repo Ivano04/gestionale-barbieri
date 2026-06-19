@@ -58,11 +58,79 @@ export async function pushToGHL(
       });
     }
   } catch (e: any) {
-    console.error('[ghl] pushToGHL CATCH:', e.message, '| appointment:', appointment.id);
     await supabase.from('sync_log').insert({
       salon_id: appointment.salon_id,
       direction: 'us->ghl',
       appointment_id: appointment.id,
+      status: 'failed',
+      error_message: e.message,
+    });
+  }
+}
+
+export async function updateGHLAppointment(
+  ghlAppointmentId: string,
+  salonId: string,
+  appointmentId: string,
+  data: { title?: string; startTime?: string; endTime?: string },
+) {
+  const supabase = createAdminClient();
+  const { data: salon } = await supabase
+    .from('salons')
+    .select('ghl_subaccount_id')
+    .eq('id', salonId)
+    .single();
+  if (!salon?.ghl_subaccount_id) return;
+
+  const ghl = new GHLClient(process.env.GHL_AGENCY_API_KEY!);
+  try {
+    await ghl.updateAppointment(ghlAppointmentId, data);
+    await supabase.from('sync_log').insert({
+      salon_id: salonId,
+      direction: 'us->ghl',
+      appointment_id: appointmentId,
+      status: 'success',
+      external_id: ghlAppointmentId,
+    });
+  } catch (e: any) {
+    await supabase.from('sync_log').insert({
+      salon_id: salonId,
+      direction: 'us->ghl',
+      appointment_id: appointmentId,
+      status: 'failed',
+      error_message: e.message,
+    });
+  }
+}
+
+export async function deleteGHLAppointment(
+  ghlAppointmentId: string,
+  salonId: string,
+  appointmentId: string,
+) {
+  const supabase = createAdminClient();
+  const { data: salon } = await supabase
+    .from('salons')
+    .select('ghl_subaccount_id')
+    .eq('id', salonId)
+    .single();
+  if (!salon?.ghl_subaccount_id) return;
+
+  const ghl = new GHLClient(process.env.GHL_AGENCY_API_KEY!);
+  try {
+    await ghl.deleteAppointment(ghlAppointmentId);
+    await supabase.from('sync_log').insert({
+      salon_id: salonId,
+      direction: 'us->ghl',
+      appointment_id: appointmentId,
+      status: 'success',
+      external_id: ghlAppointmentId,
+    });
+  } catch (e: any) {
+    await supabase.from('sync_log').insert({
+      salon_id: salonId,
+      direction: 'us->ghl',
+      appointment_id: appointmentId,
       status: 'failed',
       error_message: e.message,
     });

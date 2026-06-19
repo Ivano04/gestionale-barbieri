@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { addMinutes } from 'date-fns';
 import { sendN8nEvent } from '@/lib/sync-webhook';
 import { fetchServiceDuration } from '@/services/booking-engine/queries';
+import { updateGHLAppointment, deleteGHLAppointment } from '@/services/ghl-sync/sync';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -114,6 +115,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     changes: clean,
   });
 
+  // Sync update to GHL
+  if (data.ghl_appointment_id && data.salon_id) {
+    const ghlData: { title?: string; startTime?: string; endTime?: string } = {};
+    if (data.start_time) ghlData.startTime = data.start_time;
+    if (data.end_time) ghlData.endTime = data.end_time;
+    if (data.service?.name) ghlData.title = data.service.name;
+    if (Object.keys(ghlData).length > 0) {
+      updateGHLAppointment(data.ghl_appointment_id, data.salon_id, data.id, ghlData).catch(err => {
+        console.error('[ghl] update failed:', err);
+      });
+    }
+  }
+
   return Response.json(data);
 }
 
@@ -141,6 +155,13 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     ghl_appointment_id: existing?.ghl_appointment_id,
     treatwell_appointment_id: existing?.treatwell_appointment_id,
   });
+
+  // Sync deletion to GHL
+  if (existing?.ghl_appointment_id && existing?.salon_id) {
+    deleteGHLAppointment(existing.ghl_appointment_id, existing.salon_id, id).catch(err => {
+      console.error('[ghl] delete failed:', err);
+    });
+  }
 
   return Response.json({ status: 'ok' });
 }
