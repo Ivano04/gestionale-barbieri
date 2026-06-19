@@ -63,12 +63,18 @@ export async function pushToGHL(
       });
     }
   } catch (e: any) {
-    await supabase.from('sync_log').insert({
-      salon_id: appointment.salon_id,
-      direction: 'us->ghl',
-      appointment_id: appointment.id,
-      status: 'failed',
-      error_message: e.message,
-    });
+    console.error('[ghl-debug] pushToGHL CATCH:', e?.message || e, 'stack:', e?.stack?.substring(0, 200));
+    try {
+      await supabase.from('sync_log').insert({
+        salon_id: appointment.salon_id,
+        direction: 'us->ghl',
+        appointment_id: appointment.id,
+        status: 'failed',
+        error_message: e.message || String(e),
+      });
+      console.error('[ghl-debug] sync_log insert ok');
+    } catch (e2: any) {
+      console.error('[ghl-debug] sync_log insert FAILED:', e2?.message || e2);
+    }
   }
 }
