@@ -28,6 +28,8 @@ export interface User {
   full_name: string;
   avatar_url: string | null;
   working_hours: Record<string, { open: string; close: string } | null> | null;
+  is_active: boolean;
+  ghl_calendar_id: string | null;
   created_at: string;
 }
 

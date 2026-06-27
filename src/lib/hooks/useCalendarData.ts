@@ -50,7 +50,7 @@ export function useCalendarData(salonId: string, date: Date | null) {
         { data: salonData },
       ] = await Promise.all([
         supabase.from('clients').select('*').eq('salon_id', salonId).order('last_name'),
-        supabase.from('users').select('id, full_name, working_hours').eq('salon_id', salonId).eq('role', 'stylist').order('full_name').limit(50),
+        supabase.from('users').select('id, full_name, working_hours').eq('salon_id', salonId).eq('role', 'stylist').eq('is_active', true).order('full_name').limit(50),
         supabase.from('salons').select('working_hours, open_time, close_time').eq('id', salonId).single(),
       ]);
 

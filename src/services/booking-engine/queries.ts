@@ -54,11 +54,13 @@ export async function fetchStylists(salonId: string, stylistId?: string, service
     // Get all stylists
     const { data: allStylists } = await supabase
       .from('users')
-      .select('id, full_name, working_hours')
+      .select('id, full_name, working_hours, is_active')
       .eq('salon_id', salonId)
       .eq('role', 'stylist');
 
-    if (!allStylists?.length) return [];
+    // Filter out inactive stylists
+    const activeStylists = (allStylists || []).filter(s => s.is_active !== false);
+    if (!activeStylists.length) return [];
 
     // Get stylists assigned to THIS service
     const { data: serviceAssignments } = await supabase
@@ -77,7 +79,7 @@ export async function fetchStylists(salonId: string, stylistId?: string, service
 
     if (hasAnyAssignment.size > 0) {
       // Filtering is active: eligible = assigned to this service OR in "all services" mode
-      const eligible = allStylists.filter(s =>
+      const eligible = activeStylists.filter(s =>
         assignedToService.has(s.id) || !hasAnyAssignment.has(s.id)
       );
 
@@ -86,16 +88,17 @@ export async function fetchStylists(salonId: string, stylistId?: string, service
     }
 
     // No assignments at all — all stylists can do this service
-    if (stylistId) return allStylists.filter(s => s.id === stylistId);
-    return allStylists;
+    if (stylistId) return activeStylists.filter(s => s.id === stylistId);
+    return activeStylists;
   }
 
-  // No service filter — return all stylists
+  // No service filter — return all active stylists
   let query = supabase
     .from('users')
     .select('id, full_name, working_hours')
     .eq('salon_id', salonId)
-    .eq('role', 'stylist');
+    .eq('role', 'stylist')
+    .eq('is_active', true);
 
   if (stylistId) query = query.eq('id', stylistId);
   const { data: stylists } = await query;

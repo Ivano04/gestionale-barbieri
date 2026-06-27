@@ -42,7 +42,7 @@ export default function StaffPage() {
       const { data: users } = await supabase.from('users').select('salon_id').eq('id', data.session.user.id).single();
       if (!users?.salon_id) return;
       setSalonId(users.salon_id);
-      const { data: staff } = await supabase.from('users').select('id, full_name, email, role, working_hours').eq('salon_id', users.salon_id).eq('role', 'stylist').order('full_name');
+      const { data: staff } = await supabase.from('users').select('id, full_name, email, role, working_hours, is_active').eq('salon_id', users.salon_id).eq('role', 'stylist').order('full_name');
       setStylists(staff || []);
       const h: Record<string, any> = {};
       (staff || []).forEach(s => {
@@ -122,6 +122,13 @@ export default function StaffPage() {
     });
     setSavingServices(null);
     toast.success('Servizi salvati');
+  }
+
+  async function toggleActive(stylistId: string, current: boolean) {
+    const newState = !current;
+    setStylists(prev => prev.map(s => s.id === stylistId ? { ...s, is_active: newState } : s));
+    await supabase.from('users').update({ is_active: newState }).eq('id', stylistId);
+    toast.success(newState ? 'Operatore attivato' : 'Operatore disattivato');
   }
 
   async function createStylist() {
@@ -214,7 +221,15 @@ export default function StaffPage() {
                   <div className="text-sm text-gray-500">{stylist.email}</div>
                 </div>
               </div>
-              <span className="text-sm text-gray-400">{expanded === stylist.id ? 'Chiudi' : 'Modifica →'}</span>
+              <div className="flex items-center gap-2">
+                <button onClick={(e) => { e.stopPropagation(); toggleActive(stylist.id, stylist.is_active !== false); }}
+                  className={`px-2 py-1 rounded-full text-xs font-medium transition-colors ${
+                    stylist.is_active !== false ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-red-50 text-red-500 hover:bg-red-100'
+                  }`}>
+                  {stylist.is_active !== false ? 'Attivo' : 'Disattivato'}
+                </button>
+                <span className="text-sm text-gray-400">{expanded === stylist.id ? 'Chiudi' : 'Modifica →'}</span>
+              </div>
             </button>
 
             {expanded === stylist.id && (
