@@ -15,6 +15,7 @@ export async function pushToTreatwell(
   appointment: Appointment,
   client: Client | null,
 ) {
+  console.error('[tw-debug] pushToTreatwell called, appt:', appointment.id);
   if (!process.env.TREATWELL_API_TOKEN) return;
 
   const supabase = createAdminClient();
@@ -58,6 +59,7 @@ export async function pushToTreatwell(
     // Get treatment ID from Uala
     const service = appointment.service as any;
     const ualaTreatmentId = service?.uala_treatment_id;
+    console.error('[tw-debug] staffId:', ualaStaffId, 'treatmentId:', ualaTreatmentId);
     if (!ualaTreatmentId) {
       await supabase.from('sync_log').insert({
         salon_id: appointment.salon_id,
