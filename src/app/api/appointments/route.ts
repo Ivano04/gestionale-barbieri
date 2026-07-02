@@ -182,15 +182,11 @@ export async function POST(request: Request) {
     pushToGHL(fullAppt as any, fullAppt.client as any).catch(err => {
       console.error('[ghl] sync failed:', err);
     });
+    // Sync verso Treatwell/Uala (stesso blocco per evitare tree-shaking)
+    pushToTreatwell(fullAppt as any, fullAppt.client).catch(err => {
+      console.error('[treatwell] sync failed:', err);
+    });
   }
-
-  // Sync verso Treatwell/Uala
-  pushToTreatwell(fullAppt as any, (fullAppt as any).client).then(() => {
-    adminSupabase.from('appointments').update({ notes: '[TW_SYNC_OK]' }).eq('id', appointment.id);
-  }).catch(err => {
-    console.error('[treatwell] sync failed:', err);
-    adminSupabase.from('appointments').update({ notes: '[TW_SYNC_ERR] ' + (err?.message || 'unknown') }).eq('id', appointment.id);
-  });
 
   return Response.json(appointment, { status: 201 });
 }
