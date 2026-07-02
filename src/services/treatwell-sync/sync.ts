@@ -15,7 +15,6 @@ export async function pushToTreatwell(
   appointment: Appointment,
   client: Client | null,
 ) {
-  console.error('[tw-debug] pushToTreatwell called, appt:', appointment.id);
   if (!process.env.TREATWELL_API_TOKEN) return;
 
   const supabase = createAdminClient();
@@ -23,7 +22,7 @@ export async function pushToTreatwell(
     .from('salons')
     .select('treatwell_api_enabled')
     .eq('id', appointment.salon_id)
-    .single(); console.error('[tw-debug] salon found:', !!salon, 'enabled:', salon?.treatwell_api_enabled);
+    .single();
   if (!salon?.treatwell_api_enabled) return;
 
   const tw = getClient();
@@ -34,8 +33,7 @@ export async function pushToTreatwell(
       ? `${client.first_name} ${client.last_name}`
       : 'Cliente';
     const clientPhone = client?.phone || '';
-    console.error('[tw-debug] calling findOrCreateCustomer...'); const customerId = await tw.findOrCreateCustomer(clientName, clientPhone);
-  console.error('[tw-debug] customerId:', customerId);
+    const customerId = await tw.findOrCreateCustomer(clientName, clientPhone);
     if (client && !client.treatwell_client_id) {
       await supabase
         .from('clients')
@@ -60,7 +58,6 @@ export async function pushToTreatwell(
     // Get treatment ID from Uala
     const service = appointment.service as any;
     const ualaTreatmentId = service?.uala_treatment_id;
-    console.error('[tw-debug] staffId:', ualaStaffId, 'treatmentId:', ualaTreatmentId);
     if (!ualaTreatmentId) {
       await supabase.from('sync_log').insert({
         salon_id: appointment.salon_id,
@@ -72,9 +69,7 @@ export async function pushToTreatwell(
       return;
     }
 
-    // We need the staff_member_treatment_id. For now, we search the staff
-    // treatments to find the matching combination.
-    // For efficiency, this mapping could be cached or pre-loaded.
+    // Find the staff_member_treatment_id for this combination
     const treatmentsRes = await fetch(
       `${process.env.TREATWELL_API_BASE_URL || 'https://api.uala.it/api/v1'}/venues/${process.env.TREATWELL_VENUE_ID || '482'}/staff_member_treatments`,
       {
@@ -83,13 +78,14 @@ export async function pushToTreatwell(
           'X-Client-Auth': process.env.TREATWELL_CLIENT_AUTH || '',
           Accept: 'application/json',
         },
+        signal: AbortSignal.timeout(10000),
       },
     );
     if (!treatmentsRes.ok) {
       throw new Error(`Failed to fetch staff treatments: ${treatmentsRes.status}`);
     }
     const treatmentsData = await treatmentsRes.json();
-    const staffTreatments = treatmentsData?.salon?.staff_member_treatments || [];
+    const staffTreatments = treatmentsData?.data?.staff_member_treatments || [];
     const match = staffTreatments.find(
       (st: any) =>
         st.staff_member_id === ualaStaffId &&
@@ -149,7 +145,7 @@ export async function deleteFromTreatwell(
     .from('salons')
     .select('treatwell_api_enabled')
     .eq('id', salonId)
-    .single(); console.error('[tw-debug] salon found:', !!salon, 'enabled:', salon?.treatwell_api_enabled);
+    .single();
   if (!salon?.treatwell_api_enabled) return;
 
   const tw = getClient();
