@@ -23,7 +23,7 @@ export async function pushToTreatwell(
     .from('salons')
     .select('treatwell_api_enabled')
     .eq('id', appointment.salon_id)
-    .single();
+    .single(); console.error('[tw-debug] salon found:', !!salon, 'enabled:', salon?.treatwell_api_enabled);
   if (!salon?.treatwell_api_enabled) return;
 
   const tw = getClient();
@@ -88,7 +88,7 @@ export async function pushToTreatwell(
       throw new Error(`Failed to fetch staff treatments: ${treatmentsRes.status}`);
     }
     const treatmentsData = await treatmentsRes.json();
-    const staffTreatments = treatmentsData?.data?.staff_member_treatments || [];
+    const staffTreatments = treatmentsData?.salon?.staff_member_treatments || [];
     const match = staffTreatments.find(
       (st: any) =>
         st.staff_member_id === ualaStaffId &&
@@ -148,7 +148,7 @@ export async function deleteFromTreatwell(
     .from('salons')
     .select('treatwell_api_enabled')
     .eq('id', salonId)
-    .single();
+    .single(); console.error('[tw-debug] salon found:', !!salon, 'enabled:', salon?.treatwell_api_enabled);
   if (!salon?.treatwell_api_enabled) return;
 
   const tw = getClient();
