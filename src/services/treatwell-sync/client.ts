@@ -36,36 +36,25 @@ export class TreatwellClient {
     name: string,
     phone: string,
   ): Promise<number> {
-    // Search by phone (only if phone is not empty)
-    if (phone) {
-      try {
-        const searchRes = await this.fetch(
-          `/venues/${this.venueId}/customers?phone=${encodeURIComponent(phone)}`,
-        );
-        if (searchRes.ok) {
-          const searchData = await searchRes.json();
-          const customers = searchData?.data?.customers || [];
-          if (customers.length > 0) return customers[0].id;
-        }
-      } catch {
-        // Search failed (e.g. timeout), fall through to create
-      }
-    }
-
-    // Create new customer
     const [firstName, ...lastParts] = name.trim().split(' ');
     const lastName = lastParts.join(' ') || '';
 
     const createRes = await this.fetch(`/venues/${this.venueId}/customers`, {
       method: 'POST',
       body: JSON.stringify({
-        first_name: firstName,
-        last_name: lastName,
+        first_name: firstName || 'Cliente',
+        last_name: lastName || '',
         phone,
         by_venue: true,
       }),
     });
     const data = await createRes.json();
+
+    // Return existing customer ID on conflict (409)
+    if (!createRes.ok && data?.data?.conflictual_customer?.id) {
+      return data.data.conflictual_customer.id;
+    }
+
     if (!createRes.ok) {
       throw new Error(
         `Uala createCustomer failed: ${createRes.status} ${JSON.stringify(data)}`,
