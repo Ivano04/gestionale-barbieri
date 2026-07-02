@@ -184,9 +184,12 @@ export async function POST(request: Request) {
     });
   }
 
-  // Fire-and-forget sync verso Treatwell/Uala
-  pushToTreatwell(fullAppt as any, (fullAppt as any).client).catch(err => {
+  // Sync verso Treatwell/Uala
+  pushToTreatwell(fullAppt as any, (fullAppt as any).client).then(() => {
+    adminSupabase.from('appointments').update({ notes: '[TW_SYNC_OK]' }).eq('id', appointment.id);
+  }).catch(err => {
     console.error('[treatwell] sync failed:', err);
+    adminSupabase.from('appointments').update({ notes: '[TW_SYNC_ERR] ' + (err?.message || 'unknown') }).eq('id', appointment.id);
   });
 
   return Response.json(appointment, { status: 201 });
