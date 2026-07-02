@@ -34,7 +34,9 @@ export async function pushToTreatwell(
       ? `${client.first_name} ${client.last_name}`
       : 'Cliente';
     const clientPhone = client?.phone || '';
+    console.error('[tw] finding customer...');
     const customerId = await tw.findOrCreateCustomer(clientName, clientPhone);
+    console.error('[tw] customerId:', customerId);
     if (client && !client.treatwell_client_id) {
       await supabase
         .from('clients')
@@ -59,6 +61,7 @@ export async function pushToTreatwell(
     // Get treatment ID from Uala
     const service = appointment.service as any;
     const ualaTreatmentId = service?.uala_treatment_id;
+    console.error('[tw] staffId:', ualaStaffId, 'treatmentId:', ualaTreatmentId);
     if (!ualaTreatmentId) {
       await supabase.from('sync_log').insert({
         salon_id: appointment.salon_id,
