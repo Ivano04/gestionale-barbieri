@@ -15,7 +15,6 @@ export async function pushToTreatwell(
   appointment: Appointment,
   client: Client | null,
 ) {
-  console.error('[tw] pushToTreatwell START');
   if (!process.env.TREATWELL_API_TOKEN) return;
 
   const supabase = createAdminClient();
@@ -34,9 +33,7 @@ export async function pushToTreatwell(
       ? `${client.first_name} ${client.last_name}`
       : 'Cliente';
     const clientPhone = client?.phone || '';
-    console.error('[tw] finding customer...');
     const customerId = await tw.findOrCreateCustomer(clientName, clientPhone);
-    console.error('[tw] customerId:', customerId);
     if (client && !client.treatwell_client_id) {
       await supabase
         .from('clients')
@@ -61,7 +58,6 @@ export async function pushToTreatwell(
     // Get treatment ID from Uala
     const service = appointment.service as any;
     const ualaTreatmentId = service?.uala_treatment_id;
-    console.error('[tw] staffId:', ualaStaffId, 'treatmentId:', ualaTreatmentId);
     if (!ualaTreatmentId) {
       await supabase.from('sync_log').insert({
         salon_id: appointment.salon_id,
@@ -74,7 +70,6 @@ export async function pushToTreatwell(
     }
 
     // Find the staff_member_treatment_id for this combination
-    console.error('[tw] fetching staff treatments...');
     const treatmentsRes = await fetch(
       `${process.env.TREATWELL_API_BASE_URL || 'https://api.uala.it/api/v1'}/venues/${process.env.TREATWELL_VENUE_ID || '482'}/staff_member_treatments`,
       {
@@ -96,7 +91,6 @@ export async function pushToTreatwell(
         st.staff_member_id === ualaStaffId &&
         st.venue_treatment_id === ualaTreatmentId,
     );
-    console.error('[tw] treatments found:', staffTreatments.length, 'match:', !!match);
     if (!match) {
       await supabase.from('sync_log').insert({
         salon_id: appointment.salon_id,
@@ -108,10 +102,13 @@ export async function pushToTreatwell(
       return;
     }
 
+    // Convert UTC to Italy timezone for Uala
+    const localTime = new Date(appointment.start_time).toLocaleString('sv-SE', { timeZone: 'Europe/Rome' }).replace(' ', 'T') + '+02:00';
+
     const twApptId = await tw.createAppointment({
       staffMemberId: ualaStaffId,
       staffMemberTreatmentId: match.id,
-      time: appointment.start_time,
+      time: localTime,
       customerId,
       notes: appointment.notes || undefined,
     });
