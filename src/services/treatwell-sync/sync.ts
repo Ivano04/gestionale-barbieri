@@ -74,6 +74,7 @@ export async function pushToTreatwell(
     }
 
     // Find the staff_member_treatment_id for this combination
+    console.error('[tw] fetching staff treatments...');
     const treatmentsRes = await fetch(
       `${process.env.TREATWELL_API_BASE_URL || 'https://api.uala.it/api/v1'}/venues/${process.env.TREATWELL_VENUE_ID || '482'}/staff_member_treatments`,
       {
@@ -95,6 +96,7 @@ export async function pushToTreatwell(
         st.staff_member_id === ualaStaffId &&
         st.venue_treatment_id === ualaTreatmentId,
     );
+    console.error('[tw] treatments found:', staffTreatments.length, 'match:', !!match);
     if (!match) {
       await supabase.from('sync_log').insert({
         salon_id: appointment.salon_id,
