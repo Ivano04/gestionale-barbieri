@@ -24,7 +24,11 @@ export class TreatwellClient {
       ...(options?.headers as Record<string, string>),
     };
     if (options?.body) headers['Content-Type'] = 'application/json';
-    return fetch(`${this.baseUrl}${path}`, { ...options, headers });
+    return fetch(`${this.baseUrl}${path}`, {
+      ...options,
+      headers,
+      signal: AbortSignal.timeout(10000),
+    });
   }
 
   /** Find customer by phone, or create if not found */
@@ -32,14 +36,20 @@ export class TreatwellClient {
     name: string,
     phone: string,
   ): Promise<number> {
-    // Search by phone
-    const searchRes = await this.fetch(
-      `/venues/${this.venueId}/customers?phone=${encodeURIComponent(phone)}`,
-    );
-    if (searchRes.ok) {
-      const searchData = await searchRes.json();
-      const customers = searchData?.data?.customers || [];
-      if (customers.length > 0) return customers[0].id;
+    // Search by phone (only if phone is not empty)
+    if (phone) {
+      try {
+        const searchRes = await this.fetch(
+          `/venues/${this.venueId}/customers?phone=${encodeURIComponent(phone)}`,
+        );
+        if (searchRes.ok) {
+          const searchData = await searchRes.json();
+          const customers = searchData?.data?.customers || [];
+          if (customers.length > 0) return customers[0].id;
+        }
+      } catch {
+        // Search failed (e.g. timeout), fall through to create
+      }
     }
 
     // Create new customer
@@ -56,6 +66,11 @@ export class TreatwellClient {
       }),
     });
     const data = await createRes.json();
+    if (!createRes.ok) {
+      throw new Error(
+        `Uala createCustomer failed: ${createRes.status} ${JSON.stringify(data)}`,
+      );
+    }
     return data.data.customer.id;
   }
 
