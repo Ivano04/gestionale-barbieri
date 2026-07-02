@@ -4,6 +4,7 @@ import { addMinutes } from 'date-fns';
 import { sendN8nEvent } from '@/lib/sync-webhook';
 import { fetchServiceDuration } from '@/services/booking-engine/queries';
 import { updateGHLAppointment, deleteGHLAppointment } from '@/services/ghl-sync/sync';
+import { deleteFromTreatwell } from '@/services/treatwell-sync/sync';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -160,6 +161,13 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   if (existing?.ghl_appointment_id && existing?.salon_id) {
     deleteGHLAppointment(existing.ghl_appointment_id, existing.salon_id, id).catch(err => {
       console.error('[ghl] delete failed:', err);
+    });
+  }
+
+  // Sync deletion to Treatwell/Uala
+  if (existing?.treatwell_appointment_id && existing?.salon_id) {
+    deleteFromTreatwell(existing.treatwell_appointment_id, existing.salon_id, id).catch(err => {
+      console.error('[treatwell] delete failed:', err);
     });
   }
 

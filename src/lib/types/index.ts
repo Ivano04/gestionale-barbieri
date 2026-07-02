@@ -30,6 +30,7 @@ export interface User {
   working_hours: Record<string, { open: string; close: string } | null> | null;
   is_active: boolean;
   ghl_calendar_id: string | null;
+  uala_staff_id: number | null;
   created_at: string;
 }
 
@@ -42,6 +43,7 @@ export interface Service {
   color_hex: string;
   is_active: boolean;
   treatwell_service_id: string | null;
+  uala_treatment_id: number | null;
   /** Phase decomposition (NULL = fallback to duration_minutes) */
   duration_application: number | null;
   duration_processing: number | null;

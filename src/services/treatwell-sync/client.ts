@@ -1,82 +1,114 @@
-import { SYNC_WINDOW_START, SYNC_WINDOW_END } from '@/lib/constants';
-
-interface TreatwellConfig {
-  baseUrl: string;
-  salonId: string;
-  cookies?: string;
-}
-
 export class TreatwellClient {
   private baseUrl: string;
-  private salonId: string;
-  private cookies?: string;
+  private venueId: string;
+  private token: string;
+  private clientAuth: string;
 
-  constructor(config: TreatwellConfig) {
+  constructor(config: {
+    baseUrl: string;
+    venueId: string;
+    token: string;
+    clientAuth: string;
+  }) {
     this.baseUrl = config.baseUrl;
-    this.salonId = config.salonId;
-    this.cookies = config.cookies;
-  }
-
-  private isInSyncWindow(): boolean {
-    const now = new Date();
-    const hour = now.getHours() + now.getMinutes() / 60;
-    return hour >= SYNC_WINDOW_START && hour < SYNC_WINDOW_END;
+    this.venueId = config.venueId;
+    this.token = config.token;
+    this.clientAuth = config.clientAuth;
   }
 
   private async fetch(path: string, options?: RequestInit): Promise<Response> {
     const headers: Record<string, string> = {
-      'User-Agent':
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+      Authorization: `Bearer ${this.token}`,
+      'X-Client-Auth': this.clientAuth,
       Accept: 'application/json',
       ...(options?.headers as Record<string, string>),
     };
-    if (this.cookies) headers['Cookie'] = this.cookies;
+    if (options?.body) headers['Content-Type'] = 'application/json';
     return fetch(`${this.baseUrl}${path}`, { ...options, headers });
   }
 
-  async getAppointments(date: string): Promise<any[]> {
-    if (!this.isInSyncWindow()) return [];
-    const res = await this.fetch(
-      `/salon/${this.salonId}/appointments?date=${date}`,
+  /** Find customer by phone, or create if not found */
+  async findOrCreateCustomer(
+    name: string,
+    phone: string,
+  ): Promise<number> {
+    // Search by phone
+    const searchRes = await this.fetch(
+      `/venues/${this.venueId}/customers?phone=${encodeURIComponent(phone)}`,
     );
-    if (!res.ok) throw new Error(`Treatwell API error: ${res.status}`);
-    return res.json();
-  }
+    if (searchRes.ok) {
+      const searchData = await searchRes.json();
+      const customers = searchData?.data?.customers || [];
+      if (customers.length > 0) return customers[0].id;
+    }
 
-  async checkSlot(
-    startTime: string,
-    endTime: string,
-    serviceId: string,
-  ): Promise<boolean> {
-    const res = await this.fetch(`/salon/${this.salonId}/slots/check`, {
+    // Create new customer
+    const [firstName, ...lastParts] = name.trim().split(' ');
+    const lastName = lastParts.join(' ') || '';
+
+    const createRes = await this.fetch(`/venues/${this.venueId}/customers`, {
       method: 'POST',
       body: JSON.stringify({
-        start: startTime,
-        end: endTime,
-        serviceId,
+        first_name: firstName,
+        last_name: lastName,
+        phone,
+        by_venue: true,
       }),
-      headers: { 'Content-Type': 'application/json' },
     });
-    return res.ok;
+    const data = await createRes.json();
+    return data.data.customer.id;
   }
 
-  async createAppointment(data: {
-    start: string;
-    end: string;
-    serviceId: string;
-    clientName: string;
-    clientPhone: string;
-  }): Promise<string | null> {
-    const res = await this.fetch(`/salon/${this.salonId}/appointments`, {
+  /** Create an appointment on the Uala calendar */
+  async createAppointment(params: {
+    staffMemberId: number;
+    staffMemberTreatmentId: number;
+    time: string; // ISO 8601 with timezone
+    customerId: number;
+    notes?: string;
+  }): Promise<number> {
+    const body: Record<string, any> = {
+      staff_member_id: params.staffMemberId,
+      staff_member_treatment_id: params.staffMemberTreatmentId,
+      time: params.time,
+      customer_id: params.customerId,
+      by_venue: true,
+      state: 'requested',
+    };
+    if (params.notes) body.notes = params.notes;
+
+    const res = await this.fetch(`/venues/${this.venueId}/appointments`, {
       method: 'POST',
-      body: JSON.stringify(data),
-      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
     });
+    const data = await res.json();
     if (!res.ok) {
-      if (res.status === 429) throw new Error('RATE_LIMITED');
-      throw new Error(`Write-back failed: ${res.status}`);
+      throw new Error(
+        `Uala createAppointment failed: ${res.status} ${JSON.stringify(data)}`,
+      );
     }
-    const result = await res.json();
-    return result.id;
+    return data.data.appointment.id;
+  }
+
+  /** Delete an appointment from the Uala calendar */
+  async deleteAppointment(appointmentId: number): Promise<void> {
+    const res = await this.fetch(
+      `/venues/${this.venueId}/appointments/${appointmentId}`,
+      { method: 'DELETE' },
+    );
+    const data = await res.json();
+    if (!data.success) {
+      throw new Error(`Uala deleteAppointment failed: ${JSON.stringify(data)}`);
+    }
+  }
+
+  /** Get available slots for a staff member on a given date */
+  async getAppointments(date: string): Promise<any[]> {
+    const res = await this.fetch(
+      `/venues/${this.venueId}/appointments?date=${date}`,
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data?.data?.appointments || [];
   }
 }

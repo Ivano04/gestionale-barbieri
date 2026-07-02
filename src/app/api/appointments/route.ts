@@ -5,6 +5,7 @@ import { getRomeOffset } from '@/lib/date-utils';
 import { sendN8nEvent } from '@/lib/sync-webhook';
 import { fetchServiceDuration } from '@/services/booking-engine/queries';
 import { pushToGHL } from '@/services/ghl-sync/sync';
+import { pushToTreatwell } from '@/services/treatwell-sync/sync';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -182,6 +183,11 @@ export async function POST(request: Request) {
       console.error('[ghl] sync failed:', err);
     });
   }
+
+  // Fire-and-forget sync verso Treatwell/Uala
+  pushToTreatwell(fullAppt as any, (fullAppt as any).client).catch(err => {
+    console.error('[treatwell] sync failed:', err);
+  });
 
   return Response.json(appointment, { status: 201 });
 }

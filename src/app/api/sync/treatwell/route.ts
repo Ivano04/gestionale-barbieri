@@ -11,7 +11,7 @@ export async function GET(request: Request) {
   const supabase = createAdminClient();
   const { data: salons } = await supabase
     .from('salons')
-    .select('id, treatwell_salon_id, treatwell_api_enabled')
+    .select('id, treatwell_api_enabled')
     .eq('treatwell_api_enabled', true);
 
   if (!salons?.length) {
@@ -21,8 +21,10 @@ export async function GET(request: Request) {
   const results: { salon_id: string; status: string }[] = [];
   for (const salon of salons) {
     const client = new TreatwellClient({
-      baseUrl: process.env.TREATWELL_API_BASE_URL!,
-      salonId: salon.treatwell_salon_id!,
+      baseUrl: process.env.TREATWELL_API_BASE_URL || 'https://api.uala.it/api/v1',
+      venueId: process.env.TREATWELL_VENUE_ID || '482',
+      token: process.env.TREATWELL_API_TOKEN || '',
+      clientAuth: process.env.TREATWELL_CLIENT_AUTH || '',
     });
     await pollTreatwell(salon.id, client);
     results.push({ salon_id: salon.id, status: 'polled' });
