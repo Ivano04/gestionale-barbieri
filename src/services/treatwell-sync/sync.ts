@@ -34,7 +34,8 @@ export async function pushToTreatwell(
       ? `${client.first_name} ${client.last_name}`
       : 'Cliente';
     const clientPhone = client?.phone || '';
-    const customerId = await tw.findOrCreateCustomer(clientName, clientPhone);
+    console.error('[tw-debug] calling findOrCreateCustomer...'); const customerId = await tw.findOrCreateCustomer(clientName, clientPhone);
+  console.error('[tw-debug] customerId:', customerId);
     if (client && !client.treatwell_client_id) {
       await supabase
         .from('clients')
