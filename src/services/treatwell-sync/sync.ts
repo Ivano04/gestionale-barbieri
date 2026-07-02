@@ -15,6 +15,7 @@ export async function pushToTreatwell(
   appointment: Appointment,
   client: Client | null,
 ) {
+  console.error('[tw] pushToTreatwell START');
   if (!process.env.TREATWELL_API_TOKEN) return;
 
   const supabase = createAdminClient();
