@@ -182,10 +182,13 @@ export async function POST(request: Request) {
     pushToGHL(fullAppt as any, fullAppt.client as any).catch(err => {
       console.error('[ghl] sync failed:', err);
     });
-    // Sync verso Treatwell/Uala (stesso blocco per evitare tree-shaking)
-    pushToTreatwell(fullAppt as any, fullAppt.client).catch(err => {
-      console.error('[treatwell] sync failed:', err);
-    });
+  }
+
+  // Sync verso Treatwell/Uala — awaited to prevent tree-shaking
+  try {
+    await pushToTreatwell(fullAppt as any, (fullAppt as any).client);
+  } catch (err: any) {
+    console.error('[treatwell] sync failed:', err);
   }
 
   return Response.json(appointment, { status: 201 });
