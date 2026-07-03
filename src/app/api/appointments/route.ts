@@ -6,6 +6,8 @@ import { sendN8nEvent } from '@/lib/sync-webhook';
 import { fetchServiceDuration } from '@/services/booking-engine/queries';
 import { pushToGHL } from '@/services/ghl-sync/sync';
 import { pushToTreatwell } from '@/services/treatwell-sync/sync';
+import { pollTreatwell } from '@/services/treatwell-sync/poller';
+import { TreatwellClient } from '@/services/treatwell-sync/client';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -35,6 +37,18 @@ export async function GET(request: Request) {
 
   const { data, error } = await query;
   if (error) return Response.json({ error: error.message }, { status: 500 });
+
+  // Trigger Treatwell poll (fire-and-forget, throttled internally)
+  if (process.env.TREATWELL_API_TOKEN) {
+    const twClient = new TreatwellClient({
+      baseUrl: process.env.TREATWELL_API_BASE_URL || 'https://api.uala.it/api/v1',
+      venueId: process.env.TREATWELL_VENUE_ID || '482',
+      token: process.env.TREATWELL_API_TOKEN,
+      clientAuth: process.env.TREATWELL_CLIENT_AUTH || '',
+    });
+    pollTreatwell(salon_id, twClient).catch(() => {});
+  }
+
   return Response.json(data);
 }
 
