@@ -11,6 +11,13 @@ function getClient(): TreatwellClient {
   });
 }
 
+/** Convert UTC ISO time to Italy local time for Uala */
+function toItalyTime(utcIso: string): string {
+  return new Date(utcIso)
+    .toLocaleString('sv-SE', { timeZone: 'Europe/Rome' })
+    .replace(' ', 'T');
+}
+
 export async function pushToTreatwell(
   appointment: Appointment,
   client: Client | null,
@@ -41,13 +48,13 @@ export async function pushToTreatwell(
         .eq('id', client.id);
     }
 
-    // Get staff member ID from Uala
+    // Get staff member ID
     const stylist = appointment.stylist as any;
     const ualaStaffId = stylist?.uala_staff_id;
     if (!ualaStaffId) {
       await supabase.from('sync_log').insert({
         salon_id: appointment.salon_id,
-        direction: 'us->treatwell',
+        direction: 'us→treatwell',
         appointment_id: appointment.id,
         status: 'failed',
         error_message: 'Stylist senza uala_staff_id',
@@ -55,13 +62,13 @@ export async function pushToTreatwell(
       return;
     }
 
-    // Get treatment ID from Uala
+    // Get treatment ID
     const service = appointment.service as any;
     const ualaTreatmentId = service?.uala_treatment_id;
     if (!ualaTreatmentId) {
       await supabase.from('sync_log').insert({
         salon_id: appointment.salon_id,
-        direction: 'us->treatwell',
+        direction: 'us→treatwell',
         appointment_id: appointment.id,
         status: 'failed',
         error_message: 'Servizio senza uala_treatment_id',
@@ -69,23 +76,8 @@ export async function pushToTreatwell(
       return;
     }
 
-    // Find the staff_member_treatment_id for this combination
-    const treatmentsRes = await fetch(
-      `${process.env.TREATWELL_API_BASE_URL || 'https://api.uala.it/api/v1'}/venues/${process.env.TREATWELL_VENUE_ID || '482'}/staff_member_treatments`,
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.TREATWELL_API_TOKEN}`,
-          'X-Client-Auth': process.env.TREATWELL_CLIENT_AUTH || '',
-          Accept: 'application/json',
-        },
-        signal: AbortSignal.timeout(10000),
-      },
-    );
-    if (!treatmentsRes.ok) {
-      throw new Error(`Failed to fetch staff treatments: ${treatmentsRes.status}`);
-    }
-    const treatmentsData = await treatmentsRes.json();
-    const staffTreatments = treatmentsData?.data?.staff_member_treatments || [];
+    // Find the staff_member_treatment_id
+    const staffTreatments = await tw.getStaffMemberTreatments();
     const match = staffTreatments.find(
       (st: any) =>
         st.staff_member_id === ualaStaffId &&
@@ -94,7 +86,7 @@ export async function pushToTreatwell(
     if (!match) {
       await supabase.from('sync_log').insert({
         salon_id: appointment.salon_id,
-        direction: 'us->treatwell',
+        direction: 'us→treatwell',
         appointment_id: appointment.id,
         status: 'failed',
         error_message: `Nessuna combinazione staff=${ualaStaffId} + treatment=${ualaTreatmentId}`,
@@ -102,9 +94,7 @@ export async function pushToTreatwell(
       return;
     }
 
-    // Convert UTC to Italy timezone for Uala
-    const localTime = new Date(appointment.start_time).toLocaleString('sv-SE', { timeZone: 'Europe/Rome' }).replace(' ', 'T') + '+02:00';
-
+    const localTime = toItalyTime(appointment.start_time);
     const twApptId = await tw.createAppointment({
       staffMemberId: ualaStaffId,
       staffMemberTreatmentId: match.id,
@@ -120,7 +110,7 @@ export async function pushToTreatwell(
 
     await supabase.from('sync_log').insert({
       salon_id: appointment.salon_id,
-      direction: 'us->treatwell',
+      direction: 'us→treatwell',
       appointment_id: appointment.id,
       status: 'success',
       external_id: String(twApptId),
@@ -128,7 +118,7 @@ export async function pushToTreatwell(
   } catch (e: any) {
     await supabase.from('sync_log').insert({
       salon_id: appointment.salon_id,
-      direction: 'us->treatwell',
+      direction: 'us→treatwell',
       appointment_id: appointment.id,
       status: 'failed',
       error_message: e.message,
@@ -154,10 +144,10 @@ export async function deleteFromTreatwell(
   const tw = getClient();
 
   try {
-    await tw.deleteAppointment(Number(treatwellAppointmentId));
+    await tw.cancelAppointment(Number(treatwellAppointmentId));
     await supabase.from('sync_log').insert({
       salon_id: salonId,
-      direction: 'us->treatwell',
+      direction: 'us→treatwell',
       appointment_id: appointmentId,
       status: 'success',
       external_id: treatwellAppointmentId,
@@ -165,7 +155,7 @@ export async function deleteFromTreatwell(
   } catch (e: any) {
     await supabase.from('sync_log').insert({
       salon_id: salonId,
-      direction: 'us->treatwell',
+      direction: 'us→treatwell',
       appointment_id: appointmentId,
       status: 'failed',
       error_message: e.message,

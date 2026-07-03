@@ -1,29 +1,30 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { TreatwellClient } from './client';
 
-interface UalaAppointment {
-  id: number;
-  staff_member_id: number;
-  customer_id: number | null;
-  customer_full_name: string | null;
-  customer_phone_number: string | null;
-  time: string;
-  state: string;
-  data?: any;
-}
-
 export async function pollTreatwell(salonId: string, twClient: TreatwellClient) {
   const supabase = createAdminClient();
-  const today = new Date().toISOString().split('T')[0];
+
+  // Get last sync timestamp for this salon
+  const { data: lastLog } = await supabase
+    .from('sync_log')
+    .select('created_at')
+    .eq('direction', 'treatwell→us')
+    .eq('status', 'success')
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  const updatedSince = lastLog?.length
+    ? new Date(lastLog[0].created_at).toISOString().replace('.000Z', '.000Z')
+    : new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().replace('.000Z', '.000Z');
 
   try {
-    const twAppointments: UalaAppointment[] = await twClient.getAppointments(today);
-    if (!twAppointments?.length) return;
+    const data = await twClient.getSync(updatedSince);
+    const appointments = data?.data?.appointments || [];
 
-    for (const tw of twAppointments) {
-      if (tw.state === 'deleted' || tw.state === 'cancelled') continue;
-
-      // Check if already imported
+    for (const tw of appointments) {
+      // Skip deleted/cancelled — handled separately
+      if (tw.state === 'deleted' || tw.state === 'canceled') continue;
+      // Skip if already imported
       const { data: existing } = await supabase
         .from('appointments')
         .select('id')
@@ -33,26 +34,26 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
 
       // Resolve client
       let clientId: string | null = null;
-      if (tw.customer_phone_number) {
+      const phone = tw.customer_phone_number || '';
+      const name = tw.customer_full_name || 'Cliente';
+      if (phone) {
         const { data: client } = await supabase
           .from('clients')
           .select('id')
           .eq('salon_id', salonId)
-          .eq('phone', tw.customer_phone_number)
+          .eq('phone', phone)
           .limit(1);
         if (client?.length) {
           clientId = client[0].id;
         } else {
-          const name = tw.customer_full_name || 'Cliente';
           const [firstName, ...lastParts] = name.trim().split(' ');
-          const lastName = lastParts.join(' ') || '';
           const { data: newClient } = await supabase
             .from('clients')
             .insert({
               salon_id: salonId,
-              first_name: firstName,
-              last_name: lastName,
-              phone: tw.customer_phone_number,
+              first_name: firstName || 'Cliente',
+              last_name: lastParts.join(' ') || '',
+              phone,
               treatwell_client_id: String(tw.customer_id || ''),
             })
             .select('id')
@@ -69,13 +70,14 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
         .eq('salon_id', salonId)
         .limit(1);
 
-      // Resolve service from the appointment data
+      // Resolve service
+      const venueTreatmentId = tw.data?.staff_member_treatment?.venue_treatment_id;
       let serviceId: string | null = null;
-      if (tw.data?.staff_member_treatment?.venue_treatment_id) {
+      if (venueTreatmentId) {
         const { data: service } = await supabase
           .from('services')
           .select('id')
-          .eq('uala_treatment_id', tw.data.staff_member_treatment.venue_treatment_id)
+          .eq('uala_treatment_id', venueTreatmentId)
           .eq('salon_id', salonId)
           .limit(1);
         if (service?.length) serviceId = service[0].id;
@@ -101,7 +103,7 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
       if (conflict?.length) {
         await supabase.from('sync_log').insert({
           salon_id: salonId,
-          direction: 'treatwell->us',
+          direction: 'treatwell→us',
           status: 'conflict',
           external_id: String(tw.id),
           error_message: `Slot occupato da ${conflict[0].id}`,
@@ -123,7 +125,30 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
 
       await supabase.from('sync_log').insert({
         salon_id: salonId,
-        direction: 'treatwell->us',
+        direction: 'treatwell→us',
+        status: 'success',
+        external_id: String(tw.id),
+      });
+    }
+
+    // Handle cancellations
+    for (const tw of appointments) {
+      if (tw.state !== 'deleted' && tw.state !== 'canceled') continue;
+      const { data: existing } = await supabase
+        .from('appointments')
+        .select('id')
+        .eq('treatwell_appointment_id', String(tw.id))
+        .limit(1);
+      if (!existing?.length) continue;
+
+      await supabase
+        .from('appointments')
+        .update({ status: 'cancelled' })
+        .eq('id', existing[0].id);
+
+      await supabase.from('sync_log').insert({
+        salon_id: salonId,
+        direction: 'treatwell→us',
         status: 'success',
         external_id: String(tw.id),
       });

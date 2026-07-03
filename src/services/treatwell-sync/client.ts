@@ -16,30 +16,84 @@ export class TreatwellClient {
     this.clientAuth = config.clientAuth;
   }
 
-  private async fetch(path: string, options?: RequestInit): Promise<Response> {
-    const headers: Record<string, string> = {
-      Authorization: `Bearer ${this.token}`,
-      'X-Client-Auth': this.clientAuth,
-      Accept: 'application/json',
-      ...(options?.headers as Record<string, string>),
+  private getHeaders(): Record<string, string> {
+    return {
+      authorization: `Token token="${this.token}"`,
+      'x-client-auth': this.clientAuth,
+      accept: '*/*',
+      'accept-language': 'it',
+      origin: 'https://pro.treatwell.it',
+      referer: 'https://pro.treatwell.it/agenda/',
+      'user-agent':
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
     };
-    if (options?.body) headers['Content-Type'] = 'application/json';
+  }
+
+  private async fetch(path: string, options?: RequestInit): Promise<Response> {
+    const headers = { ...this.getHeaders(), ...(options?.headers as Record<string, string>) };
+    if (options?.body && !headers['content-type']) {
+      headers['content-type'] = 'application/json';
+    }
     return fetch(`${this.baseUrl}${path}`, {
       ...options,
       headers,
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(15000),
     });
   }
 
-  /** Find customer by phone, or create if not found */
-  async findOrCreateCustomer(
-    name: string,
-    phone: string,
-  ): Promise<number> {
+  /** Legge gli appuntamenti di un giorno */
+  async getAppointments(date: string): Promise<any[]> {
+    const res = await this.fetch(
+      `/venues/${this.venueId}/appointments.json?from_time=${date}T00:00:00Z&to_time=${date}T23:59:59Z`,
+    );
+    if (!res.ok) throw new Error(`Treatwell getAppointments failed: ${res.status}`);
+    const data = await res.json();
+    return data?.data?.appointments || [];
+  }
+
+  /** Sync incrementale: solo le modifiche dopo un timestamp */
+  async getSync(updatedSince: string): Promise<any> {
+    const res = await this.fetch(
+      `/venues/${this.venueId}/synch.json?updated_since=${updatedSince}&only=appointments`,
+    );
+    if (!res.ok) throw new Error(`Treatwell getSync failed: ${res.status}`);
+    return res.json();
+  }
+
+  /** Cerca cliente per nome/telefono */
+  async findCustomer(query: string): Promise<number | null> {
+    const res = await this.fetch(
+      `/venues/${this.venueId}/customers/search.json?q=${encodeURIComponent(query)}`,
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const customers = data?.data?.customers || [];
+    return customers.length > 0 ? customers[0].id : null;
+  }
+
+  /** Trova o crea cliente */
+  async findOrCreateCustomer(name: string, phone: string): Promise<number> {
+    // Search by phone first
+    if (phone) {
+      const found = await this.findCustomer(phone);
+      if (found) return found;
+    }
+
+    // Search by name
+    if (name && name !== 'Cliente') {
+      const found = await this.findCustomer(name);
+      if (found) return found;
+    }
+
+    // Create new customer
+    return this.createCustomer(name, phone);
+  }
+
+  /** Crea un nuovo cliente */
+  async createCustomer(name: string, phone: string): Promise<number> {
     const [firstName, ...lastParts] = name.trim().split(' ');
     const lastName = lastParts.join(' ') || '';
-
-    const createRes = await this.fetch(`/venues/${this.venueId}/customers`, {
+    const res = await this.fetch(`/venues/${this.venueId}/customers`, {
       method: 'POST',
       body: JSON.stringify({
         first_name: firstName || 'Cliente',
@@ -48,26 +102,21 @@ export class TreatwellClient {
         by_venue: true,
       }),
     });
-    const data = await createRes.json();
-
-    // Return existing customer ID on conflict (409)
-    if (!createRes.ok && data?.data?.conflictual_customer?.id) {
+    const data = await res.json();
+    if (!res.ok && data?.data?.conflictual_customer?.id) {
       return data.data.conflictual_customer.id;
     }
-
-    if (!createRes.ok) {
-      throw new Error(
-        `Uala createCustomer failed: ${createRes.status} ${JSON.stringify(data)}`,
-      );
+    if (!res.ok) {
+      throw new Error(`Uala createCustomer failed: ${res.status} ${JSON.stringify(data)}`);
     }
     return data.data.customer.id;
   }
 
-  /** Create an appointment on the Uala calendar */
+  /** Crea un appuntamento */
   async createAppointment(params: {
     staffMemberId: number;
     staffMemberTreatmentId: number;
-    time: string; // ISO 8601 with timezone
+    time: string;
     customerId: number;
     notes?: string;
   }): Promise<number> {
@@ -81,38 +130,42 @@ export class TreatwellClient {
     };
     if (params.notes) body.notes = params.notes;
 
-    const res = await this.fetch(`/venues/${this.venueId}/appointments`, {
+    const res = await this.fetch(`/venues/${this.venueId}/appointments.json`, {
       method: 'POST',
       body: JSON.stringify(body),
     });
     const data = await res.json();
     if (!res.ok) {
-      throw new Error(
-        `Uala createAppointment failed: ${res.status} ${JSON.stringify(data)}`,
-      );
+      throw new Error(`Uala createAppointment failed: ${res.status} ${JSON.stringify(data)}`);
     }
     return data.data.appointment.id;
   }
 
-  /** Delete an appointment from the Uala calendar */
-  async deleteAppointment(appointmentId: number): Promise<void> {
+  /** Cancella un appuntamento */
+  async cancelAppointment(appointmentId: number): Promise<void> {
     const res = await this.fetch(
-      `/venues/${this.venueId}/appointments/${appointmentId}`,
-      { method: 'DELETE' },
+      `/venues/${this.venueId}/appointments/${appointmentId}/cancel.json`,
+      { method: 'PUT' },
     );
     const data = await res.json();
     if (!data.success) {
-      throw new Error(`Uala deleteAppointment failed: ${JSON.stringify(data)}`);
+      throw new Error(`Uala cancelAppointment failed: ${JSON.stringify(data)}`);
     }
   }
 
-  /** Get available slots for a staff member on a given date */
-  async getAppointments(date: string): Promise<any[]> {
-    const res = await this.fetch(
-      `/venues/${this.venueId}/appointments?date=${date}`,
-    );
+  /** Lista staff */
+  async getStaffMembers(): Promise<any[]> {
+    const res = await this.fetch(`/venues/${this.venueId}/staff_members.json`);
     if (!res.ok) return [];
     const data = await res.json();
-    return data?.data?.appointments || [];
+    return data?.data?.staff_members || [];
+  }
+
+  /** Lista trattamenti per staff */
+  async getStaffMemberTreatments(): Promise<any[]> {
+    const res = await this.fetch(`/venues/${this.venueId}/staff_member_treatments.json`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data?.data?.staff_member_treatments || [];
   }
 }
