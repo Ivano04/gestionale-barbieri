@@ -2,7 +2,10 @@ import { createServerSupabase } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 /** GET /api/stylist-services?salon_id=X&stylist_id=Y — stylist's services
- *  GET /api/stylist-services?salon_id=X&service_id=Y — service's stylists */
+ *  GET /api/stylist-services?salon_id=X&service_id=Y — service's stylists
+ *
+ *  When filtering by service, includes stylists in "all services" mode
+ *  (those with no stylist_services entries at all). */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const salon_id = searchParams.get('salon_id');
@@ -25,12 +28,41 @@ export async function GET(request: Request) {
   }
 
   if (service_id) {
-    const { data, error } = await supabase
+    // Get active stylists (NULL is_active = active, for stylists created before migration)
+    const { data: allStylists } = await supabase
+      .from('users')
+      .select('id')
+      .eq('salon_id', salon_id)
+      .eq('role', 'stylist')
+      .or('is_active.eq.true,is_active.is.null');
+
+    if (!allStylists?.length) return Response.json([]);
+
+    // Stylists explicitly assigned to THIS service
+    const { data: serviceAssignments } = await supabase
       .from('stylist_services')
       .select('stylist_id')
       .eq('service_id', service_id);
-    if (error) return Response.json({ error: error.message }, { status: 500 });
-    return Response.json(data.map((r: { stylist_id: string }) => r.stylist_id));
+
+    const assignedToService = new Set((serviceAssignments || []).map((a: any) => a.stylist_id));
+
+    // All stylists who have ANY assignment (determines if filtering is active)
+    const { data: allAssigned } = await supabase
+      .from('stylist_services')
+      .select('stylist_id');
+
+    const hasAnyAssignment = new Set((allAssigned || []).map((a: any) => a.stylist_id));
+
+    if (hasAnyAssignment.size > 0) {
+      // Filtering active: eligible = assigned to this service OR in "all services" mode
+      const eligibleIds = allStylists
+        .filter(s => assignedToService.has(s.id) || !hasAnyAssignment.has(s.id))
+        .map(s => s.id);
+      return Response.json(eligibleIds);
+    }
+
+    // No assignments at all → all stylists can do this service
+    return Response.json(allStylists.map(s => s.id));
   }
 
   return Response.json({ error: 'stylist_id or service_id required' }, { status: 400 });
