@@ -156,7 +156,7 @@ export default function SettingsPage() {
                     {isActive && dayShifts && dayShifts.length < 2 && (
                       <button type="button" onClick={() => addShift(day.key)}
                         className="text-xs text-blue-500 hover:text-blue-700 flex items-center gap-0.5 ml-auto">
-                        <Plus size={10} /> Aggiungi fascia pausa
+                        <Plus size={10} /> Aggiungi fascia
                       </button>
                     )}
                   </div>

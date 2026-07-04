@@ -298,7 +298,7 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
               gaps.push({
                 top: minuteToY(gapStart),
                 height: minuteToY(gapEnd) - minuteToY(gapStart),
-                label: 'Pausa',
+                label: '',
               });
             }
           }
