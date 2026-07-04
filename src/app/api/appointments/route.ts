@@ -8,6 +8,7 @@ import { pushToGHL } from '@/services/ghl-sync/sync';
 import { pushToTreatwell } from '@/services/treatwell-sync/sync';
 import { pollTreatwell } from '@/services/treatwell-sync/poller';
 import { TreatwellClient } from '@/services/treatwell-sync/client';
+import { normalizeShifts, type WorkingHoursShift } from '@/lib/working-hours';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -84,21 +85,26 @@ export async function POST(request: Request) {
     let wh = (salonHoursData.working_hours || {}) as Record<string, any>;
     if (typeof wh === 'string') try { wh = JSON.parse(wh); } catch {}
 
-    if (wh?.[dayName] === null) {
+    const dayShifts = normalizeShifts(wh?.[dayName]);
+
+    // If custom hours exist and day is explicitly null → closed
+    if (Object.keys(wh || {}).length > 0 && wh?.[dayName] === null) {
       return Response.json({ error: 'Salone chiuso in questa data' }, { status: 400 });
     }
 
-    const openTime = wh?.[dayName]?.open || salonHoursData.open_time || '09:00';
-    const closeTime = wh?.[dayName]?.close || salonHoursData.close_time || '19:00';
+    // If day has no shifts (and no custom hours override) → use defaults
+    const shifts: WorkingHoursShift[] = dayShifts || [
+      { open: salonHoursData.open_time || '09:00', close: salonHoursData.close_time || '19:00' },
+    ];
 
     const slotTime = body.start_time.split('T')[1]?.substring(0, 5) || '';
-    if (slotTime < openTime || slotTime >= closeTime) {
-      return Response.json({ error: `Orario fuori dalla fascia ${openTime}-${closeTime}` }, { status: 400 });
-    }
-
     const endSlotTime = bufferEndTime.split('T')[1]?.substring(0, 5) || '';
-    if (endSlotTime > closeTime) {
-      return Response.json({ error: `L'appuntamento sfora l'orario di chiusura (${closeTime})` }, { status: 400 });
+
+    // Check if appointment fits within any shift
+    const fits = shifts.some(s => slotTime >= s.open && endSlotTime <= s.close);
+    if (!fits) {
+      const ranges = shifts.map(s => `${s.open}-${s.close}`).join(', ');
+      return Response.json({ error: `Orario fuori dalle fasce: ${ranges}` }, { status: 400 });
     }
   }
 

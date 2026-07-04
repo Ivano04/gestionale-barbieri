@@ -3,7 +3,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import type { Service } from '@/lib/types';
-import { Users, Clock, Plus, Loader2, Scissors, ChevronDown } from 'lucide-react';
+import { Users, Clock, Plus, Loader2, Scissors, ChevronDown, Minus } from 'lucide-react';
+import { normalizeShifts, type WorkingHoursShift } from '@/lib/working-hours';
 import { toast } from 'sonner';
 
 const DAYS = [
@@ -16,7 +17,8 @@ const DAYS = [
   { key: 'sun', label: 'Dom' },
 ];
 
-const defaultDay = { open: '09:00', close: '19:00' };
+const defaultShift: WorkingHoursShift = { open: '09:00', close: '19:00' };
+const defaultDay: WorkingHoursShift[] = [{ ...defaultShift }];
 
 export default function StaffPage() {
   const [stylists, setStylists] = useState<any[]>([]);
@@ -24,7 +26,7 @@ export default function StaffPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [openHours, setOpenHours] = useState<Set<string>>(new Set());
   const [openServices, setOpenServices] = useState<Set<string>>(new Set());
-  const [hours, setHours] = useState<Record<string, Record<string, { open: string; close: string } | null>>>({});
+  const [hours, setHours] = useState<Record<string, Record<string, WorkingHoursShift[] | null>>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
   const [newStylist, setNewStylist] = useState({ full_name: '', email: '', password: '' });
@@ -44,9 +46,18 @@ export default function StaffPage() {
       setSalonId(users.salon_id);
       const { data: staff } = await supabase.from('users').select('id, full_name, email, role, working_hours, is_active').eq('salon_id', users.salon_id).eq('role', 'stylist').order('full_name');
       setStylists(staff || []);
-      const h: Record<string, any> = {};
-      (staff || []).forEach(s => {
-        h[s.id] = s.working_hours || {};
+      const h: Record<string, Record<string, WorkingHoursShift[] | null>> = {};
+      (staff || []).forEach((s: any) => {
+        const raw = s.working_hours || {};
+        const normalized: Record<string, WorkingHoursShift[] | null> = {};
+        for (const [day, value] of Object.entries(raw)) {
+          normalized[day] = normalizeShifts(value);
+        }
+        // Ensure all 7 days exist
+        for (const d of DAYS) {
+          if (!(d.key in normalized)) normalized[d.key] = null;
+        }
+        h[s.id] = normalized;
       });
       setHours(h);
 
@@ -77,19 +88,44 @@ export default function StaffPage() {
       ...prev,
       [stylistId]: {
         ...prev[stylistId],
-        [key]: prev[stylistId]?.[key] ? null : { ...defaultDay }
+        [key]: prev[stylistId]?.[key] ? null : [{ ...defaultShift }]
       }
     }));
   }
 
-  function updateDay(stylistId: string, key: string, field: 'open' | 'close', value: string) {
-    setHours(prev => ({
-      ...prev,
-      [stylistId]: {
-        ...prev[stylistId],
-        [key]: { ...(prev[stylistId]?.[key] || defaultDay), [field]: value }
-      }
-    }));
+  function updateShift(stylistId: string, dayKey: string, shiftIdx: number, field: 'open' | 'close', value: string) {
+    setHours(prev => {
+      const stylistHours = { ...prev[stylistId] };
+      const dayShifts = [...(stylistHours[dayKey] || [{ ...defaultShift }])];
+      dayShifts[shiftIdx] = { ...dayShifts[shiftIdx], [field]: value };
+      stylistHours[dayKey] = dayShifts;
+      return { ...prev, [stylistId]: stylistHours };
+    });
+  }
+
+  function addShift(stylistId: string, dayKey: string) {
+    setHours(prev => {
+      const stylistHours = { ...prev[stylistId] };
+      const dayShifts = [...(stylistHours[dayKey] || [{ ...defaultShift }])];
+      // Default new shift: 1 hour after the last one ends
+      const lastClose = dayShifts[dayShifts.length - 1]?.close || '13:00';
+      const [h, m] = lastClose.split(':').map(Number);
+      const newOpen = `${String((h + 1) % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+      const newClose = `${String((h + 5) % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+      dayShifts.push({ open: newOpen, close: newClose });
+      stylistHours[dayKey] = dayShifts;
+      return { ...prev, [stylistId]: stylistHours };
+    });
+  }
+
+  function removeShift(stylistId: string, dayKey: string, shiftIdx: number) {
+    setHours(prev => {
+      const stylistHours = { ...prev[stylistId] };
+      const dayShifts = [...(stylistHours[dayKey] || [])];
+      dayShifts.splice(shiftIdx, 1);
+      stylistHours[dayKey] = dayShifts.length > 0 ? dayShifts : null;
+      return { ...prev, [stylistId]: stylistHours };
+    });
   }
 
   async function saveStylist(id: string) {
@@ -148,8 +184,18 @@ export default function StaffPage() {
         setShowNewForm(false);
         const { data: staff } = await supabase.from('users').select('id, full_name, email, role, working_hours, is_active').eq('salon_id', salonId).eq('role', 'stylist').order('full_name');
         setStylists(staff || []);
-        const h: Record<string, any> = {};
-        (staff || []).forEach((s: any) => { h[s.id] = s.working_hours || {}; });
+        const h: Record<string, Record<string, WorkingHoursShift[] | null>> = {};
+        (staff || []).forEach((s: any) => {
+          const raw = s.working_hours || {};
+          const normalized: Record<string, WorkingHoursShift[] | null> = {};
+          for (const [day, value] of Object.entries(raw)) {
+            normalized[day] = normalizeShifts(value);
+          }
+          for (const d of DAYS) {
+            if (!(d.key in normalized)) normalized[d.key] = null;
+          }
+          h[s.id] = normalized;
+        });
         setHours(prev => ({ ...prev, ...h }));
       } else {
         const err = await res.json();
@@ -206,30 +252,51 @@ export default function StaffPage() {
             </button>
             {openHours.has(stylist.id) && (
               <div className="px-4 pb-4 bg-gray-50/50">
-                <div className="space-y-1.5">
+                <p className="text-xs text-gray-400 mb-2">Clicca su un giorno per attivarlo. Aggiungi una seconda fascia per la pausa pranzo.</p>
+                <div className="space-y-2">
                   {DAYS.map(day => {
-                    const dayHours = hours[stylist.id]?.[day.key];
-                    const isActive = dayHours !== null && dayHours !== undefined;
+                    const dayShifts = hours[stylist.id]?.[day.key];
+                    const isActive = dayShifts !== null && dayShifts !== undefined;
                     return (
-                      <div key={day.key} className={`flex items-center gap-2 p-1.5 rounded-lg ${isActive ? 'bg-blue-50/50' : 'bg-gray-100'}`}>
-                        <button onClick={() => toggleDay(stylist.id, day.key)}
-                          className={`w-14 text-center px-2 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                            isActive ? 'bg-blue-600 text-white' : 'bg-white border text-gray-400'
-                          }`}>
-                          {day.label}
-                        </button>
-                        {isActive && dayHours ? (
-                          <div className="flex items-center gap-1.5">
-                            <input type="time" value={dayHours.open}
-                              onChange={e => updateDay(stylist.id, day.key, 'open', e.target.value)}
-                              className="px-2 py-1 border rounded text-xs w-24" />
-                            <span className="text-gray-400 text-xs">–</span>
-                            <input type="time" value={dayHours.close}
-                              onChange={e => updateDay(stylist.id, day.key, 'close', e.target.value)}
-                              className="px-2 py-1 border rounded text-xs w-24" />
+                      <div key={day.key} className={`p-2 rounded-lg ${isActive ? 'bg-blue-50/50' : 'bg-gray-100'}`}>
+                        <div className="flex items-center gap-2 mb-1">
+                          <button onClick={() => toggleDay(stylist.id, day.key)}
+                            className={`w-14 text-center px-2 py-1.5 rounded-lg text-xs font-medium transition-colors flex-shrink-0 ${
+                              isActive ? 'bg-blue-600 text-white' : 'bg-white border text-gray-400'
+                            }`}>
+                            {day.label}
+                          </button>
+                          {!isActive && (
+                            <span className="text-xs text-gray-400">Non disponibile</span>
+                          )}
+                          {isActive && dayShifts && dayShifts.length < 2 && (
+                            <button onClick={() => addShift(stylist.id, day.key)}
+                              className="text-xs text-blue-500 hover:text-blue-700 flex items-center gap-0.5 ml-auto">
+                              <Plus size={10} /> Aggiungi fascia pausa
+                            </button>
+                          )}
+                        </div>
+                        {isActive && dayShifts && (
+                          <div className="space-y-1 ml-16">
+                            {dayShifts.map((shift, si) => (
+                              <div key={si} className="flex items-center gap-1.5">
+                                <input type="time" value={shift.open}
+                                  onChange={e => updateShift(stylist.id, day.key, si, 'open', e.target.value)}
+                                  className="px-2 py-1 border rounded text-xs w-24" />
+                                <span className="text-gray-400 text-xs">–</span>
+                                <input type="time" value={shift.close}
+                                  onChange={e => updateShift(stylist.id, day.key, si, 'close', e.target.value)}
+                                  className="px-2 py-1 border rounded text-xs w-24" />
+                                {dayShifts.length > 1 && (
+                                  <button onClick={() => removeShift(stylist.id, day.key, si)}
+                                    className="p-0.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"
+                                    title="Rimuovi fascia">
+                                    <Minus size={12} />
+                                  </button>
+                                )}
+                              </div>
+                            ))}
                           </div>
-                        ) : (
-                          <span className="text-xs text-gray-400">Non disponibile</span>
                         )}
                       </div>
                     );

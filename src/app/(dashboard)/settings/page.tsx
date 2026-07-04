@@ -2,7 +2,8 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Salon } from '@/lib/types';
-import { Building2, Globe, Phone, Clock, Sun, Moon } from 'lucide-react';
+import { Building2, Globe, Phone, Clock, Plus, Minus } from 'lucide-react';
+import { normalizeShifts, type WorkingHoursShift } from '@/lib/working-hours';
 
 const DAYS = [
   { key: 'mon', label: 'Lunedì' },
@@ -14,13 +15,13 @@ const DAYS = [
   { key: 'sun', label: 'Domenica' },
 ];
 
-const defaultDay = { open: '09:00', close: '19:00' };
+const defaultShift: WorkingHoursShift = { open: '09:00', close: '19:00' };
 
 export default function SettingsPage() {
   const [salon, setSalon] = useState<Salon | null>(null);
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [hours, setHours] = useState<Record<string, { open: string; close: string } | null>>({});
+  const [hours, setHours] = useState<Record<string, WorkingHoursShift[] | null>>({});
   const supabase = createClient();
 
   useEffect(() => {
@@ -31,7 +32,17 @@ export default function SettingsPage() {
       const { data: salonData } = await supabase.from('salons').select('*').eq('id', users.salon_id).single();
       if (salonData) {
         setSalon(salonData);
-        setHours(salonData.working_hours || { mon: defaultDay, tue: defaultDay, wed: defaultDay, thu: defaultDay, fri: defaultDay, sat: defaultDay, sun: null });
+        const raw = salonData.working_hours || {};
+        const normalized: Record<string, WorkingHoursShift[] | null> = {};
+        for (const day of DAYS) {
+          if (day.key in raw) {
+            normalized[day.key] = normalizeShifts(raw[day.key]);
+          } else {
+            // Default: weekdays open, sunday closed
+            normalized[day.key] = day.key === 'sun' ? null : [{ ...defaultShift }];
+          }
+        }
+        setHours(normalized);
       }
     });
   }, []);
@@ -39,15 +50,36 @@ export default function SettingsPage() {
   function toggleDay(key: string) {
     setHours(prev => ({
       ...prev,
-      [key]: prev[key] ? null : { ...defaultDay }
+      [key]: prev[key] ? null : [{ ...defaultShift }]
     }));
   }
 
-  function updateDay(key: string, field: 'open' | 'close', value: string) {
-    setHours(prev => ({
-      ...prev,
-      [key]: prev[key] ? { ...prev[key]!, [field]: value } : null
-    }));
+  function updateShift(dayKey: string, shiftIdx: number, field: 'open' | 'close', value: string) {
+    setHours(prev => {
+      const dayShifts = [...(prev[dayKey] || [{ ...defaultShift }])];
+      dayShifts[shiftIdx] = { ...dayShifts[shiftIdx], [field]: value };
+      return { ...prev, [dayKey]: dayShifts };
+    });
+  }
+
+  function addShift(dayKey: string) {
+    setHours(prev => {
+      const dayShifts = [...(prev[dayKey] || [{ ...defaultShift }])];
+      const lastClose = dayShifts[dayShifts.length - 1]?.close || '13:00';
+      const [h, m] = lastClose.split(':').map(Number);
+      const newOpen = `${String((h + 1) % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+      const newClose = `${String((h + 5) % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+      dayShifts.push({ open: newOpen, close: newClose });
+      return { ...prev, [dayKey]: dayShifts };
+    });
+  }
+
+  function removeShift(dayKey: string, shiftIdx: number) {
+    setHours(prev => {
+      const dayShifts = [...(prev[dayKey] || [])];
+      dayShifts.splice(shiftIdx, 1);
+      return { ...prev, [dayKey]: dayShifts.length > 0 ? dayShifts : null };
+    });
   }
 
   async function handleSave(e: React.FormEvent) {
@@ -104,30 +136,51 @@ export default function SettingsPage() {
           <h3 className="font-semibold text-sm text-gray-700 mb-3 flex items-center gap-2">
             <Clock size={14} /> Orari settimanali
           </h3>
-          <p className="text-xs text-gray-400 mb-4">Clicca su un giorno per attivarlo/disattivarlo (chiuso)</p>
+          <p className="text-xs text-gray-400 mb-4">Clicca su un giorno per attivarlo. Aggiungi una seconda fascia per la pausa pranzo.</p>
           <div className="space-y-2">
             {DAYS.map(day => {
-              const isActive = Boolean(hours[day.key]);
+              const dayShifts = hours[day.key];
+              const isActive = dayShifts !== null && dayShifts !== undefined;
               return (
-                <div key={day.key} className={`flex items-center gap-3 p-2 rounded-lg transition-colors ${isActive ? 'bg-blue-50/50' : 'bg-gray-50'}`}>
-                  <button type="button" onClick={() => toggleDay(day.key)}
-                    className={`w-28 text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      isActive ? 'bg-blue-600 text-white' : 'bg-white border text-gray-400'
-                    }`}>
-                    {day.label}
-                  </button>
-                  {isActive ? (
-                    <div className="flex items-center gap-2">
-                      <input type="time" value={hours[day.key]!.open}
-                        onChange={e => updateDay(day.key, 'open', e.target.value)}
-                        className="px-2 py-1.5 border rounded-lg text-sm w-28" />
-                      <span className="text-gray-400 text-sm">–</span>
-                      <input type="time" value={hours[day.key]!.close}
-                        onChange={e => updateDay(day.key, 'close', e.target.value)}
-                        className="px-2 py-1.5 border rounded-lg text-sm w-28" />
+                <div key={day.key} className={`p-2 rounded-lg transition-colors ${isActive ? 'bg-blue-50/50' : 'bg-gray-50'}`}>
+                  <div className="flex items-center gap-3 mb-1">
+                    <button type="button" onClick={() => toggleDay(day.key)}
+                      className={`w-28 text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        isActive ? 'bg-blue-600 text-white' : 'bg-white border text-gray-400'
+                      }`}>
+                      {day.label}
+                    </button>
+                    {!isActive && (
+                      <span className="text-sm text-gray-400">Chiuso</span>
+                    )}
+                    {isActive && dayShifts && dayShifts.length < 2 && (
+                      <button type="button" onClick={() => addShift(day.key)}
+                        className="text-xs text-blue-500 hover:text-blue-700 flex items-center gap-0.5 ml-auto">
+                        <Plus size={10} /> Aggiungi fascia pausa
+                      </button>
+                    )}
+                  </div>
+                  {isActive && dayShifts && (
+                    <div className="space-y-1 ml-[124px]">
+                      {dayShifts.map((shift, si) => (
+                        <div key={si} className="flex items-center gap-2">
+                          <input type="time" value={shift.open}
+                            onChange={e => updateShift(day.key, si, 'open', e.target.value)}
+                            className="px-2 py-1.5 border rounded-lg text-sm w-28" />
+                          <span className="text-gray-400 text-sm">–</span>
+                          <input type="time" value={shift.close}
+                            onChange={e => updateShift(day.key, si, 'close', e.target.value)}
+                            className="px-2 py-1.5 border rounded-lg text-sm w-28" />
+                          {dayShifts.length > 1 && (
+                            <button type="button" onClick={() => removeShift(day.key, si)}
+                              className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"
+                              title="Rimuovi fascia">
+                              <Minus size={14} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
                     </div>
-                  ) : (
-                    <span className="text-sm text-gray-400">Chiuso</span>
                   )}
                 </div>
               );

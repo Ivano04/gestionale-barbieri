@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/client';
 import type { Appointment, Service, Client, User, TimeBlock } from '@/lib/types';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
+import { normalizeShifts, shiftBounds, type WorkingHoursShift } from '@/lib/working-hours';
 
 export interface CalendarData {
   appointments: Appointment[];
@@ -11,6 +12,9 @@ export interface CalendarData {
   clients: Client[];
   stylists: Pick<User, 'id' | 'full_name' | 'working_hours'>[];
   timeBlocks: TimeBlock[];
+  /** Multi-shift salon hours for the selected day */
+  salonShifts: WorkingHoursShift[];
+  /** Global min/max bounds for timeline drawing */
   salonHours: { open: string; close: string };
   loading: boolean;
   error: string | null;
@@ -19,7 +23,7 @@ export interface CalendarData {
 export function useCalendarData(salonId: string, date: Date | null) {
   const [data, setData] = useState<CalendarData>({
     appointments: [], services: [], clients: [], stylists: [],
-    timeBlocks: [], salonHours: { open: '09:00', close: '19:00' },
+    timeBlocks: [], salonShifts: [{ open: '09:00', close: '19:00' }], salonHours: { open: '09:00', close: '19:00' },
     loading: false, error: null,
   });
 
@@ -61,21 +65,28 @@ export function useCalendarData(salonId: string, date: Date | null) {
         if (tbRes.ok) timeBlocks = await tbRes.json();
       } catch { /* time blocks are non-critical */ }
 
-      // Compute salon hours for selected date
+      // Compute salon shifts for selected date
       const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
       const todayName = dayNames[date.getDay()];
+      let salonShifts: WorkingHoursShift[] = [{ open: '09:00', close: '19:00' }];
       let salonHours = { open: '09:00', close: '19:00' };
       if (salonData) {
         let wh = salonData.working_hours as Record<string, any> | null;
         if (typeof wh === 'string') try { wh = JSON.parse(wh); } catch {}
-        const dayHours = wh?.[todayName];
-        if (wh?.[todayName] === null) {
+        const dayValue = wh?.[todayName];
+        if (Object.keys(wh || {}).length > 0 && dayValue === null) {
+          // Explicitly closed
+          salonShifts = [];
           salonHours = { open: '00:00', close: '00:00' };
         } else {
-          salonHours = {
-            open: dayHours?.open || salonData.open_time || '09:00',
-            close: dayHours?.close || salonData.close_time || '19:00',
-          };
+          const shifts = normalizeShifts(dayValue);
+          if (shifts) {
+            salonShifts = shifts;
+            salonHours = shiftBounds(shifts);
+          } else {
+            salonShifts = [{ open: salonData.open_time || '09:00', close: salonData.close_time || '19:00' }];
+            salonHours = { open: salonShifts[0].open, close: salonShifts[0].close };
+          }
         }
       }
 
@@ -85,6 +96,7 @@ export function useCalendarData(salonId: string, date: Date | null) {
         clients: clientsData || [],
         stylists: stylistsData || [],
         timeBlocks: Array.isArray(timeBlocks) ? timeBlocks : [],
+        salonShifts,
         salonHours,
         loading: false,
         error: null,

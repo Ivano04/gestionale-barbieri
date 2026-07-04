@@ -5,6 +5,7 @@ import { it } from 'date-fns/locale';
 import { toast } from 'sonner';
 import type { Appointment, User, TimeBlock } from '@/lib/types';
 import { buildSlotTime } from '@/lib/date-utils';
+import { normalizeShifts } from '@/lib/working-hours';
 
 interface Props {
   date: Date;
@@ -37,7 +38,11 @@ export function WeekView({ date, stylists, appointments, timeBlocks, onSlotClick
     const dayName = dayNames[d.getDay()];
     let swh = (stylist.working_hours || {}) as Record<string, any>;
     if (typeof swh === 'string') try { swh = JSON.parse(swh); } catch {}
-    return Object.keys(swh).length > 0 && swh?.[dayName] === null;
+    const dayValue = swh?.[dayName];
+    // Explicitly null or empty array → day off
+    if (Object.keys(swh).length > 0 && dayValue === null) return true;
+    const shifts = normalizeShifts(dayValue);
+    return shifts === null || shifts.length === 0;
   }
 
   if (stylists.length === 0) {

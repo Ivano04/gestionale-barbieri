@@ -31,7 +31,7 @@ export default function CalendarPage() {
     });
   }, []);
 
-  const { appointments, services, clients, stylists, timeBlocks, salonHours, loading, refresh } = useCalendarData(salonId, date);
+  const { appointments, services, clients, stylists, timeBlocks, salonShifts, salonHours, loading, refresh } = useCalendarData(salonId, date);
 
   if (!date) return <div className="p-8 text-center text-gray-400">Caricamento calendario...</div>;
 
@@ -171,7 +171,7 @@ export default function CalendarPage() {
       <div className="mx-0 md:mx-4 mt-0 md:mt-4">
         {view === 'day' && (
           <DayView
-            date={date} stylists={stylists} appointments={appointments} timeBlocks={timeBlocks} salonHours={salonHours}
+            date={date} stylists={stylists} appointments={appointments} timeBlocks={timeBlocks} salonShifts={salonShifts} salonHours={salonHours}
             onSlotClick={(stylist_id, start_time) => setSelectedAppointment({ stylist_id, start_time } as Appointment)}
             onAppointmentClick={setSelectedAppointment}
             onAppointmentMove={handleAppointmentMove}

@@ -1,3 +1,5 @@
+export type { WorkingHoursShift, WorkingHoursDay, WorkingHours } from '@/lib/working-hours';
+
 export type UserRole = 'owner' | 'admin' | 'stylist' | 'receptionist';
 export type AppointmentStatus = 'confirmed' | 'cancelled' | 'no_show' | 'completed';
 export type AppointmentSource = 'widget' | 'manual' | 'phone' | 'google' | 'treatwell' | 'walk_in' | 'whatsapp';

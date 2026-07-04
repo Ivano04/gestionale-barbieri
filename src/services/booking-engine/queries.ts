@@ -1,7 +1,8 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { ServiceOverride } from '@/lib/types';
+import { normalizeShifts, type WorkingHoursShift } from '@/lib/working-hours';
 
-export async function fetchSalonHours(salonId: string, dayName: string) {
+export async function fetchSalonHours(salonId: string, dayName: string): Promise<WorkingHoursShift[] | null> {
   const supabase = createAdminClient();
   const { data: salon } = await supabase
     .from('salons')
@@ -12,13 +13,20 @@ export async function fetchSalonHours(salonId: string, dayName: string) {
   let wh = (salon?.working_hours || {}) as Record<string, any>;
   if (typeof wh === 'string') try { wh = JSON.parse(wh); } catch {}
 
-  const salonDay = wh?.[dayName];
-  if (Object.keys(wh).length > 0 && salonDay === null) return null;
+  const dayValue = wh?.[dayName];
 
-  return {
-    open: salonDay?.open || salon?.open_time || '09:00',
-    close: salonDay?.close || salon?.close_time || '19:00',
-  };
+  // Explicitly null in custom hours → closed
+  if (Object.keys(wh).length > 0 && dayValue === null) return null;
+
+  // Try new multi-shift format (or old single-shift auto-converted)
+  const shifts = normalizeShifts(dayValue);
+  if (shifts) return shifts;
+
+  // No custom hours at all → use salon defaults as a single shift
+  return [{
+    open: salon?.open_time || '09:00',
+    close: salon?.close_time || '19:00',
+  }];
 }
 
 /** Client-visible duration (excludes buffer, may include per-stylist override) */

@@ -2,6 +2,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { format, setHours, setMinutes, parseISO, addMinutes, differenceInMinutes } from 'date-fns';
 import type { Appointment, User, TimeBlock } from '@/lib/types';
+import { normalizeShifts, shiftBounds, type WorkingHoursShift } from '@/lib/working-hours';
 import { toast } from 'sonner';
 
 interface Props {
@@ -9,6 +10,7 @@ interface Props {
   stylists: Pick<User, 'id' | 'full_name' | 'working_hours'>[];
   appointments: Appointment[];
   timeBlocks: TimeBlock[];
+  salonShifts: WorkingHoursShift[];
   salonHours: { open: string; close: string };
   onSlotClick: (stylistId: string, time: string) => void;
   onAppointmentClick: (appointment: Appointment) => void;
@@ -26,21 +28,20 @@ function isToday(d: Date): boolean {
   return format(d, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
 }
 
-function getStylistHours(
+function getStylistShifts(
   stylist: Pick<User, 'id' | 'full_name' | 'working_hours'>,
-  salonHours: { open: string; close: string },
+  salonShifts: WorkingHoursShift[],
   date: Date
-): { open: string; close: string } | null {
+): WorkingHoursShift[] | null {
   const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
   const dayName = dayNames[date.getDay()];
   let swh = (stylist.working_hours || {}) as Record<string, any>;
   if (typeof swh === 'string') try { swh = JSON.parse(swh); } catch {}
   const stylistDay = swh?.[dayName];
+  // Explicitly null = day off
   if (Object.keys(swh).length > 0 && stylistDay === null) return null;
-  return {
-    open: stylistDay?.open || salonHours.open,
-    close: stylistDay?.close || salonHours.close,
-  };
+  // Normalize to multi-shift; fallback to salon shifts
+  return normalizeShifts(stylistDay) || salonShifts;
 }
 
 /** Convert time string "HH:MM" to minutes since midnight */
@@ -59,7 +60,7 @@ const sourceConfig: Record<string, { bg: string; border: string }> = {
   manual:    { bg: '#f9fafb', border: '#6b7280' },
 };
 
-export function DayView({ date, stylists, appointments, timeBlocks, salonHours, onSlotClick, onAppointmentClick, onAppointmentMove, onAppointmentResize, onDeleteBlock, onSwapRequest }: Props) {
+export function DayView({ date, stylists, appointments, timeBlocks, salonShifts, salonHours, onSlotClick, onAppointmentClick, onAppointmentMove, onAppointmentResize, onDeleteBlock, onSwapRequest }: Props) {
   const today = isToday(date);
   const [dragState, setDragState] = useState<{
     appointmentId: string;
@@ -76,14 +77,15 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonHours, 
   const [conflictAppointments, setConflictAppointments] = useState<Set<string>>(new Set());
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Compute the earliest open and latest close across all stylists
+  // Compute the earliest open and latest close across all stylists' shifts
   let globalOpen = 24 * 60;
   let globalClose = 0;
   stylists.forEach(st => {
-    const h = getStylistHours(st, salonHours, date);
-    if (!h) return;
-    const open = timeToMinutes(h.open);
-    const close = timeToMinutes(h.close);
+    const shifts = getStylistShifts(st, salonShifts, date);
+    if (!shifts) return;
+    const bounds = shiftBounds(shifts);
+    const open = timeToMinutes(bounds.open);
+    const close = timeToMinutes(bounds.close);
     if (open < globalOpen) globalOpen = open;
     if (close > globalClose) globalClose = close;
   });
@@ -270,8 +272,8 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonHours, 
 
         {/* Stylist columns */}
         {stylists.map((stylist, si) => {
-          const stHours = getStylistHours(stylist, salonHours, date);
-          if (stHours === null) {
+          const stShifts = getStylistShifts(stylist, salonShifts, date);
+          if (stShifts === null || stShifts.length === 0) {
             return (
               <div key={stylist.id} className="flex-1 border-l border-gray-100 relative" style={{ height: `${totalHeight}px` }}>
                 <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-400">Giorno libero</div>
@@ -279,12 +281,44 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonHours, 
             );
           }
 
-          const stOpen = timeToMinutes(stHours.open);
-          const stClose = timeToMinutes(stHours.close);
+          // Compute gaps between shifts (non-working time)
+          const gaps: { top: number; height: number; label?: string }[] = [];
+          const stOpen = timeToMinutes(stShifts[0].open);
+          const stClose = timeToMinutes(stShifts[stShifts.length - 1].close);
+
+          // Gap before first shift
+          if (stOpen > globalOpen) {
+            gaps.push({ top: 0, height: minuteToY(stOpen) });
+          }
+          // Gaps between shifts
+          for (let i = 0; i < stShifts.length - 1; i++) {
+            const gapStart = timeToMinutes(stShifts[i].close);
+            const gapEnd = timeToMinutes(stShifts[i + 1].open);
+            if (gapEnd > gapStart) {
+              gaps.push({
+                top: minuteToY(gapStart),
+                height: minuteToY(gapEnd) - minuteToY(gapStart),
+                label: 'Pausa',
+              });
+            }
+          }
+          // Gap after last shift
+          if (stClose < globalClose) {
+            gaps.push({ top: minuteToY(stClose), height: totalHeight - minuteToY(stClose) });
+          }
 
           // Get appointments for this stylist
           const stApps = activeApps.filter(a => a.stylist_id === stylist.id);
           const stBlocks = timeBlocks.filter(b => !b.stylist_id || b.stylist_id === stylist.id);
+
+          /** Check if a minute value falls within any working shift */
+          function isInShift(minute: number): boolean {
+            return stShifts!.some(s => {
+              const so = timeToMinutes(s.open);
+              const sc = timeToMinutes(s.close);
+              return minute >= so && minute < sc;
+            });
+          }
 
           return (
             <div key={stylist.id} className="flex-1 border-l border-gray-100 relative bg-white"
@@ -295,15 +329,15 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonHours, 
                   style={{ top: `${minuteToY(h * 60)}px`, height: `${HOUR_HEIGHT}px` }} />
               ))}
 
-              {/* Off-hours shading */}
-              {stOpen > globalOpen && (
-                <div className="absolute left-0 right-0 bg-gray-100/50 pointer-events-none z-0"
-                  style={{ top: 0, height: `${minuteToY(stOpen)}px` }} />
-              )}
-              {stClose < globalClose && (
-                <div className="absolute left-0 right-0 bg-gray-100/50 pointer-events-none z-0"
-                  style={{ top: `${minuteToY(stClose)}px`, bottom: 0 }} />
-              )}
+              {/* Off-hours & lunch gaps shading */}
+              {gaps.map((gap, gi) => (
+                <div key={gi} className="absolute left-0 right-0 bg-gray-100/60 pointer-events-none z-0 flex items-center justify-center"
+                  style={{ top: `${gap.top}px`, height: `${Math.max(gap.height, 8)}px` }}>
+                  {gap.label && gap.height >= 30 && (
+                    <span className="text-[10px] text-gray-400 font-medium">{gap.label}</span>
+                  )}
+                </div>
+              ))}
 
               {/* Time blocks */}
               {stBlocks.map(b => {
@@ -311,8 +345,8 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonHours, 
                 const bEnd = parseISO(b.end_time);
                 const bStartMin = bStart.getHours() * 60 + bStart.getMinutes();
                 const bEndMin = bEnd.getHours() * 60 + bEnd.getMinutes();
-                const top = minuteToY(Math.max(bStartMin, stOpen));
-                const h = minuteToY(Math.min(bEndMin, stClose)) - top;
+                const top = minuteToY(Math.max(bStartMin, globalOpen));
+                const h = minuteToY(Math.min(bEndMin, globalClose)) - top;
                 if (h <= 0) return null;
                 return (
                   <div key={b.id} className="absolute left-1 right-1 z-10 flex items-center justify-center rounded-md cursor-pointer group"
@@ -388,12 +422,14 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonHours, 
                 );
               })}
 
-              {/* Empty slot click area */}
+              {/* Empty slot click area — only within working shifts */}
               <div className="absolute inset-0 z-0"
                 onClick={(e) => {
                   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
                   const y = e.clientY - rect.top;
                   const minute = Math.round(yToMinute(y) / 15) * 15;
+                  // Ignore clicks outside working shifts (pausa pranzo, etc.)
+                  if (!isInShift(minute)) return;
                   const h = Math.floor(minute / 60);
                   const m = minute % 60;
                   const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`;
