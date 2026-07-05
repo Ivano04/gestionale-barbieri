@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { X, Trash2, Loader2, ChevronDown, Plus, Clock, Scissors } from 'lucide-react';
-import type { Appointment, Service, Client, User, AddedService } from '@/lib/types';
+import { X, Trash2, Loader2, ChevronDown, Plus, Clock, Scissors, Search } from 'lucide-react';
+import type { Appointment, Service, ServiceCategory, Client, User, AddedService } from '@/lib/types';
 import { format, parseISO, addDays, addMinutes } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { formatPhone, countryCodes } from '@/lib/utils';
@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 interface Props {
   appointment: Appointment | null;
   services: Service[];
+  categories: ServiceCategory[];
   clients: Client[];
   stylists: Pick<User, 'id' | 'full_name'>[];
   salonId: string;
@@ -20,7 +21,7 @@ interface Props {
   onAddService?: (appointmentId: string, serviceId: string) => Promise<any>;
 }
 
-export function AppointmentModal({ appointment, services, clients, stylists, salonId, onClose, onSave, onDelete, onAddService }: Props) {
+export function AppointmentModal({ appointment, services, categories, clients, stylists, salonId, onClose, onSave, onDelete, onAddService }: Props) {
   const [form, setForm] = useState<Partial<Appointment>>({});
   const [clientMode, setClientMode] = useState<'existing' | 'new'>('existing');
   const [newClient, setNewClient] = useState({ first_name: '', last_name: '', phone: '' });
@@ -34,7 +35,20 @@ export function AppointmentModal({ appointment, services, clients, stylists, sal
   const [addingService, setAddingService] = useState(false);
   const [newServiceId, setNewServiceId] = useState('');
   const [filteredStylists, setFilteredStylists] = useState<Pick<User, 'id' | 'full_name'>[]>([]);
+  const [serviceSearch, setServiceSearch] = useState('');
   const isNew = !appointment?.id;
+
+  // Servizi filtrati per ricerca
+  const filteredServices = serviceSearch
+    ? services.filter(s => s.name.toLowerCase().includes(serviceSearch.toLowerCase()))
+    : services;
+  // Raggruppa per categoria
+  const servicesByCat = new Map<string | null, Service[]>();
+  for (const s of filteredServices) {
+    const key = s.category_id || null;
+    if (!servicesByCat.has(key)) servicesByCat.set(key, []);
+    servicesByCat.get(key)!.push(s);
+  }
 
   useEffect(() => {
     setForm(appointment || {});
@@ -188,17 +202,33 @@ export function AppointmentModal({ appointment, services, clients, stylists, sal
           {/* 2. Servizio + Duration Preview */}
           <div>
             <label className="text-sm font-medium text-gray-700">Servizio</label>
-            <select className={`w-full border rounded-lg px-3 py-2 mt-1 text-sm ${errors.service ? 'border-red-400' : ''}`}
+            {/* Barra ricerca servizi */}
+            <div className="relative mt-1 mb-2">
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input type="text" placeholder="Cerca servizio..." value={serviceSearch}
+                onChange={e => setServiceSearch(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 border rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-blue-500" />
+            </div>
+            <select className={`w-full border rounded-lg px-3 py-2 text-sm ${errors.service ? 'border-red-400' : ''}`}
               value={form.service_id || ''}
               onChange={e => { setForm(f => ({ ...f, service_id: e.target.value, start_time: '' })); clearError('service'); }}>
               <option value="">Seleziona servizio...</option>
-              {services.map(s => {
-                const hasPhases = s.duration_application != null || s.duration_processing != null || s.duration_finishing != null;
-                const dur = hasPhases
-                  ? (s.duration_application ?? 0) + (s.duration_processing ?? 0) + (s.duration_finishing ?? 0)
-                  : s.duration_minutes;
-                return <option key={s.id} value={s.id}>{s.name} · {dur}min · €{(s.price_cents/100).toFixed(2)}</option>;
-              })}
+              {/* Categorizzati */}
+              {categories.filter(c => servicesByCat.has(c.id)).map(cat => (
+                <optgroup key={cat.id} label={cat.name}>
+                  {(servicesByCat.get(cat.id) || []).map(s => (
+                    <option key={s.id} value={s.id}>{s.name} · {s.duration_minutes}min · €{(s.price_cents/100).toFixed(2)}</option>
+                  ))}
+                </optgroup>
+              ))}
+              {/* Non categorizzati */}
+              {(servicesByCat.get(null) || []).length > 0 && (
+                <optgroup label="Altro">
+                  {(servicesByCat.get(null) || []).map(s => (
+                    <option key={s.id} value={s.id}>{s.name} · {s.duration_minutes}min · €{(s.price_cents/100).toFixed(2)}</option>
+                  ))}
+                </optgroup>
+              )}
             </select>
             {errors.service && <p className="text-red-500 text-xs mt-1">{errors.service}</p>}
 

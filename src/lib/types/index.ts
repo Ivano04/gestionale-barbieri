@@ -36,6 +36,14 @@ export interface User {
   created_at: string;
 }
 
+export interface ServiceCategory {
+  id: string;
+  salon_id: string;
+  name: string;
+  color_hex: string;
+  sort_order: number;
+}
+
 export interface Service {
   id: string;
   salon_id: string;
@@ -44,6 +52,7 @@ export interface Service {
   price_cents: number;
   color_hex: string;
   is_active: boolean;
+  category_id: string | null;
   treatwell_service_id: string | null;
   uala_treatment_id: number | null;
   /** Phase decomposition (NULL = fallback to duration_minutes) */

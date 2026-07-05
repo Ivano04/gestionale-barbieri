@@ -5,7 +5,7 @@ import { CalendarHeader } from './components/CalendarHeader';
 import { DayView } from './components/DayView';
 import { WeekView } from './components/WeekView';
 import { AppointmentModal } from './components/AppointmentModal';
-import type { Appointment } from '@/lib/types';
+import type { Appointment, ServiceCategory } from '@/lib/types';
 import { format, parseISO } from 'date-fns';
 import { Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -20,6 +20,7 @@ export default function CalendarPage() {
   const [showBlockModal, setShowBlockModal] = useState(false);
   const [blockForm, setBlockForm] = useState({ stylist_id: '', date: todayDateStr(), start: '12:00', end: '13:00', reason: '' });
   const [salonId, setSalonId] = useState('');
+  const [categories, setCategories] = useState<ServiceCategory[]>([]);
   const supabase = createClient();
 
   useEffect(() => {
@@ -28,6 +29,8 @@ export default function CalendarPage() {
       const { data: users } = await supabase.from('users').select('salon_id').eq('id', data.session.user.id).single();
       if (!users?.salon_id) return;
       setSalonId(users.salon_id);
+      const { data: cats } = await supabase.from('service_categories').select('*').eq('salon_id', users.salon_id).order('sort_order');
+      setCategories(cats || []);
     });
   }, []);
 
@@ -193,7 +196,7 @@ export default function CalendarPage() {
       {selectedAppointment && (
         <AppointmentModal
           appointment={selectedAppointment}
-          services={services} clients={clients} stylists={stylists} salonId={salonId}
+          services={services} categories={categories} clients={clients} stylists={stylists} salonId={salonId}
           onClose={() => setSelectedAppointment(null)}
           onSave={handleSave} onDelete={handleDelete}
           onAddService={handleAddService}
