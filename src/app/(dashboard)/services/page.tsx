@@ -122,15 +122,23 @@ export default function ServicesPage() {
     e.preventDefault();
     if (!catForm.name) return;
     setSavingCat(true);
-    if (editingCat) {
-      await supabase.from('service_categories').update(catForm).eq('id', editingCat.id);
-    } else {
-      const maxOrder = categories.reduce((m, c) => Math.max(m, c.sort_order), 0);
-      await supabase.from('service_categories').insert({ salon_id: salonId, ...catForm, sort_order: maxOrder + 1 });
+    try {
+      if (editingCat) {
+        const { error } = await supabase.from('service_categories').update(catForm).eq('id', editingCat.id);
+        if (error) throw error;
+        toast.success('Categoria aggiornata');
+      } else {
+        const maxOrder = categories.reduce((m, c) => Math.max(m, c.sort_order), 0);
+        const { error } = await supabase.from('service_categories').insert({ salon_id: salonId, ...catForm, sort_order: maxOrder + 1 });
+        if (error) throw error;
+        toast.success('Categoria creata');
+      }
+      setShowCatForm(false);
+      loadData(salonId);
+    } catch (err: any) {
+      toast.error(err.message || 'Errore salvataggio categoria');
     }
     setSavingCat(false);
-    setShowCatForm(false);
-    loadData(salonId);
   }
 
   async function handleDeleteCat(id: string) {
