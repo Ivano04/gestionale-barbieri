@@ -40,6 +40,17 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
     const data = await twClient.getSync(updatedSince);
     const appointments: any[] = data?.data?.appointments || [];
 
+    // TEMP: log per debug cancellazioni Treatwell
+    console.log(`[treatwell-poll] sync da ${updatedSince}: ${appointments.length} appuntamenti`);
+    if (data?.data) {
+      const topKeys = Object.keys(data.data).filter(k => k !== 'appointments');
+      if (topKeys.length) console.log(`[treatwell-poll] top-level keys in data: ${topKeys.join(', ')}`);
+    }
+    for (const tw of appointments) {
+      const s = tw.state || '(no state)';
+      console.log(`[treatwell-poll] id=${tw.id} state="${s}" customer="${tw.customer_full_name}" time=${tw.time} keys=${Object.keys(tw).filter(k => k.startsWith('_') || k === 'state').join(',')}`);
+    }
+
     for (const tw of appointments) {
       const twId = String(tw.id);
       const category = classifyDelta(tw);
