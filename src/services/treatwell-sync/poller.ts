@@ -191,29 +191,6 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
         if (existing?.length) {
           const current = existing[0];
 
-          // Conflict check (skip self-conflict)
-          const { data: conflict } = await supabase
-            .from('appointments')
-            .select('id')
-            .eq('salon_id', salonId)
-            .eq('stylist_id', current.stylist_id)
-            .lt('start_time', endTime)
-            .gt('end_time', startTime)
-            .neq('status', 'cancelled')
-            .neq('id', current.id)
-            .limit(1);
-
-          if (conflict?.length) {
-            await supabase.from('sync_log').insert({
-              salon_id: salonId,
-              direction: 'treatwell→us',
-              status: 'conflict',
-              external_id: twId,
-              error_message: `Conflitto con appuntamento ${conflict[0].id} durante aggiornamento`,
-            });
-            continue;
-          }
-
           await supabase
             .from('appointments')
             .update({
@@ -244,28 +221,6 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
         .eq('treatwell_appointment_id', twId)
         .limit(1);
       if (alreadyExists?.length) continue;
-
-      // Conflict check (solo stesso stylist)
-      const { data: conflict } = await supabase
-        .from('appointments')
-        .select('id')
-        .eq('salon_id', salonId)
-        .eq('stylist_id', stylist?.[0]?.id || '')
-        .lt('start_time', endTime)
-        .gt('end_time', startTime)
-        .neq('status', 'cancelled')
-        .limit(1);
-
-      if (conflict?.length) {
-        await supabase.from('sync_log').insert({
-          salon_id: salonId,
-          direction: 'treatwell→us',
-          status: 'conflict',
-          external_id: twId,
-          error_message: `Slot occupato da ${conflict[0].id}`,
-        });
-        continue;
-      }
 
       await supabase.from('appointments').insert({
         salon_id: salonId,
@@ -401,20 +356,6 @@ async function fullLoadRecent(salonId: string, twClient: TreatwellClient, supaba
       const duration = tw.data?.staff_member_treatment?.total_duration || 1800;
       const startTime = tw.time;
       const endTime = new Date(new Date(startTime).getTime() + duration * 1000).toISOString();
-
-      // Conflict check (stesso stylist)
-      if (stylist?.[0]?.id) {
-        const { data: conflict } = await supabase
-          .from('appointments')
-          .select('id')
-          .eq('salon_id', salonId)
-          .eq('stylist_id', stylist[0].id)
-          .lt('start_time', endTime)
-          .gt('end_time', startTime)
-          .neq('status', 'cancelled')
-          .limit(1);
-        if (conflict?.length) continue;
-      }
 
       await supabase.from('appointments').insert({
         salon_id: salonId,
