@@ -222,36 +222,57 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
   const activeApps = appointments.filter(a => a.status !== 'cancelled');
 
   // ── Layout collision-aware (effetto "stretch" come Treatwell) ──
-  /** Assegna colonne agli appuntamenti sovrapposti di uno stylist */
+  /** Assegna colonne agli appuntamenti sovrapposti di uno stylist.
+   *  Solo gli appuntamenti che effettivamente si sovrappongono condividono colonne. */
   function computeColumns(apps: Appointment[]): Map<string, { col: number; total: number }> {
     const sorted = [...apps].sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
-    const columns: { end: Date; appId: string }[][] = []; // columns[i] = appuntamenti in colonna i
     const result = new Map<string, { col: number; total: number }>();
 
-    for (const app of sorted) {
-      const appStart = new Date(app.start_time);
-      // Cerca una colonna libera (dove l'ultimo appuntamento finisce prima di questo inizia)
-      let placed = false;
-      for (let c = 0; c < columns.length; c++) {
-        const lastInCol = columns[c][columns[c].length - 1];
-        if (appStart >= lastInCol.end) {
-          columns[c].push({ end: new Date(app.end_time), appId: app.id });
-          // result.set(app.id, { col: c, total: 0 }); // total filled later
-          placed = true;
-          break;
+    // Raggruppa in cluster di sovrapposizione
+    let i = 0;
+    while (i < sorted.length) {
+      const cluster: Appointment[] = [sorted[i]];
+      let clusterEnd = new Date(sorted[i].end_time);
+      let j = i + 1;
+      while (j < sorted.length && new Date(sorted[j].start_time) < clusterEnd) {
+        cluster.push(sorted[j]);
+        const jEnd = new Date(sorted[j].end_time);
+        if (jEnd > clusterEnd) clusterEnd = jEnd;
+        j++;
+      }
+
+      // Per questo cluster, assegna colonne
+      if (cluster.length === 1) {
+        result.set(cluster[0].id, { col: 0, total: 1 });
+      } else {
+        // Algoritmo greedy: prova a piazzare in una colonna esistente
+        const columns: { end: Date; appId: string }[][] = [];
+        for (const app of cluster) {
+          const appStart = new Date(app.start_time);
+          let placed = false;
+          for (let c = 0; c < columns.length; c++) {
+            const lastInCol = columns[c][columns[c].length - 1];
+            if (appStart >= lastInCol.end) {
+              columns[c].push({ end: new Date(app.end_time), appId: app.id });
+              placed = true;
+              break;
+            }
+          }
+          if (!placed) {
+            columns.push([{ end: new Date(app.end_time), appId: app.id }]);
+          }
+        }
+        const total = columns.length;
+        for (let c = 0; c < total; c++) {
+          for (const entry of columns[c]) {
+            result.set(entry.appId, { col: c, total });
+          }
         }
       }
-      if (!placed) {
-        columns.push([{ end: new Date(app.end_time), appId: app.id }]);
-      }
+
+      i = j;
     }
 
-    // Assign columns correctly now that we know the structure
-    for (let c = 0; c < columns.length; c++) {
-      for (const entry of columns[c]) {
-        result.set(entry.appId, { col: c, total: columns.length });
-      }
-    }
     return result;
   }
 
