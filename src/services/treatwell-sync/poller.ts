@@ -194,6 +194,7 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
             .from('appointments')
             .select('id')
             .eq('salon_id', salonId)
+            .eq('stylist_id', current.stylist_id)
             .lt('start_time', endTime)
             .gt('end_time', startTime)
             .neq('status', 'cancelled')
@@ -242,11 +243,12 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
         .limit(1);
       if (alreadyExists?.length) continue;
 
-      // Conflict check
+      // Conflict check (solo stesso stylist)
       const { data: conflict } = await supabase
         .from('appointments')
         .select('id')
         .eq('salon_id', salonId)
+        .eq('stylist_id', stylist?.[0]?.id || '')
         .lt('start_time', endTime)
         .gt('end_time', startTime)
         .neq('status', 'cancelled')
