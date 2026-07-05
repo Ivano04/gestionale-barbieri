@@ -3,10 +3,12 @@ import { TreatwellClient } from './client';
 
 type DeltaCategory = 'new' | 'updated' | 'canceled';
 
-/** Classifica un delta come fa il Python: new / updated / canceled */
+/** Classifica un delta come fa il Python: new / updated / canceled.
+ *  Case-insensitive e tollerante su varianti (canceled/cancelled/deleted). */
 function classifyDelta(appt: any): DeltaCategory {
-  const state = appt.state || '';
-  if (state === 'canceled' || state === 'deleted') return 'canceled';
+  const rawState = (appt.state || '').toLowerCase().trim();
+  // Qualsiasi variante di cancellazione
+  if (rawState.startsWith('cancel') || rawState === 'deleted') return 'canceled';
   const created = appt.created_at || '';
   const updated = appt.updated_at || '';
   // Se created_at == updated_at, è la prima volta che vediamo questo record
@@ -24,6 +26,7 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
   const { data: lastLog } = await supabase
     .from('sync_log')
     .select('created_at')
+    .eq('salon_id', salonId)
     .eq('direction', 'treatwell→us')
     .eq('status', 'success')
     .order('created_at', { ascending: false })
