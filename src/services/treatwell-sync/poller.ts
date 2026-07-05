@@ -7,8 +7,9 @@ type DeltaCategory = 'new' | 'updated' | 'canceled';
  *  Case-insensitive e tollerante su varianti (canceled/cancelled/deleted). */
 function classifyDelta(appt: any): DeltaCategory {
   const rawState = (appt.state || '').toLowerCase().trim();
-  // Qualsiasi variante di cancellazione
-  if (rawState.startsWith('cancel') || rawState === 'deleted') return 'canceled';
+  // Qualsiasi variante di cancellazione/eliminazione/sostituzione
+  // Uala usa: canceled, cancelled, deleted, discarded
+  if (rawState.startsWith('cancel') || rawState === 'deleted' || rawState === 'discarded') return 'canceled';
   const created = appt.created_at || '';
   const updated = appt.updated_at || '';
   // Se created_at == updated_at, è la prima volta che vediamo questo record
