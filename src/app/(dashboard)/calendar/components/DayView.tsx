@@ -221,6 +221,49 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
 
   const activeApps = appointments.filter(a => a.status !== 'cancelled');
 
+  // ── Layout collision-aware (effetto "stretch" come Treatwell) ──
+  /** Assegna colonne agli appuntamenti sovrapposti di uno stylist */
+  function computeColumns(apps: Appointment[]): Map<string, { col: number; total: number }> {
+    const sorted = [...apps].sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+    const columns: { end: Date; appId: string }[][] = []; // columns[i] = appuntamenti in colonna i
+    const result = new Map<string, { col: number; total: number }>();
+
+    for (const app of sorted) {
+      const appStart = new Date(app.start_time);
+      // Cerca una colonna libera (dove l'ultimo appuntamento finisce prima di questo inizia)
+      let placed = false;
+      for (let c = 0; c < columns.length; c++) {
+        const lastInCol = columns[c][columns[c].length - 1];
+        if (appStart >= lastInCol.end) {
+          columns[c].push({ end: new Date(app.end_time), appId: app.id });
+          // result.set(app.id, { col: c, total: 0 }); // total filled later
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        columns.push([{ end: new Date(app.end_time), appId: app.id }]);
+      }
+    }
+
+    // Assign columns correctly now that we know the structure
+    for (let c = 0; c < columns.length; c++) {
+      for (const entry of columns[c]) {
+        result.set(entry.appId, { col: c, total: columns.length });
+      }
+    }
+    return result;
+  }
+
+  // Per-stylist column map
+  const columnMap = new Map<string, Map<string, { col: number; total: number }>>();
+  for (const stylist of stylists) {
+    const stApps = activeApps.filter(a => a.stylist_id === stylist.id);
+    if (stApps.length > 0) {
+      columnMap.set(stylist.id, computeColumns(stApps));
+    }
+  }
+
   // Build per-stylist appointment positioning
   function getAppointmentStyle(app: Appointment): React.CSSProperties | null {
     const start = parseISO(app.start_time);
@@ -371,14 +414,22 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
                 const isConflicting = conflictAppointments.has(app.id);
                 const hasBuffer = app.buffer_end_time && app.buffer_end_time !== app.end_time;
 
+                // Layout collision-aware: colonne per appuntamenti sovrapposti
+                const cols = columnMap.get(stylist.id)?.get(app.id);
+                const colWidth = cols && cols.total > 1 ? `${100 / cols.total}%` : undefined;
+                const colLeft = cols && cols.total > 1 ? `${(cols.col / cols.total) * 100}%` : undefined;
+
                 const cardHeight = parseFloat(style?.height as string) || MIN_HEIGHT;
                 return (
                   <div key={app.id}
-                    className={`absolute left-1 right-1 rounded-lg px-1.5 py-0.5 cursor-pointer transition-shadow z-10 border-l-[3px] text-xs overflow-hidden flex flex-col
+                    className={`absolute rounded-lg px-1.5 py-0.5 cursor-pointer transition-shadow z-10 border-l-[3px] text-xs overflow-hidden flex flex-col
                       ${isDragging ? 'opacity-70 shadow-xl z-30 ring-2 ring-blue-400 scale-[1.02]' : 'hover:shadow-md'}
                       ${isConflicting ? 'ring-2 ring-red-400 border-red-500' : ''}`}
                     style={{
                       ...style,
+                      left: colLeft || '2px',
+                      width: colWidth ? `calc(${colWidth} - 4px)` : undefined,
+                      right: colLeft ? undefined : '2px',
                       borderLeftColor: cfg.border,
                       backgroundColor: cfg.bg,
                       touchAction: 'none',
