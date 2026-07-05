@@ -9,6 +9,7 @@ import { pushToTreatwell } from '@/services/treatwell-sync/sync';
 import { pollTreatwell } from '@/services/treatwell-sync/poller';
 import { TreatwellClient } from '@/services/treatwell-sync/client';
 import { normalizeShifts, type WorkingHoursShift } from '@/lib/working-hours';
+import { computeBusyPeriods } from '@/services/booking-engine/overlap';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -122,24 +123,44 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Questo slot non è disponibile (fascia bloccata)' }, { status: 409 });
   }
 
-  // Simple conflict check — any overlap is a hard block
+  // Conflict check con fasi: la posa (processing) non blocca
   if (body.stylist_id) {
-    const { data: conflict } = await supabase
+    const { data: conflicts } = await supabase
       .from('appointments')
-      .select('id, client:clients(first_name)')
+      .select('id, start_time, end_time, service_id, client:clients(first_name)')
       .eq('stylist_id', body.stylist_id)
       .eq('salon_id', body.salon_id)
       .lt('start_time', bufferEndTime)
       .gt('end_time', body.start_time)
-      .neq('status', 'cancelled')
-      .limit(1);
+      .neq('status', 'cancelled');
 
-    if (conflict?.length) {
-      const cli = conflict[0].client as any;
-      return Response.json({
-        error: `Conflitto con appuntamento di ${cli?.first_name || 'cliente'}`,
-        conflict: { appointmentId: conflict[0].id },
-      }, { status: 409 });
+    if (conflicts?.length) {
+      // Fetch service phases for all conflicting appointments
+      const svcIds = [...new Set(conflicts.map((c: any) => c.service_id).filter(Boolean))];
+      const { data: services } = svcIds.length > 0
+        ? await supabase.from('services').select('id, duration_application, duration_processing, duration_finishing').in('id', svcIds as string[])
+        : { data: [] };
+      const svcMap = new Map((services || []).map((s: any) => [s.id, s]));
+
+      const newStart = new Date(body.start_time);
+      const newEnd = new Date(bufferEndTime);
+
+      for (const c of conflicts) {
+        const svc = (svcMap as Map<string, any>).get(c.service_id as string);
+        const busyPeriods = svc
+          ? computeBusyPeriods(new Date(c.start_time), new Date(c.end_time), svc.duration_application, svc.duration_processing, svc.duration_finishing)
+          : [{ start: new Date(c.start_time), end: new Date(c.end_time) }];
+
+        // Controlla se il nuovo appuntamento si sovrappone a un periodo BUSY
+        const overlaps = busyPeriods.some(bp => newStart < bp.end && newEnd > bp.start);
+        if (overlaps) {
+          const cli = c.client as any;
+          return Response.json({
+            error: `Conflitto con appuntamento di ${cli?.first_name || 'cliente'}`,
+            conflict: { appointmentId: c.id },
+          }, { status: 409 });
+        }
+      }
     }
   }
 

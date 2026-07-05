@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { ServiceOverride } from '@/lib/types';
 import { normalizeShifts, type WorkingHoursShift } from '@/lib/working-hours';
+import { computeBusyPeriods } from './overlap';
 
 export async function fetchSalonHours(salonId: string, dayName: string): Promise<WorkingHoursShift[] | null> {
   const supabase = createAdminClient();
@@ -125,7 +126,7 @@ export async function fetchOccupiedSlots(
   const [appsRes, blocksRes] = await Promise.all([
     supabase
       .from('appointments')
-      .select('stylist_id, start_time, end_time, buffer_end_time')
+      .select('stylist_id, start_time, end_time, buffer_end_time, service_id')
       .eq('salon_id', salonId)
       .lt('start_time', dayEnd.toISOString())
       .gt('end_time', dayStart.toISOString())
@@ -138,11 +139,27 @@ export async function fetchOccupiedSlots(
       .gt('end_time', dayStart.toISOString()),
   ]);
 
-  const mapBlock = (b: any) => ({
-    stylist_id: b.stylist_id ?? null,
-    start_time: new Date(b.start_time),
-    end_time: b.buffer_end_time ? new Date(b.buffer_end_time) : new Date(b.end_time),
-  });
+  // Fetch service phases for appointments that have a service
+  const serviceIds = [...new Set((appsRes.data || []).map((a: any) => a.service_id).filter(Boolean))];
+  const { data: services } = serviceIds.length > 0
+    ? await supabase.from('services').select('id, duration_application, duration_processing, duration_finishing').in('id', serviceIds as string[])
+    : { data: [] };
+  const serviceMap = new Map((services || []).map((s: any) => [s.id, s]));
+
+  const mapBlock = (b: any) => {
+    const startTime = new Date(b.start_time);
+    const endTime = b.buffer_end_time ? new Date(b.buffer_end_time) : new Date(b.end_time);
+    const svc = serviceMap.get(b.service_id);
+    const busyPeriods = svc
+      ? computeBusyPeriods(startTime, endTime, svc.duration_application, svc.duration_processing, svc.duration_finishing)
+      : undefined;
+    return {
+      stylist_id: b.stylist_id ?? null,
+      start_time: startTime,
+      end_time: endTime,
+      busyPeriods,
+    };
+  };
 
   return [
     ...(appsRes.data || []).map(mapBlock),

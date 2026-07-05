@@ -68,5 +68,5 @@ export async function getAvailableSlots(params: GetAvailableSlotsParams): Promis
   return allSlots;
 }
 
-export { isSlotFree, generateSlots, type Slot, type OccupiedBlock } from './overlap';
+export { isSlotFree, generateSlots, computeBusyPeriods, type Slot, type OccupiedBlock } from './overlap';
 export { findSwapCandidates } from './smart-swap';
