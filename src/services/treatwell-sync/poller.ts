@@ -40,15 +40,25 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
     const data = await twClient.getSync(updatedSince);
     const appointments: any[] = data?.data?.appointments || [];
 
-    // TEMP: log per debug cancellazioni Treatwell
-    console.log(`[treatwell-poll] sync da ${updatedSince}: ${appointments.length} appuntamenti`);
-    if (data?.data) {
-      const topKeys = Object.keys(data.data).filter(k => k !== 'appointments');
-      if (topKeys.length) console.log(`[treatwell-poll] top-level keys in data: ${topKeys.join(', ')}`);
+    // TEMP: log per debug
+    if (appointments.length > 0) {
+      console.log(`[treatwell-poll] sync da ${updatedSince}: ${appointments.length} appuntamenti`);
+      for (const tw of appointments) {
+        console.log(`[treatwell-poll] id=${tw.id} state="${tw.state || '(none)'}" customer="${tw.customer_full_name}" time=${tw.time}`);
+      }
     }
-    for (const tw of appointments) {
-      const s = tw.state || '(no state)';
-      console.log(`[treatwell-poll] id=${tw.id} state="${s}" customer="${tw.customer_full_name}" time=${tw.time} keys=${Object.keys(tw).filter(k => k.startsWith('_') || k === 'state').join(',')}`);
+
+    // Heartbeat: salva sempre un sync_log per far avanzare updatedSince,
+    // anche se non ci sono cambiamenti. Previene il loop infinito.
+    if (appointments.length === 0) {
+      await supabase.from('sync_log').insert({
+        salon_id: salonId,
+        direction: 'treatwell→us',
+        status: 'success',
+        external_id: null,
+        error_message: 'heartbeat: nessuna modifica',
+      });
+      return;
     }
 
     for (const tw of appointments) {
