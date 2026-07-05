@@ -5,6 +5,8 @@ type DeltaCategory = 'new' | 'updated' | 'canceled';
 
 // Previene poll concorrenti che causano duplicati
 const polling = new Set<string>();
+// Throttle full load: max 1 ogni 30 minuti
+const lastFullLoad = new Map<string, number>();
 
 /** Normalizza un numero di telefono per confronti consistenti.
  *  Strip spazi/trattini, converte prefissi italiani (0... → +39...). */
@@ -284,9 +286,147 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
         external_id: twId,
       });
     }
+    // ── FULL LOAD: recupera appuntamenti di oggi e prossimi giorni ──
+    // synch.json da solo non basta: appuntamenti creati giorni fa hanno
+    // updated_at vecchio e non compaiono nel delta.
+    // Throttlato: max 1 volta ogni 30 minuti
+    const now = Date.now();
+    const last = lastFullLoad.get(salonId) || 0;
+    if (now - last > 30 * 60 * 1000) {
+      lastFullLoad.set(salonId, now);
+      await fullLoadRecent(salonId, twClient, supabase);
+    }
   } catch (e: any) {
     console.error('Poll error for salon', salonId, e);
   } finally {
     polling.delete(salonId);
+  }
+}
+
+/** Full load degli appuntamenti dei prossimi 7 giorni.
+ *  Importa solo quelli che non abbiamo già (per treatwell_appointment_id). */
+async function fullLoadRecent(salonId: string, twClient: TreatwellClient, supabase: ReturnType<typeof createAdminClient>) {
+  const today = new Date();
+  for (let d = 0; d < 7; d++) {
+    const date = new Date(today);
+    date.setDate(date.getDate() + d);
+    const dateStr = date.toISOString().split('T')[0];
+
+    let appointments: any[];
+    try {
+      appointments = await twClient.getAppointments(dateStr);
+    } catch {
+      continue; // giorno senza dati o errore API
+    }
+
+    for (const tw of appointments) {
+      const twId = String(tw.id);
+      const state = (tw.state || '').toLowerCase().trim();
+      // Salta cancellati/eliminati/scartati
+      if (state.startsWith('cancel') || state === 'deleted' || state === 'discarded') continue;
+
+      // Già importato?
+      const { data: existing } = await supabase
+        .from('appointments')
+        .select('id')
+        .eq('treatwell_appointment_id', twId)
+        .limit(1);
+      if (existing?.length) continue;
+
+      // Risolvi cliente
+      let clientId: string | null = null;
+      const rawPhone = tw.customer_phone_number || '';
+      const phone = rawPhone ? normalizePhone(rawPhone) : '';
+      const name = (tw.customer_full_name || '').trim();
+      const twCustomerId = tw.customer_id ? String(tw.customer_id) : '';
+
+      if (phone) {
+        const { data: client } = await supabase
+          .from('clients')
+          .select('id')
+          .eq('salon_id', salonId)
+          .eq('phone', phone)
+          .limit(1);
+        if (client?.length) {
+          clientId = client[0].id;
+        } else {
+          const [firstName, ...lastParts] = name.split(' ');
+          const { data: newClient } = await supabase
+            .from('clients')
+            .insert({ salon_id: salonId, first_name: firstName || 'Cliente', last_name: lastParts.join(' ') || '', phone, treatwell_client_id: twCustomerId })
+            .select('id').single();
+          if (newClient) clientId = newClient.id;
+        }
+      } else if (twCustomerId) {
+        const { data: client } = await supabase
+          .from('clients')
+          .select('id')
+          .eq('salon_id', salonId)
+          .eq('treatwell_client_id', twCustomerId)
+          .limit(1);
+        if (client?.length) clientId = client[0].id;
+      }
+
+      if (!clientId && name && name !== 'Cliente') {
+        const [firstName, ...lastParts] = name.split(' ');
+        const { data: newClient } = await supabase
+          .from('clients')
+          .insert({ salon_id: salonId, first_name: firstName || name, last_name: lastParts.join(' ') || '', phone: null, treatwell_client_id: twCustomerId })
+          .select('id').single();
+        if (newClient) clientId = newClient.id;
+      }
+
+      // Risolvi stylist
+      const { data: stylist } = await supabase
+        .from('users')
+        .select('id')
+        .eq('uala_staff_id', tw.staff_member_id)
+        .eq('salon_id', salonId)
+        .limit(1);
+
+      // Risolvi servizio
+      const venueTreatmentId = tw.data?.staff_member_treatment?.venue_treatment_id;
+      let serviceId: string | null = null;
+      if (venueTreatmentId) {
+        const { data: service } = await supabase
+          .from('services')
+          .select('id')
+          .eq('uala_treatment_id', venueTreatmentId)
+          .eq('salon_id', salonId)
+          .limit(1);
+        if (service?.length) serviceId = service[0].id;
+      }
+
+      // Durata
+      const duration = tw.data?.staff_member_treatment?.total_duration || 1800;
+      const startTime = tw.time;
+      const endTime = new Date(new Date(startTime).getTime() + duration * 1000).toISOString();
+
+      // Conflict check (stesso stylist)
+      if (stylist?.[0]?.id) {
+        const { data: conflict } = await supabase
+          .from('appointments')
+          .select('id')
+          .eq('salon_id', salonId)
+          .eq('stylist_id', stylist[0].id)
+          .lt('start_time', endTime)
+          .gt('end_time', startTime)
+          .neq('status', 'cancelled')
+          .limit(1);
+        if (conflict?.length) continue;
+      }
+
+      await supabase.from('appointments').insert({
+        salon_id: salonId,
+        client_id: clientId,
+        stylist_id: stylist?.[0]?.id,
+        service_id: serviceId,
+        start_time: startTime,
+        end_time: endTime,
+        status: 'confirmed',
+        source: 'treatwell',
+        treatwell_appointment_id: twId,
+      });
+    }
   }
 }
