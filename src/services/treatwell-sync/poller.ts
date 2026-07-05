@@ -3,6 +3,9 @@ import { TreatwellClient } from './client';
 
 type DeltaCategory = 'new' | 'updated' | 'canceled';
 
+// Previene poll concorrenti che causano duplicati
+const polling = new Set<string>();
+
 /** Classifica un delta come fa il Python: new / updated / canceled.
  *  Case-insensitive e tollerante su varianti (canceled/cancelled/deleted). */
 function classifyDelta(appt: any): DeltaCategory {
@@ -21,23 +24,27 @@ function classifyDelta(appt: any): DeltaCategory {
 }
 
 export async function pollTreatwell(salonId: string, twClient: TreatwellClient) {
+  // Anti-concorrenza: se un poll è già in corso per questo salone, esci
+  if (polling.has(salonId)) return;
+  polling.add(salonId);
+
   const supabase = createAdminClient();
 
-  // Get last sync timestamp for this salon
-  const { data: lastLog } = await supabase
-    .from('sync_log')
-    .select('created_at')
-    .eq('salon_id', salonId)
-    .eq('direction', 'treatwell→us')
-    .eq('status', 'success')
-    .order('created_at', { ascending: false })
-    .limit(1);
-
-  const updatedSince = lastLog?.length
-    ? new Date(lastLog[0].created_at).toISOString()
-    : new Date(Date.now() - 60 * 60 * 1000).toISOString();
-
   try {
+    // Get last sync timestamp for this salon
+    const { data: lastLog } = await supabase
+      .from('sync_log')
+      .select('created_at')
+      .eq('salon_id', salonId)
+      .eq('direction', 'treatwell→us')
+      .eq('status', 'success')
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    const updatedSince = lastLog?.length
+      ? new Date(lastLog[0].created_at).toISOString()
+      : new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
     const data = await twClient.getSync(updatedSince);
     const appointments: any[] = data?.data?.appointments || [];
 
@@ -68,11 +75,15 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
         continue;
       }
 
-      // ── Resolve client (shared between new & updated) ──
+      // ── Resolve client ──
+      // Prova per telefono, poi per treatwell_client_id, infine crea con solo nome
       let clientId: string | null = null;
       const phone = tw.customer_phone_number || '';
-      const name = tw.customer_full_name || 'Cliente';
+      const name = (tw.customer_full_name || '').trim();
+      const twCustomerId = tw.customer_id ? String(tw.customer_id) : '';
+
       if (phone) {
+        // Cerca per telefono
         const { data: client } = await supabase
           .from('clients')
           .select('id')
@@ -82,7 +93,7 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
         if (client?.length) {
           clientId = client[0].id;
         } else {
-          const [firstName, ...lastParts] = name.trim().split(' ');
+          const [firstName, ...lastParts] = name.split(' ');
           const { data: newClient } = await supabase
             .from('clients')
             .insert({
@@ -90,12 +101,40 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
               first_name: firstName || 'Cliente',
               last_name: lastParts.join(' ') || '',
               phone,
-              treatwell_client_id: String(tw.customer_id || ''),
+              treatwell_client_id: twCustomerId,
             })
             .select('id')
             .single();
           if (newClient) clientId = newClient.id;
         }
+      } else if (twCustomerId) {
+        // Cerca per treatwell_client_id (clienti marketplace senza telefono)
+        const { data: client } = await supabase
+          .from('clients')
+          .select('id')
+          .eq('salon_id', salonId)
+          .eq('treatwell_client_id', twCustomerId)
+          .limit(1);
+        if (client?.length) {
+          clientId = client[0].id;
+        }
+      }
+
+      // Se ancora nessun client e abbiamo un nome, crealo senza telefono
+      if (!clientId && name && name !== 'Cliente') {
+        const [firstName, ...lastParts] = name.split(' ');
+        const { data: newClient } = await supabase
+          .from('clients')
+          .insert({
+            salon_id: salonId,
+            first_name: firstName || name,
+            last_name: lastParts.join(' ') || '',
+            phone: null,
+            treatwell_client_id: twCustomerId,
+          })
+          .select('id')
+          .single();
+        if (newClient) clientId = newClient.id;
       }
 
       // ── Resolve stylist ──
@@ -179,13 +218,11 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
           });
           continue;
         }
-        // Se non trovato per treatwell_appointment_id, ma è un "updated",
-        // potrebbe essere arrivato prima un "new" che non abbiamo processato.
-        // In ogni caso, cadiamo nel ramo NEW per crearlo.
+        // Fall through to NEW if not found
       }
 
       // ── NEW: crea nuovo appuntamento ──
-      // Verifica che non esista già
+      // Usa upsert su treatwell_appointment_id per prevenire duplicati
       const { data: alreadyExists } = await supabase
         .from('appointments')
         .select('id')
@@ -235,5 +272,7 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
     }
   } catch (e: any) {
     console.error('Poll error for salon', salonId, e);
+  } finally {
+    polling.delete(salonId);
   }
 }
