@@ -6,6 +6,17 @@ type DeltaCategory = 'new' | 'updated' | 'canceled';
 // Previene poll concorrenti che causano duplicati
 const polling = new Set<string>();
 
+/** Normalizza un numero di telefono per confronti consistenti.
+ *  Strip spazi/trattini, converte prefissi italiani (0... → +39...). */
+function normalizePhone(raw: string): string {
+  let p = raw.replace(/[\s\-\(\)\.]/g, '');
+  // Converti numeri italiani senza prefisso internazionale
+  if (/^0\d{6,10}$/.test(p)) p = '+39' + p.substring(1);
+  // Assicura + davanti
+  if (!p.startsWith('+') && /^\d+$/.test(p)) p = '+' + p;
+  return p;
+}
+
 /** Classifica un delta come fa il Python: new / updated / canceled.
  *  Case-insensitive e tollerante su varianti (canceled/cancelled/deleted). */
 function classifyDelta(appt: any): DeltaCategory {
@@ -76,14 +87,15 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
       }
 
       // ── Resolve client ──
-      // Prova per telefono, poi per treatwell_client_id, infine crea con solo nome
+      // Prova per telefono normalizzato, poi per treatwell_client_id, infine crea con solo nome
       let clientId: string | null = null;
-      const phone = tw.customer_phone_number || '';
+      const rawPhone = tw.customer_phone_number || '';
+      const phone = rawPhone ? normalizePhone(rawPhone) : '';
       const name = (tw.customer_full_name || '').trim();
       const twCustomerId = tw.customer_id ? String(tw.customer_id) : '';
 
       if (phone) {
-        // Cerca per telefono
+        // Cerca per telefono normalizzato
         const { data: client } = await supabase
           .from('clients')
           .select('id')
