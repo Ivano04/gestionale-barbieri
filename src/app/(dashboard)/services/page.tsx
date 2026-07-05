@@ -12,7 +12,10 @@ export default function ServicesPage() {
   const [salonId, setSalonId] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Service | null>(null);
-  const [form, setForm] = useState({ name: '', duration_minutes: 30, price_cents: 0, color_hex: '#60a5fa' });
+  const [form, setForm] = useState({
+    name: '', duration_minutes: 30, price_cents: 0, color_hex: '#60a5fa',
+    duration_application: 0, duration_processing: 0, duration_finishing: 0, buffer_time_minutes: 0,
+  });
   const [saving, setSaving] = useState(false);
   const [expandedService, setExpandedService] = useState<string | null>(null);
   const [stylists, setStylists] = useState<any[]>([]);
@@ -52,13 +55,19 @@ export default function ServicesPage() {
 
   function openNew() {
     setEditing(null);
-    setForm({ name: '', duration_minutes: 30, price_cents: 0, color_hex: '#60a5fa' });
+    setForm({ name: '', duration_minutes: 30, price_cents: 0, color_hex: '#60a5fa', duration_application: 0, duration_processing: 0, duration_finishing: 0, buffer_time_minutes: 0 });
     setShowForm(true);
   }
 
   function openEdit(s: Service) {
     setEditing(s);
-    setForm({ name: s.name, duration_minutes: s.duration_minutes, price_cents: s.price_cents, color_hex: s.color_hex });
+    setForm({
+      name: s.name, duration_minutes: s.duration_minutes, price_cents: s.price_cents, color_hex: s.color_hex,
+      duration_application: s.duration_application || 0,
+      duration_processing: s.duration_processing || 0,
+      duration_finishing: s.duration_finishing || 0,
+      buffer_time_minutes: s.buffer_time_minutes || 0,
+    });
     setShowForm(true);
   }
 
@@ -143,7 +152,7 @@ export default function ServicesPage() {
                 className="w-full px-4 py-2 border rounded-lg text-sm" />
               <div className="flex gap-3">
                 <div className="flex-1">
-                  <label className="text-xs text-gray-500">Durata (min)</label>
+                  <label className="text-xs text-gray-500">Durata totale (min)</label>
                   <input type="number" value={form.duration_minutes}
                     onChange={e => setForm({ ...form, duration_minutes: parseInt(e.target.value) || 30 })}
                     className="w-full px-3 py-2 border rounded-lg text-sm mt-1" />
@@ -152,6 +161,35 @@ export default function ServicesPage() {
                   <label className="text-xs text-gray-500">Prezzo (€)</label>
                   <input type="number" step="0.01" value={form.price_cents / 100}
                     onChange={e => setForm({ ...form, price_cents: Math.round(parseFloat(e.target.value || '0') * 100) })}
+                    className="w-full px-3 py-2 border rounded-lg text-sm mt-1" />
+                </div>
+              </div>
+              <div className="border-t pt-2 mt-2">
+                <p className="text-xs text-gray-400 mb-2">Fasi del servizio (tempo di posa)</p>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-xs text-gray-500">Applicazione</label>
+                    <input type="number" value={form.duration_application || ''} placeholder="0"
+                      onChange={e => setForm({ ...form, duration_application: parseInt(e.target.value) || 0 })}
+                      className="w-full px-2 py-1.5 border rounded text-xs mt-0.5" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500">Posa (libero)</label>
+                    <input type="number" value={form.duration_processing || ''} placeholder="0"
+                      onChange={e => setForm({ ...form, duration_processing: parseInt(e.target.value) || 0 })}
+                      className="w-full px-2 py-1.5 border rounded text-xs mt-0.5 bg-green-50" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500">Finitura</label>
+                    <input type="number" value={form.duration_finishing || ''} placeholder="0"
+                      onChange={e => setForm({ ...form, duration_finishing: parseInt(e.target.value) || 0 })}
+                      className="w-full px-2 py-1.5 border rounded text-xs mt-0.5" />
+                  </div>
+                </div>
+                <div className="mt-2">
+                  <label className="text-xs text-gray-500">Buffer (min dopo fine)</label>
+                  <input type="number" value={form.buffer_time_minutes || ''} placeholder="0"
+                    onChange={e => setForm({ ...form, buffer_time_minutes: parseInt(e.target.value) || 0 })}
                     className="w-full px-3 py-2 border rounded-lg text-sm mt-1" />
                 </div>
               </div>
