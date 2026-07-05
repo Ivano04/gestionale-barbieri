@@ -34,33 +34,12 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
     .limit(1);
 
   const updatedSince = lastLog?.length
-    ? new Date(lastLog[0].created_at).toISOString().replace('.000Z', '.000Z')
-    : new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().replace('.000Z', '.000Z');
+    ? new Date(lastLog[0].created_at).toISOString()
+    : new Date(Date.now() - 60 * 60 * 1000).toISOString();
 
   try {
     const data = await twClient.getSync(updatedSince);
     const appointments: any[] = data?.data?.appointments || [];
-
-    // TEMP: log per debug
-    if (appointments.length > 0) {
-      console.log(`[treatwell-poll] sync da ${updatedSince}: ${appointments.length} appuntamenti`);
-      for (const tw of appointments) {
-        console.log(`[treatwell-poll] id=${tw.id} state="${tw.state || '(none)'}" customer="${tw.customer_full_name}" time=${tw.time}`);
-      }
-    }
-
-    // Heartbeat: salva sempre un sync_log per far avanzare updatedSince,
-    // anche se non ci sono cambiamenti. Previene il loop infinito.
-    if (appointments.length === 0) {
-      await supabase.from('sync_log').insert({
-        salon_id: salonId,
-        direction: 'treatwell→us',
-        status: 'success',
-        external_id: null,
-        error_message: 'heartbeat: nessuna modifica',
-      });
-      return;
-    }
 
     for (const tw of appointments) {
       const twId = String(tw.id);
