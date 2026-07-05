@@ -182,7 +182,7 @@ export default function ServicesPage() {
     categorized.get(key)!.push(s);
   }
   const uncategorized = categorized.get(null) || [];
-  const orderedCats = categories.filter(c => categorized.has(c.id));
+  const orderedCats = categories; // Mostra tutte, anche vuote
 
   return (
     <div className="p-6">
