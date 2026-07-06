@@ -191,14 +191,15 @@ export default function BookPage() {
                 })}
               </div>
             </div>
-            {/* Toggle: Qualsiasi operatore */}
+            {/* Toggle: Qualsiasi collaboratore */}
             <div className="mb-3 flex items-center justify-between">
               <h3 className="font-semibold text-sm">Orari disponibili</h3>
-              <label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
-                <span>Qualsiasi operatore</span>
-                <button onClick={() => { setAnyStylist(!anyStylist); setSelectedStylist(null); }}
+              <label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer select-none">
+                <span>Qualsiasi collaboratore</span>
+                <button type="button" onClick={() => { setAnyStylist(!anyStylist); setSelectedStylist(null); }}
                   className={`relative w-9 h-5 rounded-full transition-colors ${anyStylist ? 'bg-blue-600' : 'bg-gray-300'}`}>
-                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${anyStylist ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                  <span className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-all"
+                    style={{ transform: anyStylist ? 'translateX(16px)' : 'translateX(0)' }} />
                 </button>
               </label>
             </div>
@@ -228,21 +229,15 @@ export default function BookPage() {
             <div className="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto">
               {(() => {
                 if (anyStylist) {
-                  // Raggruppa per orario, scegli lo stylist meno carico
+                  // Raggruppa per orario, primo disponibile (ordine alfabetico)
                   const byTime = new Map<string, typeof slots>();
                   for (const s of slots) {
                     if (!byTime.has(s.time)) byTime.set(s.time, []);
                     byTime.get(s.time)!.push(s);
                   }
-                  // Ordina per carico crescente, poi alfabetico
                   const sorted = [...byTime.entries()].map(([time, stylists]) => {
-                    stylists.sort((a, b) => {
-                      const la = stylistLoad[a.stylist_id] || 0;
-                      const lb = stylistLoad[b.stylist_id] || 0;
-                      if (la !== lb) return la - lb;
-                      return a.stylist_name.localeCompare(b.stylist_name);
-                    });
-                    return stylists[0]; // meno carico
+                    stylists.sort((a, b) => a.stylist_name.localeCompare(b.stylist_name));
+                    return stylists[0]; // primo in ordine alfabetico
                   });
                   return sorted.map((s, i) => (
                     <button key={`${s.time}-${i}`} onClick={() => { setSelectedSlot(s); setStep('details'); }}
