@@ -21,7 +21,7 @@ interface Props {
 }
 
 const STYLIST_COLORS = ['#f472b6', '#60a5fa', '#34d399', '#a78bfa', '#fbbf24'];
-const HOUR_HEIGHT = 120; // px per hour — 15min = 30px, enough for 2-3 lines
+const HOUR_HEIGHT = 160; // px per hour — 15min = 40px, griglia a quarti d'ora
 const MIN_HEIGHT = 30;  // ensures back-to-back 15min slots don't overlap
 
 function isToday(d: Date): boolean {
@@ -387,11 +387,21 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
           return (
             <div key={stylist.id} className="flex-1 border-l border-gray-100 relative bg-white"
               style={{ height: `${totalHeight}px` }}>
-              {/* Hour grid lines */}
-              {hourLabels.map(h => (
-                <div key={h} className="absolute left-0 right-0 border-b border-gray-50 pointer-events-none"
-                  style={{ top: `${minuteToY(h * 60)}px`, height: `${HOUR_HEIGHT}px` }} />
-              ))}
+              {/* 15-min grid lines */}
+              {(() => {
+                const lines: React.ReactNode[] = [];
+                const startMin = Math.floor(globalOpen / 15) * 15;
+                const endMin = Math.ceil(globalClose / 15) * 15;
+                for (let m = startMin; m <= endMin; m += 15) {
+                  const isHour = m % 60 === 0;
+                  lines.push(
+                    <div key={`grid-${m}`}
+                      className={`absolute left-0 right-0 border-b pointer-events-none ${isHour ? 'border-gray-200' : 'border-gray-100 border-dashed'}`}
+                      style={{ top: `${minuteToY(m)}px` }} />
+                  );
+                }
+                return lines;
+              })()}
 
               {/* Off-hours & lunch gaps shading */}
               {gaps.map((gap, gi) => (
