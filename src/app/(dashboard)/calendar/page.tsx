@@ -16,16 +16,13 @@ import { useCalendarData } from '@/lib/hooks/useCalendarData';
 export default function CalendarPage() {
   const router = useRouter();
 
-  // Legge la data dall'URL al mount (evita useSearchParams per compatibilità SSR)
-  const [date, setDate] = useState<Date | null>(() => {
-    if (typeof window !== 'undefined') {
-      const p = new URLSearchParams(window.location.search);
-      const dp = p.get('date');
-      if (dp) return new Date(dp + 'T12:00:00');
-    }
-    return null;
-  });
-  useEffect(() => { if (!date) setDate(new Date()); }, []);
+  // Legge la data dall'URL al mount, altrimenti usa oggi
+  const [date, setDate] = useState<Date | null>(null);
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const dp = p.get('date');
+    setDate(dp ? new Date(dp + 'T12:00:00') : new Date());
+  }, []);
 
   // Aggiorna l'URL quando la data cambia (senza reload)
   const handleDateChange = useCallback((d: Date) => {
