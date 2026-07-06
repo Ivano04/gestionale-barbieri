@@ -284,7 +284,14 @@ export function AppointmentModal({ appointment, services, categories, clients, s
             </div>
 
             {!form.service_id || !form.stylist_id ? (
-              <p className="text-xs text-gray-400 text-center py-2">Seleziona servizio e operatore</p>
+              <div className="text-center py-2">
+                {form.start_time ? (
+                  <p className="text-sm font-medium text-blue-600">
+                    Orario: {format(parseISO(form.start_time), 'HH:mm')}
+                  </p>
+                ) : null}
+                <p className="text-xs text-gray-400">Seleziona servizio e operatore</p>
+              </div>
             ) : slotsLoading ? (
               <div className="flex items-center justify-center py-3"><Loader2 size={18} className="animate-spin text-gray-400" /></div>
             ) : slots.length === 0 ? (
