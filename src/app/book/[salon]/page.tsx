@@ -40,7 +40,6 @@ export default function BookPage() {
   const [done, setDone] = useState(false);
   const [error, setError] = useState('');
   const [anyStylist, setAnyStylist] = useState(false);
-  const [stylistLoad, setStylistLoad] = useState<Record<string, number>>({});
   const [selectedStylist, setSelectedStylist] = useState<string | null>(null);
 
   const preselectedService = searchParams.get('service');
@@ -61,16 +60,7 @@ export default function BookPage() {
     if (selectedService && salonData?.id && step === 'datetime') {
       const dateStr = format(selectedDate, 'yyyy-MM-dd');
       fetch(`/api/slots?salon_id=${salonData.id}&service_id=${selectedService.id}&date=${dateStr}`)
-        .then(r => r.json())
-        .then(data => {
-          if (Array.isArray(data)) {
-            setSlots(data);
-            setStylistLoad({});
-          } else {
-            setSlots(data.slots || []);
-            setStylistLoad(data.stylistLoad || {});
-          }
-        });
+        .then(r => r.json()).then(setSlots);
     }
   }, [selectedService, selectedDate, step, salonData?.id]);
 
@@ -229,18 +219,8 @@ export default function BookPage() {
             <div className="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto">
               {(() => {
                 if (anyStylist) {
-                  // Raggruppa per orario, primo disponibile (ordine alfabetico)
-                  const byTime = new Map<string, typeof slots>();
-                  for (const s of slots) {
-                    if (!byTime.has(s.time)) byTime.set(s.time, []);
-                    byTime.get(s.time)!.push(s);
-                  }
-                  const sorted = [...byTime.entries()].map(([time, stylists]) => {
-                    stylists.sort((a, b) => a.stylist_name.localeCompare(b.stylist_name));
-                    return stylists[0]; // primo in ordine alfabetico
-                  });
-                  return sorted.map((s, i) => (
-                    <button key={`${s.time}-${i}`} onClick={() => { setSelectedSlot(s); setStep('details'); }}
+                  return slots.map((s, i) => (
+                    <button key={`${s.time}-${s.stylist_id}-${i}`} onClick={() => { setSelectedSlot(s); setStep('details'); }}
                       className="p-3 border border-green-300 bg-green-50 rounded-lg text-center hover:bg-green-100 text-sm">
                       <div className="font-medium">{s.time}</div>
                     </button>
