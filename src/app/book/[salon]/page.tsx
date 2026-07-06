@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
-import { format, addDays } from 'date-fns';
+import { format, addDays, addWeeks, subWeeks, startOfWeek } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { ArrowLeft, Check, Clock } from 'lucide-react';
 import type { Service } from '@/lib/types';
@@ -25,6 +25,8 @@ export default function BookPage() {
   const [step, setStep] = useState<'service' | 'datetime' | 'details'>('service');
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [weekOffset, setWeekOffset] = useState(0);
+  const weekStart = addWeeks(startOfWeek(new Date(), { weekStartsOn: 1 }), weekOffset);
   const [selectedSlot, setSelectedSlot] = useState<{ time: string; stylist_id: string; stylist_name: string } | null>(null);
   const [name, setName] = useState('');
   const [surname, setSurname] = useState('');
@@ -149,15 +151,29 @@ export default function BookPage() {
             <button onClick={() => setStep('service')} className="flex items-center gap-1 text-sm text-gray-500 mb-3 hover:text-gray-700">
               <ArrowLeft size={14} /> {selectedService.name} &middot; {getClientDuration(selectedService)}min &middot; &euro;{(selectedService.price_cents / 100).toFixed(2)}
             </button>
-            <div className="flex gap-2 overflow-x-auto mb-4 pb-2">
-              {Array.from({ length: 14 }, (_, i) => addDays(new Date(), i)).map(d => (
-                <button key={d.toISOString()} onClick={() => setSelectedDate(d)}
-                  className={`flex-shrink-0 w-14 py-2 rounded-lg text-center text-sm ${
-                    format(d, 'yyyy-MM-dd') === format(selectedDate, 'yyyy-MM-dd') ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                  <div className="text-xs">{format(d, 'EEE', { locale: it })}</div>
-                  <div className="font-semibold">{format(d, 'd')}</div>
-                </button>
-              ))}
+            <div className="flex items-center gap-1 mb-4">
+              <button onClick={() => setWeekOffset(w => w - 1)}
+                className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 flex-shrink-0">
+                <ArrowLeft size={16} />
+              </button>
+              <div className="flex gap-1.5 overflow-x-auto pb-2 flex-1">
+                {Array.from({ length: 14 }, (_, i) => addDays(weekStart, i)).map(d => {
+                  const isPast = format(d, 'yyyy-MM-dd') < format(new Date(), 'yyyy-MM-dd');
+                  return (
+                    <button key={d.toISOString()} onClick={() => { if (!isPast) setSelectedDate(d); }}
+                      disabled={isPast}
+                      className={`flex-shrink-0 w-14 py-2 rounded-lg text-center text-sm ${
+                        format(d, 'yyyy-MM-dd') === format(selectedDate, 'yyyy-MM-dd') ? 'bg-blue-600 text-white' : isPast ? 'bg-gray-50 text-gray-300 cursor-not-allowed' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                      <div className="text-xs">{format(d, 'EEE', { locale: it })}</div>
+                      <div className="font-semibold">{format(d, 'd')}</div>
+                    </button>
+                  );
+                })}
+              </div>
+              <button onClick={() => setWeekOffset(w => w + 1)}
+                className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 flex-shrink-0">
+                <ArrowLeft size={16} className="rotate-180" />
+              </button>
             </div>
             {/* Stylist filter */}
             {slots.length > 0 && (() => {
