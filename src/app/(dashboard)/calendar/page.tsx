@@ -1,6 +1,5 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { CalendarHeader } from './components/CalendarHeader';
 import { DayView } from './components/DayView';
@@ -14,8 +13,6 @@ import { todayDateStr, buildSlotTime } from '@/lib/date-utils';
 import { useCalendarData } from '@/lib/hooks/useCalendarData';
 
 export default function CalendarPage() {
-  const router = useRouter();
-
   // Legge la data dall'URL al mount, altrimenti usa oggi
   const [date, setDate] = useState<Date | null>(null);
   useEffect(() => {
@@ -24,12 +21,12 @@ export default function CalendarPage() {
     setDate(dp ? new Date(dp + 'T12:00:00') : new Date());
   }, []);
 
-  // Aggiorna l'URL quando la data cambia (senza reload)
+  // Aggiorna URL senza navigazione (no remount)
   const handleDateChange = useCallback((d: Date) => {
     setDate(d);
     const ds = format(d, 'yyyy-MM-dd');
-    router.replace(`/calendar?date=${ds}`, { scroll: false });
-  }, [router]);
+    window.history.replaceState(null, '', `/calendar?date=${ds}`);
+  }, []);
 
   const [view, setView] = useState<'day' | 'week'>('day');
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
