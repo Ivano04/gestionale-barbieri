@@ -1,5 +1,6 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { CalendarHeader } from './components/CalendarHeader';
 import { DayView } from './components/DayView';
@@ -13,8 +14,23 @@ import { todayDateStr, buildSlotTime } from '@/lib/date-utils';
 import { useCalendarData } from '@/lib/hooks/useCalendarData';
 
 export default function CalendarPage() {
-  const [date, setDate] = useState<Date | null>(null);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  // Legge la data dall'URL, altrimenti usa oggi
+  const [date, setDate] = useState<Date | null>(() => {
+    const dp = searchParams.get('date');
+    return dp ? new Date(dp + 'T12:00:00') : null;
+  });
   useEffect(() => { if (!date) setDate(new Date()); }, []);
+
+  // Aggiorna l'URL quando la data cambia (senza reload)
+  const handleDateChange = useCallback((d: Date) => {
+    setDate(d);
+    const ds = format(d, 'yyyy-MM-dd');
+    router.replace(`/calendar?date=${ds}`, { scroll: false });
+  }, [router]);
+
   const [view, setView] = useState<'day' | 'week'>('day');
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [showBlockModal, setShowBlockModal] = useState(false);
@@ -170,7 +186,7 @@ export default function CalendarPage() {
   return (
     <div>
       {loading && <div className="h-1 bg-blue-100 w-full overflow-hidden"><div className="h-full bg-blue-500 animate-pulse" style={{ width: '60%' }} /></div>}
-      <CalendarHeader date={date} view={view} onDateChange={setDate} onViewChange={setView} onNewAppointment={handleNewAppointment} onNewBlock={() => setShowBlockModal(true)} />
+      <CalendarHeader date={date} view={view} onDateChange={handleDateChange} onViewChange={setView} onNewAppointment={handleNewAppointment} onNewBlock={() => setShowBlockModal(true)} />
       <div className="mx-0 md:mx-4 mt-0 md:mt-4">
         {view === 'day' && (
           <DayView
