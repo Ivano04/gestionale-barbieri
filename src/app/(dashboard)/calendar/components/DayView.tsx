@@ -509,7 +509,7 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
                 onClick={(e) => {
                   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
                   const y = e.clientY - rect.top;
-                  const minute = Math.round(yToMinute(y) / 15) * 15;
+                  const minute = Math.floor(yToMinute(y) / 15) * 15;
                   // Ignore clicks outside working shifts (pausa pranzo, etc.)
                   if (!isInShift(minute)) return;
                   const h = Math.floor(minute / 60);
