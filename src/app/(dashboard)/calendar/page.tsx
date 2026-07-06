@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { CalendarHeader } from './components/CalendarHeader';
 import { DayView } from './components/DayView';
@@ -14,13 +14,16 @@ import { todayDateStr, buildSlotTime } from '@/lib/date-utils';
 import { useCalendarData } from '@/lib/hooks/useCalendarData';
 
 export default function CalendarPage() {
-  const searchParams = useSearchParams();
   const router = useRouter();
 
-  // Legge la data dall'URL, altrimenti usa oggi
+  // Legge la data dall'URL al mount (evita useSearchParams per compatibilità SSR)
   const [date, setDate] = useState<Date | null>(() => {
-    const dp = searchParams.get('date');
-    return dp ? new Date(dp + 'T12:00:00') : null;
+    if (typeof window !== 'undefined') {
+      const p = new URLSearchParams(window.location.search);
+      const dp = p.get('date');
+      if (dp) return new Date(dp + 'T12:00:00');
+    }
+    return null;
   });
   useEffect(() => { if (!date) setDate(new Date()); }, []);
 
