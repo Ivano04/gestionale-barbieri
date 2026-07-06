@@ -396,7 +396,7 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
                   const isHour = m % 60 === 0;
                   lines.push(
                     <div key={`grid-${m}`}
-                      className={`absolute left-0 right-0 border-b pointer-events-none ${isHour ? 'border-gray-200' : 'border-gray-100 border-dashed'}`}
+                      className={`absolute left-0 right-0 border-b pointer-events-none ${isHour ? 'border-gray-800' : 'border-gray-200 border-dashed'}`}
                       style={{ top: `${minuteToY(m)}px` }} />
                   );
                 }
