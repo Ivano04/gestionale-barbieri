@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
-import { format, addDays, addWeeks, subWeeks, startOfWeek } from 'date-fns';
+import { format, addDays, addWeeks, startOfWeek } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { ArrowLeft, Check, Clock } from 'lucide-react';
 import type { Service } from '@/lib/types';
@@ -39,6 +39,8 @@ export default function BookPage() {
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState('');
+  const [anyStylist, setAnyStylist] = useState(false);
+  const [stylistLoad, setStylistLoad] = useState<Record<string, number>>({});
   const [selectedStylist, setSelectedStylist] = useState<string | null>(null);
 
   const preselectedService = searchParams.get('service');
@@ -59,7 +61,16 @@ export default function BookPage() {
     if (selectedService && salonData?.id && step === 'datetime') {
       const dateStr = format(selectedDate, 'yyyy-MM-dd');
       fetch(`/api/slots?salon_id=${salonData.id}&service_id=${selectedService.id}&date=${dateStr}`)
-        .then(r => r.json()).then(setSlots);
+        .then(r => r.json())
+        .then(data => {
+          if (Array.isArray(data)) {
+            setSlots(data);
+            setStylistLoad({});
+          } else {
+            setSlots(data.slots || []);
+            setStylistLoad(data.stylistLoad || {});
+          }
+        });
     }
   }, [selectedService, selectedDate, step, salonData?.id]);
 
@@ -180,12 +191,23 @@ export default function BookPage() {
                 })}
               </div>
             </div>
-            {/* Stylist filter */}
-            {slots.length > 0 && (() => {
+            {/* Toggle: Qualsiasi operatore */}
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="font-semibold text-sm">Orari disponibili</h3>
+              <label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
+                <span>Qualsiasi operatore</span>
+                <button onClick={() => { setAnyStylist(!anyStylist); setSelectedStylist(null); }}
+                  className={`relative w-9 h-5 rounded-full transition-colors ${anyStylist ? 'bg-blue-600' : 'bg-gray-300'}`}>
+                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${anyStylist ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                </button>
+              </label>
+            </div>
+
+            {/* Stylist filter (solo se NON "qualsiasi") */}
+            {!anyStylist && slots.length > 0 && (() => {
               const stylistNames = [...new Set(slots.map(s => s.stylist_name))];
               return (
                 <div className="mb-3">
-                  <div className="font-semibold mb-2 text-sm">Operatore</div>
                   <div className="flex gap-2 flex-wrap">
                     {stylistNames.map(st => (
                       <button key={st} onClick={() => setSelectedStylist(selectedStylist === st ? null : st)}
@@ -197,20 +219,47 @@ export default function BookPage() {
                 </div>
               );
             })()}
-            <h3 className="font-semibold mb-2 text-sm">Orari disponibili</h3>
+
             {slots.length === 0 && (
               <div className="text-center py-4">
                 <p className="text-gray-400 text-sm">Nessuno slot disponibile</p>
               </div>
             )}
             <div className="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto">
-              {slots.filter(s => !selectedStylist || s.stylist_name === selectedStylist).map((s, i) => (
-                <button key={`${s.time}-${s.stylist_id}-${i}`} onClick={() => { setSelectedSlot(s); setStep('details'); }}
-                  className="p-3 border border-green-300 bg-green-50 rounded-lg text-center hover:bg-green-100 text-sm">
-                  <div className="font-medium">{s.time}</div>
-                  <div className="text-xs text-gray-500">{s.stylist_name}</div>
-                </button>
-              ))}
+              {(() => {
+                if (anyStylist) {
+                  // Raggruppa per orario, scegli lo stylist meno carico
+                  const byTime = new Map<string, typeof slots>();
+                  for (const s of slots) {
+                    if (!byTime.has(s.time)) byTime.set(s.time, []);
+                    byTime.get(s.time)!.push(s);
+                  }
+                  // Ordina per carico crescente, poi alfabetico
+                  const sorted = [...byTime.entries()].map(([time, stylists]) => {
+                    stylists.sort((a, b) => {
+                      const la = stylistLoad[a.stylist_id] || 0;
+                      const lb = stylistLoad[b.stylist_id] || 0;
+                      if (la !== lb) return la - lb;
+                      return a.stylist_name.localeCompare(b.stylist_name);
+                    });
+                    return stylists[0]; // meno carico
+                  });
+                  return sorted.map((s, i) => (
+                    <button key={`${s.time}-${i}`} onClick={() => { setSelectedSlot(s); setStep('details'); }}
+                      className="p-3 border border-green-300 bg-green-50 rounded-lg text-center hover:bg-green-100 text-sm">
+                      <div className="font-medium">{s.time}</div>
+                    </button>
+                  ));
+                }
+                // Modalità normale: mostra tutti gli slot
+                return slots.filter(s => !selectedStylist || s.stylist_name === selectedStylist).map((s, i) => (
+                  <button key={`${s.time}-${s.stylist_id}-${i}`} onClick={() => { setSelectedSlot(s); setStep('details'); }}
+                    className="p-3 border border-green-300 bg-green-50 rounded-lg text-center hover:bg-green-100 text-sm">
+                    <div className="font-medium">{s.time}</div>
+                    <div className="text-xs text-gray-500">{s.stylist_name}</div>
+                  </button>
+                ));
+              })()}
             </div>
           </div>
         )}
@@ -218,7 +267,7 @@ export default function BookPage() {
         {step === 'details' && selectedSlot && (
           <div className="bg-white rounded-xl shadow-sm p-4">
             <button onClick={() => setStep('datetime')} className="flex items-center gap-1 text-sm text-gray-500 mb-3">
-              <ArrowLeft size={14} /> {format(selectedDate, 'EEEE d MMMM', { locale: it })} alle {selectedSlot.time} &middot; {selectedSlot.stylist_name}
+              <ArrowLeft size={14} /> {format(selectedDate, 'EEEE d MMMM', { locale: it })} alle {selectedSlot.time}{!anyStylist ? ` · ${selectedSlot.stylist_name}` : ''}
             </button>
             <h3 className="font-semibold mb-3">I tuoi dati</h3>
             <div className="space-y-3">
