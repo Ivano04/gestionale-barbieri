@@ -211,7 +211,7 @@ export function AppointmentModal({ appointment, services, categories, clients, s
             </div>
             <select className={`w-full border rounded-lg px-3 py-2 text-sm ${errors.service ? 'border-red-400' : ''}`}
               value={form.service_id || ''}
-              onChange={e => { setForm(f => ({ ...f, service_id: e.target.value, start_time: '' })); clearError('service'); }}>
+              onChange={e => { setForm(f => ({ ...f, service_id: e.target.value })); clearError('service'); }}>
               <option value="">Seleziona servizio...</option>
               {/* Categorizzati */}
               {categories.filter(c => servicesByCat.has(c.id)).map(cat => (
