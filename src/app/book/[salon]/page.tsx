@@ -151,12 +151,21 @@ export default function BookPage() {
             <button onClick={() => setStep('service')} className="flex items-center gap-1 text-sm text-gray-500 mb-3 hover:text-gray-700">
               <ArrowLeft size={14} /> {selectedService.name} &middot; {getClientDuration(selectedService)}min &middot; &euro;{(selectedService.price_cents / 100).toFixed(2)}
             </button>
-            <div className="flex items-center gap-1 mb-4">
-              <button onClick={() => setWeekOffset(w => w - 1)}
-                className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 flex-shrink-0">
-                <ArrowLeft size={16} />
-              </button>
-              <div className="flex gap-1.5 overflow-x-auto pb-2 flex-1">
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <button onClick={() => setWeekOffset(w => w - 1)}
+                  className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500">
+                  <ArrowLeft size={16} />
+                </button>
+                <span className="text-sm font-medium text-gray-700 capitalize">
+                  {format(weekStart, 'MMMM yyyy', { locale: it })}
+                </span>
+                <button onClick={() => setWeekOffset(w => w + 1)}
+                  className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500">
+                  <ArrowLeft size={16} className="rotate-180" />
+                </button>
+              </div>
+              <div className="flex gap-1.5 overflow-x-auto pb-2">
                 {Array.from({ length: 14 }, (_, i) => addDays(weekStart, i)).map(d => {
                   const isPast = format(d, 'yyyy-MM-dd') < format(new Date(), 'yyyy-MM-dd');
                   return (
@@ -170,10 +179,6 @@ export default function BookPage() {
                   );
                 })}
               </div>
-              <button onClick={() => setWeekOffset(w => w + 1)}
-                className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 flex-shrink-0">
-                <ArrowLeft size={16} className="rotate-180" />
-              </button>
             </div>
             {/* Stylist filter */}
             {slots.length > 0 && (() => {
