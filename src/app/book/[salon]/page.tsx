@@ -243,7 +243,7 @@ export default function BookPage() {
                       return a.stylist_name.localeCompare(b.stylist_name);
                     });
                     return stylists[0];
-                  });
+                  }).sort((a, b) => a.time.localeCompare(b.time));
                   return merged.map((s, i) => (
                     <button key={`${s.time}-${i}`} onClick={() => { setSelectedSlot(s); setStep('details'); }}
                       className="p-3 border border-green-300 bg-green-50 rounded-lg text-center hover:bg-green-100 text-sm">
