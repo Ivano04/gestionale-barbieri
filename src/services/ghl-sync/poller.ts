@@ -30,10 +30,17 @@ export async function pollGHL(salonId: string) {
       .eq('is_active', true);
 
     const ghl = new GHLClient(apiKey);
-    const defaultCalendarId = process.env.GHL_CALENDAR_ID || '';
-    const calendarId = defaultCalendarId || (stylists?.[0]?.ghl_calendar_id);
 
-    if (!calendarId) return;
+    // Raccogli tutti i calendarId da interrogare
+    const calendars: { id: string; stylistId: string | null }[] = [];
+    for (const s of (stylists || [])) {
+      if (s.ghl_calendar_id) calendars.push({ id: s.ghl_calendar_id, stylistId: s.id });
+    }
+    const defaultCal = process.env.GHL_CALENDAR_ID || '';
+    if (defaultCal && !calendars.find(c => c.id === defaultCal)) {
+      calendars.push({ id: defaultCal, stylistId: null });
+    }
+    if (!calendars.length) return;
 
     // Ultimo sync per questo salone
     const { data: lastLog } = await supabase
@@ -51,16 +58,26 @@ export async function pollGHL(salonId: string) {
 
     const now = new Date();
     const endDate = new Date(now);
-    endDate.setDate(endDate.getDate() + 30); // prossimi 30 giorni
+    endDate.setDate(endDate.getDate() + 30);
 
-    const ghlAppts = await ghl.getAppointments({
-      subaccountId: salon.ghl_subaccount_id,
-      calendarId,
-      startTime: updatedSince,
-      endTime: endDate.toISOString(),
-    });
+    // Interroga tutti i calendari
+    const allAppts: any[] = [];
+    for (const cal of calendars) {
+      try {
+        const appts = await ghl.getAppointments({
+          subaccountId: salon.ghl_subaccount_id,
+          calendarId: cal.id,
+          startTime: updatedSince,
+          endTime: endDate.toISOString(),
+        });
+        for (const a of appts) {
+          a._calStylistId = cal.stylistId; // aggancia lo stylist
+          allAppts.push(a);
+        }
+      } catch { /* skip calendari non accessibili */ }
+    }
 
-    for (const ga of ghlAppts) {
+    for (const ga of allAppts) {
       const ghlId = String(ga.id);
 
       // Salta se già importato
@@ -125,12 +142,8 @@ export async function pollGHL(salonId: string) {
         }
       }
 
-      // Risolvi stylist (mappa ghl_calendar_id → stylist)
-      let stylistId: string | null = null;
-      if (ga.calendarId && stylists?.length) {
-        const st = stylists.find(s => s.ghl_calendar_id === ga.calendarId);
-        if (st) stylistId = st.id;
-      }
+      // Stylist già risolto dal calendar loop
+      let stylistId: string | null = ga._calStylistId || null;
 
       // Inserisci appuntamento
       await supabase.from('appointments').insert({
