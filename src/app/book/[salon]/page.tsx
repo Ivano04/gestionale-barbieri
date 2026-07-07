@@ -77,6 +77,10 @@ export default function BookPage() {
 
   async function handleBook() {
     if (!salonData) return;
+    if (!name || !surname || !phone || !email) {
+      setError('Compila tutti i campi obbligatori (Nome, Cognome, Telefono, Email)');
+      return;
+    }
     setLoading(true);
     setError('');
     try {
@@ -287,11 +291,11 @@ export default function BookPage() {
                   onChange={e => setPhone(e.target.value.replace(/[^\d\s\-\(\)]/g, ''))}
                   className="flex-1 px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
               </div>
-              <input type="email" placeholder="Email (opzionale)" value={email} onChange={e => setEmail(e.target.value)}
+              <input type="email" placeholder="Email *" value={email} onChange={e => setEmail(e.target.value)}
                 className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
               <textarea placeholder="Note (opzionale)" value={note} onChange={e => setNote(e.target.value)}
                 className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" rows={2} />
-              <button onClick={handleBook} disabled={!name || !surname || !phone || loading}
+              <button onClick={handleBook} disabled={!name || !surname || !phone || !email || loading}
                 className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50">
                 {loading ? 'Prenotazione...' : 'Conferma Prenotazione'}
               </button>
