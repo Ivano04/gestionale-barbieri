@@ -3,7 +3,7 @@ export type { WorkingHoursShift, WorkingHoursDay, WorkingHours } from '@/lib/wor
 export type UserRole = 'owner' | 'admin' | 'stylist' | 'receptionist';
 export type AppointmentStatus = 'confirmed' | 'cancelled' | 'no_show' | 'completed';
 export type AppointmentSource = 'widget' | 'manual' | 'phone' | 'google' | 'treatwell' | 'walk_in' | 'whatsapp';
-export type SyncDirection = 'treatwell→us' | 'us→treatwell' | 'us→ghl';
+export type SyncDirection = 'treatwell→us' | 'us→treatwell' | 'us→ghl' | 'ghl→us';
 export type SyncStatus = 'success' | 'failed' | 'conflict' | 'pending_retry';
 
 export interface Salon {
