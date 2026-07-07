@@ -43,6 +43,8 @@ export default function BookPage() {
   const [anyStylist, setAnyStylist] = useState(false);
   const [stylistLoad, setStylistLoad] = useState<Record<string, number>>({});
   const [selectedStylist, setSelectedStylist] = useState<string | null>(null);
+  const [categories, setCategories] = useState<{ id: string; name: string; color_hex: string }[]>([]);
+  const [expandedCat, setExpandedCat] = useState<string | null>(null);
 
   const preselectedService = searchParams.get('service');
 
@@ -50,6 +52,7 @@ export default function BookPage() {
     fetch(`/api/book/${salon}`).then(r => r.json()).then(data => {
       setSalonData(data.salon);
       setServices(data.services || []);
+      setCategories(data.categories || []);
       if (preselectedService) {
         const svc = (data.services || []).find((s: Service) =>
           s.name.toLowerCase().replace(/\s+/g, '-') === preselectedService);
@@ -138,26 +141,103 @@ export default function BookPage() {
         {error && <div className="bg-red-50 text-red-700 p-3 rounded-lg mb-4 text-sm">{error}</div>}
 
         {step === 'service' && (
-          <div className="bg-white rounded-xl shadow-sm p-4">
-            <h3 className="font-semibold mb-3">Scegli il servizio</h3>
-            {services.length === 0 && <p className="text-gray-400 text-center py-4">Nessun servizio disponibile</p>}
-            <div className="space-y-2">
-              {services.map(s => {
-                const clientDuration = getClientDuration(s);
+          <div className="space-y-4">
+            {/* Servizi in evidenza */}
+            <div className="bg-white rounded-xl shadow-sm p-4">
+              <h3 className="font-semibold mb-3">Più richiesti</h3>
+              {services.length === 0 && <p className="text-gray-400 text-center py-4">Nessun servizio disponibile</p>}
+              <div className="grid grid-cols-3 gap-2">
+                {['Taglio Uomo', 'Taglio donna', 'Piega', 'Piega Capelli Lunghi', 'Permanente'].map(name => {
+                  const s = services.find(sv => sv.name.toLowerCase() === name.toLowerCase());
+                  if (!s) return null;
+                  const clientDuration = getClientDuration(s);
+                  return (
+                    <button key={s.id} onClick={() => { setSelectedService(s); setStep('datetime'); }}
+                      className="p-3 rounded-xl border border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition-colors text-center">
+                      <div className="w-8 h-8 rounded-full mx-auto mb-1.5" style={{ backgroundColor: s.color_hex }} />
+                      <div className="font-medium text-xs leading-tight">{s.name}</div>
+                      <div className="text-[10px] text-gray-400">{clientDuration}min</div>
+                      <div className="text-xs font-semibold mt-0.5">&euro;{(s.price_cents / 100).toFixed(2)}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Tutti i servizi per categoria */}
+            <div className="bg-white rounded-xl shadow-sm p-4">
+              <h3 className="font-semibold mb-3">Tutti i servizi</h3>
+              {categories.map(cat => {
+                const catSvcs = services.filter(s => s.category_id === cat.id);
+                if (catSvcs.length === 0) return null;
+                const isOpen = expandedCat === cat.id;
                 return (
-                  <button key={s.id} onClick={() => { setSelectedService(s); setStep('datetime'); }}
-                    className="w-full flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition-colors text-left">
-                    <div className="flex items-center gap-3">
-                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: s.color_hex }} />
-                      <div>
-                        <div className="font-medium">{s.name}</div>
-                        <div className="text-sm text-gray-500 flex items-center gap-1"><Clock size={12} />{clientDuration} min</div>
+                  <div key={cat.id} className="mb-1">
+                    <button onClick={() => setExpandedCat(isOpen ? null : cat.id)}
+                      className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 transition-colors">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color_hex }} />
+                        <span className="font-medium text-sm">{cat.name}</span>
+                        <span className="text-xs text-gray-400">({catSvcs.length})</span>
                       </div>
-                    </div>
-                    <div className="font-semibold">&euro;{(s.price_cents / 100).toFixed(2)}</div>
-                  </button>
+                      <span className="text-xs text-gray-400">{isOpen ? '▲' : '▼'}</span>
+                    </button>
+                    {isOpen && (
+                      <div className="space-y-1 ml-4 mb-2">
+                        {catSvcs.map(s => (
+                          <button key={s.id} onClick={() => { setSelectedService(s); setStep('datetime'); }}
+                            className="w-full flex items-center justify-between p-2.5 rounded-lg border border-gray-100 hover:border-blue-300 hover:bg-blue-50 transition-colors text-left">
+                            <div className="flex items-center gap-2">
+                              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color_hex }} />
+                              <div>
+                                <div className="font-medium text-sm">{s.name}</div>
+                                <div className="text-xs text-gray-400">{getClientDuration(s)} min</div>
+                              </div>
+                            </div>
+                            <div className="font-semibold text-sm">&euro;{(s.price_cents / 100).toFixed(2)}</div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
+              {/* Servizi senza categoria */}
+              {(() => {
+                const uncat = services.filter(s => !s.category_id);
+                if (uncat.length === 0) return null;
+                const isOpen = expandedCat === '__uncat__';
+                return (
+                  <div>
+                    <button onClick={() => setExpandedCat(isOpen ? null : '__uncat__')}
+                      className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 transition-colors">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full bg-gray-400" />
+                        <span className="font-medium text-sm">Altro</span>
+                        <span className="text-xs text-gray-400">({uncat.length})</span>
+                      </div>
+                      <span className="text-xs text-gray-400">{isOpen ? '▲' : '▼'}</span>
+                    </button>
+                    {isOpen && (
+                      <div className="space-y-1 ml-4 mb-2">
+                        {uncat.map(s => (
+                          <button key={s.id} onClick={() => { setSelectedService(s); setStep('datetime'); }}
+                            className="w-full flex items-center justify-between p-2.5 rounded-lg border border-gray-100 hover:border-blue-300 hover:bg-blue-50 transition-colors text-left">
+                            <div className="flex items-center gap-2">
+                              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color_hex }} />
+                              <div>
+                                <div className="font-medium text-sm">{s.name}</div>
+                                <div className="text-xs text-gray-400">{getClientDuration(s)} min</div>
+                              </div>
+                            </div>
+                            <div className="font-semibold text-sm">&euro;{(s.price_cents / 100).toFixed(2)}</div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}

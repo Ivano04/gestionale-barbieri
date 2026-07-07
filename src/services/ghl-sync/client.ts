@@ -104,7 +104,7 @@ export class GHLClient {
     });
   }
 
-  /** Legge gli appuntamenti da un calendario GHL in un intervallo di date */
+  /** Legge gli eventi da un calendario GHL in un intervallo di date */
   async getAppointments(opts: {
     subaccountId: string;
     calendarId: string;
@@ -117,10 +117,10 @@ export class GHLClient {
       startTime: opts.startTime,
       endTime: opts.endTime,
     });
-    const res = await this.fetch(`/calendars/events/appointments/?${params.toString()}`);
+    const res = await this.fetch(`/calendars/events/?${params.toString()}`);
     if (!res.ok) return [];
     const data = await res.json();
-    return data.appointments || data.events || [];
+    return data.events || data.appointments || [];
   }
 
   /** Recupera i dettagli di un contatto GHL */
