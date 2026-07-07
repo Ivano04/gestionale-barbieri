@@ -103,4 +103,32 @@ export class GHLClient {
       method: 'DELETE',
     });
   }
+
+  /** Legge gli appuntamenti da un calendario GHL in un intervallo di date */
+  async getAppointments(opts: {
+    subaccountId: string;
+    calendarId: string;
+    startTime: string;
+    endTime: string;
+  }): Promise<any[]> {
+    const params = new URLSearchParams({
+      locationId: opts.subaccountId,
+      calendarId: opts.calendarId,
+      startTime: opts.startTime,
+      endTime: opts.endTime,
+    });
+    const res = await this.fetch(`/calendars/events/appointments/?${params.toString()}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.appointments || data.events || [];
+  }
+
+  /** Recupera i dettagli di un contatto GHL */
+  async getContact(contactId: string): Promise<{ firstName?: string; lastName?: string; phone?: string; email?: string } | null> {
+    const res = await this.fetch(`/contacts/${contactId}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const c = data.contact;
+    return c ? { firstName: c.firstName, lastName: c.lastName, phone: c.phone, email: c.email } : null;
+  }
 }

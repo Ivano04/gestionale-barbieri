@@ -8,6 +8,7 @@ import { pushToGHL } from '@/services/ghl-sync/sync';
 import { pushToTreatwell } from '@/services/treatwell-sync/sync';
 import { pollTreatwell } from '@/services/treatwell-sync/poller';
 import { TreatwellClient } from '@/services/treatwell-sync/client';
+import { pollGHL } from '@/services/ghl-sync/poller';
 import { normalizeShifts, type WorkingHoursShift } from '@/lib/working-hours';
 import { computeBusyPeriods } from '@/services/booking-engine/overlap';
 
@@ -49,6 +50,11 @@ export async function GET(request: Request) {
       clientAuth: process.env.TREATWELL_CLIENT_AUTH || '',
     });
     pollTreatwell(salon_id, twClient).catch(() => {});
+  }
+
+  // Trigger GHL poll (fire-and-forget)
+  if (process.env.GHL_AGENCY_API_KEY) {
+    pollGHL(salon_id).catch(() => {});
   }
 
   return Response.json(data);
