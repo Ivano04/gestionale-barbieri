@@ -31,6 +31,7 @@ export default function BookPage() {
   const [name, setName] = useState('');
   const [surname, setSurname] = useState('');
   const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
   const [note, setNote] = useState('');
   const [phonePrefix, setPhonePrefix] = useState('+39');
   const [slots, setSlots] = useState<{ time: string; stylist_id: string; stylist_name: string }[]>([]);
@@ -88,7 +89,7 @@ export default function BookPage() {
           stylist_id: selectedSlot!.stylist_id,
           start_time: buildSlotTime(format(selectedDate, 'yyyy-MM-dd'), selectedSlot!.time),
           source: 'widget',
-          client: { first_name: name, last_name: surname, phone: formatPhone(phonePrefix + phone) },
+          client: { first_name: name, last_name: surname, phone: formatPhone(phonePrefix + phone), email: email || null },
           notes: note,
         }),
       });
@@ -286,6 +287,8 @@ export default function BookPage() {
                   onChange={e => setPhone(e.target.value.replace(/[^\d\s\-\(\)]/g, ''))}
                   className="flex-1 px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
               </div>
+              <input type="email" placeholder="Email (opzionale)" value={email} onChange={e => setEmail(e.target.value)}
+                className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
               <textarea placeholder="Note (opzionale)" value={note} onChange={e => setNote(e.target.value)}
                 className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" rows={2} />
               <button onClick={handleBook} disabled={!name || !surname || !phone || loading}

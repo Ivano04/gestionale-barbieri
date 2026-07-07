@@ -8,6 +8,23 @@ const polling = new Set<string>();
 // Throttle full load: max 1 ogni 30 minuti
 const lastFullLoad = new Map<string, number>();
 
+/** Sincronizza l'email da Uala al nostro cliente, se mancante */
+async function syncClientEmail(
+  supabase: ReturnType<typeof createAdminClient>,
+  twClient: TreatwellClient,
+  clientId: string,
+  twCustomerId: string,
+) {
+  if (!twCustomerId) return;
+  const { data: client } = await supabase.from('clients').select('email').eq('id', clientId).single();
+  if (client?.email) return; // già ha l'email
+
+  const twCust = await twClient.getCustomer(Number(twCustomerId));
+  if (twCust?.email) {
+    await supabase.from('clients').update({ email: twCust.email }).eq('id', clientId);
+  }
+}
+
 /** Normalizza un numero di telefono per confronti consistenti.
  *  Strip spazi/trattini, converte prefissi italiani (0... → +39...). */
 function normalizePhone(raw: string): string {
@@ -149,6 +166,11 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
           .select('id')
           .single();
         if (newClient) clientId = newClient.id;
+      }
+
+      // Sincronizza email cliente da Uala
+      if (clientId && twCustomerId) {
+        syncClientEmail(supabase, twClient, clientId, twCustomerId);
       }
 
       // ── Resolve stylist ──
@@ -329,6 +351,11 @@ async function fullLoadRecent(salonId: string, twClient: TreatwellClient, supaba
           .insert({ salon_id: salonId, first_name: firstName || name, last_name: lastParts.join(' ') || '', phone: null, treatwell_client_id: twCustomerId })
           .select('id').single();
         if (newClient) clientId = newClient.id;
+      }
+
+      // Sincronizza email cliente da Uala
+      if (clientId && twCustomerId) {
+        syncClientEmail(supabase, twClient, clientId, twCustomerId);
       }
 
       // Risolvi stylist

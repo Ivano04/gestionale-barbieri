@@ -161,6 +161,15 @@ export class TreatwellClient {
     return data?.data?.staff_members || [];
   }
 
+  /** Recupera i dettagli di un cliente (inclusa email) */
+  async getCustomer(customerId: number): Promise<{ email?: string; phone?: string; first_name?: string; last_name?: string } | null> {
+    const res = await this.fetch(`/venues/${this.venueId}/customers/${customerId}.json`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const c = data?.data?.customer;
+    return c ? { email: c.email, phone: c.phone, first_name: c.first_name, last_name: c.last_name } : null;
+  }
+
   /** Lista trattamenti per staff */
   async getStaffMemberTreatments(): Promise<any[]> {
     const res = await this.fetch(`/venues/${this.venueId}/staff_member_treatments.json`);
