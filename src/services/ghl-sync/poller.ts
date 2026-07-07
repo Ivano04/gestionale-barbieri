@@ -10,6 +10,7 @@ export async function pollGHL(salonId: string) {
 
   if (polling.has(salonId)) return;
   polling.add(salonId);
+  console.log('[ghl-poll] starting for salon', salonId);
 
   const supabase = createAdminClient();
   try {
@@ -40,6 +41,7 @@ export async function pollGHL(salonId: string) {
     if (defaultCal && !calendars.find(c => c.id === defaultCal)) {
       calendars.push({ id: defaultCal, stylistId: null });
     }
+    console.log('[ghl-poll] calendars:', calendars.length, 'subaccount:', salon.ghl_subaccount_id);
     if (!calendars.length) return;
 
     // Ultimo sync per questo salone
@@ -70,12 +72,14 @@ export async function pollGHL(salonId: string) {
           startTime: updatedSince,
           endTime: endDate.toISOString(),
         });
+        console.log('[ghl-poll] calendar', cal.id.substring(0, 8), '→', appts.length, 'appuntamenti');
         for (const a of appts) {
-          a._calStylistId = cal.stylistId; // aggancia lo stylist
+          a._calStylistId = cal.stylistId;
           allAppts.push(a);
         }
-      } catch { /* skip calendari non accessibili */ }
+      } catch(e: any) { console.log('[ghl-poll] calendar error:', e.message); }
     }
+    console.log('[ghl-poll] totale appuntamenti GHL:', allAppts.length);
 
     for (const ga of allAppts) {
       const ghlId = String(ga.id);
@@ -166,7 +170,7 @@ export async function pollGHL(salonId: string) {
       });
     }
   } catch (e: any) {
-    console.error('[ghl-poll] error:', e.message);
+    console.error('[ghl-poll] FATAL error:', e.message, e.stack?.substring(0, 200));
   } finally {
     polling.delete(salonId);
   }
