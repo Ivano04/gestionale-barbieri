@@ -27,10 +27,32 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   let newBufferEndTime = body.buffer_end_time;
   const newStylistId = body.stylist_id ?? existing.stylist_id;
   const newStartTime = body.start_time ?? existing.start_time;
+  const serviceId = body.service_id ?? existing.service_id;
+
+  // Se lo stylist cambia, verifica che possa fare questo servizio
+  if (body.stylist_id && serviceId) {
+    const { data: assignments } = await supabase
+      .from('stylist_services')
+      .select('stylist_id');
+    const hasAnyAssignments = (assignments || []).length > 0;
+    if (hasAnyAssignments) {
+      const assigned = (assignments || []).filter(a => a.stylist_id === body.stylist_id);
+      const isAssignedToService = assigned.some(a => true); // ha ALMENO un'assegnazione
+      const { data: specificAssignment } = await supabase
+        .from('stylist_services')
+        .select('stylist_id')
+        .eq('stylist_id', body.stylist_id)
+        .eq('service_id', serviceId)
+        .limit(1);
+      const canDoService = (specificAssignment || []).length > 0 || !isAssignedToService;
+      if (!canDoService) {
+        return Response.json({ error: 'Questo operatore non può svolgere il servizio selezionato' }, { status: 400 });
+      }
+    }
+  }
 
   // Recalculate end times if service changed or start moved
   if (body.start_time || body.service_id) {
-    const serviceId = body.service_id ?? existing.service_id;
     if (!serviceId) {
       return Response.json({ error: 'Servizio non specificato' }, { status: 400 });
     }

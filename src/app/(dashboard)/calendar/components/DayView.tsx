@@ -108,7 +108,7 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
   }
 
   function snapMinute(minute: number): number {
-    return Math.round(minute / 5) * 5; // snap to 5-min grid
+    return Math.round(minute / 15) * 15; // snap a quarti d'ora
   }
 
   // Build time labels
@@ -139,8 +139,6 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
   function handlePointerMove(e: React.PointerEvent) {
     if (!dragState) return;
     const dy = e.clientY - dragState.startY;
-    const minutesDelta = Math.round((dy / HOUR_HEIGHT) * 60);
-    const snappedDelta = snapMinute(minutesDelta) - (snapMinute(minutesDelta) % 5);
     setDragState({ ...dragState, offsetY: dy });
 
     // Check which stylist column we're over (for cross-stylist move)
@@ -163,7 +161,7 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
     const dy = e.clientY - dragState.startY;
     const minutesDelta = snapMinute(Math.round((dy / HOUR_HEIGHT) * 60));
 
-    if (Math.abs(minutesDelta) < 5 && dragState.currentStylistId === dragState.origStylistId) {
+    if (Math.abs(minutesDelta) < 15 && dragState.currentStylistId === dragState.origStylistId) {
       // No significant movement — treat as click
       setDragState(null);
       return;
