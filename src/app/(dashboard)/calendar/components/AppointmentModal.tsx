@@ -36,6 +36,7 @@ export function AppointmentModal({ appointment, services, categories, clients, s
   const [newServiceId, setNewServiceId] = useState('');
   const [filteredStylists, setFilteredStylists] = useState<Pick<User, 'id' | 'full_name'>[]>([]);
   const [serviceSearch, setServiceSearch] = useState('');
+  const [showServiceList, setShowServiceList] = useState(false);
   const isNew = !appointment?.id;
 
   // Servizi filtrati per ricerca
@@ -202,50 +203,58 @@ export function AppointmentModal({ appointment, services, categories, clients, s
           {/* 2. Servizio + Duration Preview */}
           <div>
             <label className="text-sm font-medium text-gray-700">Servizio</label>
-            {/* Barra ricerca servizi */}
-            <div className="relative mt-1 mb-2">
-              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input type="text" placeholder="Cerca servizio..." value={serviceSearch}
-                onChange={e => setServiceSearch(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 border rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-blue-500" />
-            </div>
-            {/* Lista servizi filtrabile */}
-            <div className={`border rounded-lg overflow-hidden ${errors.service ? 'border-red-400' : ''}`}>
-              <div className="max-h-48 overflow-y-auto">
-                {categories.filter(c => servicesByCat.has(c.id)).map(cat => (
-                  <div key={cat.id}>
-                    <div className="px-3 py-1.5 text-xs font-semibold text-gray-500 bg-gray-50 border-b flex items-center gap-1.5">
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color_hex }} />
-                      {cat.name}
+            {/* Bottone/tendina richiudibile */}
+            <button type="button"
+              onClick={() => { setShowServiceList(!showServiceList); setServiceSearch(''); }}
+              className={`w-full mt-1 px-3 py-2 border rounded-lg text-sm text-left flex items-center justify-between hover:bg-gray-50 ${errors.service ? 'border-red-400' : ''}`}>
+              <span className={form.service_id ? 'text-gray-900' : 'text-gray-400'}>
+                {form.service_id ? services.find(s => s.id === form.service_id)?.name || 'Servizio' : 'Seleziona servizio...'}
+              </span>
+              <ChevronDown size={14} className={`text-gray-400 transition-transform ${showServiceList ? 'rotate-180' : ''}`} />
+            </button>
+            {showServiceList && (
+              <div className="border rounded-lg mt-1 overflow-hidden">
+                <div className="relative p-2 border-b">
+                  <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input type="text" placeholder="Cerca servizio..." value={serviceSearch}
+                    onChange={e => setServiceSearch(e.target.value)} autoFocus
+                    className="w-full pl-7 pr-3 py-1.5 border rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                </div>
+                <div className="max-h-48 overflow-y-auto">
+                  {categories.filter(c => servicesByCat.has(c.id)).map(cat => (
+                    <div key={cat.id}>
+                      <div className="px-3 py-1.5 text-xs font-semibold text-gray-500 bg-gray-50 border-b flex items-center gap-1.5">
+                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color_hex }} />{cat.name}
+                      </div>
+                      {(servicesByCat.get(cat.id) || []).map(s => (
+                        <button key={s.id} type="button"
+                          onClick={() => { setForm(f => ({ ...f, service_id: s.id })); clearError('service'); setShowServiceList(false); setServiceSearch(''); }}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 border-b border-gray-50 flex justify-between items-center">
+                          <span>{s.name} <span className="text-gray-400 text-xs">{s.duration_minutes}min</span></span>
+                          <span className="text-xs font-semibold">€{(s.price_cents/100).toFixed(2)}</span>
+                        </button>
+                      ))}
                     </div>
-                    {(servicesByCat.get(cat.id) || []).map(s => (
-                      <button key={s.id} type="button"
-                        onClick={() => { setForm(f => ({ ...f, service_id: s.id })); clearError('service'); }}
-                        className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 border-b border-gray-50 flex justify-between items-center ${form.service_id === s.id ? 'bg-blue-50 text-blue-700 font-medium' : ''}`}>
-                        <span>{s.name} <span className="text-gray-400 text-xs">{s.duration_minutes}min</span></span>
-                        <span className="text-xs font-semibold">€{(s.price_cents/100).toFixed(2)}</span>
-                      </button>
-                    ))}
-                  </div>
-                ))}
-                {(servicesByCat.get(null) || []).length > 0 && (
-                  <div>
-                    <div className="px-3 py-1.5 text-xs font-semibold text-gray-500 bg-gray-50 border-b">Altro</div>
-                    {(servicesByCat.get(null) || []).map(s => (
-                      <button key={s.id} type="button"
-                        onClick={() => { setForm(f => ({ ...f, service_id: s.id })); clearError('service'); }}
-                        className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 border-b border-gray-50 flex justify-between items-center ${form.service_id === s.id ? 'bg-blue-50 text-blue-700 font-medium' : ''}`}>
-                        <span>{s.name} <span className="text-gray-400 text-xs">{s.duration_minutes}min</span></span>
-                        <span className="text-xs font-semibold">€{(s.price_cents/100).toFixed(2)}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {filteredServices.length === 0 && (
-                  <p className="text-xs text-gray-400 text-center py-3">Nessun servizio trovato</p>
-                )}
+                  ))}
+                  {(servicesByCat.get(null) || []).length > 0 && (
+                    <div>
+                      <div className="px-3 py-1.5 text-xs font-semibold text-gray-500 bg-gray-50 border-b">Altro</div>
+                      {(servicesByCat.get(null) || []).map(s => (
+                        <button key={s.id} type="button"
+                          onClick={() => { setForm(f => ({ ...f, service_id: s.id })); clearError('service'); setShowServiceList(false); setServiceSearch(''); }}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 border-b border-gray-50 flex justify-between items-center">
+                          <span>{s.name} <span className="text-gray-400 text-xs">{s.duration_minutes}min</span></span>
+                          <span className="text-xs font-semibold">€{(s.price_cents/100).toFixed(2)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {filteredServices.length === 0 && (
+                    <p className="text-xs text-gray-400 text-center py-3">Nessun servizio trovato</p>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
             {errors.service && <p className="text-red-500 text-xs mt-1">{errors.service}</p>}
 
             {/* Duration + buffer display */}
