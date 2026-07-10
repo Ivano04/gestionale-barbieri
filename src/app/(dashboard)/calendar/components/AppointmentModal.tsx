@@ -209,27 +209,43 @@ export function AppointmentModal({ appointment, services, categories, clients, s
                 onChange={e => setServiceSearch(e.target.value)}
                 className="w-full pl-8 pr-3 py-1.5 border rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-blue-500" />
             </div>
-            <select className={`w-full border rounded-lg px-3 py-2 text-sm ${errors.service ? 'border-red-400' : ''}`}
-              value={form.service_id || ''}
-              onChange={e => { setForm(f => ({ ...f, service_id: e.target.value })); clearError('service'); }}>
-              <option value="">Seleziona servizio...</option>
-              {/* Categorizzati */}
-              {categories.filter(c => servicesByCat.has(c.id)).map(cat => (
-                <optgroup key={cat.id} label={cat.name}>
-                  {(servicesByCat.get(cat.id) || []).map(s => (
-                    <option key={s.id} value={s.id}>{s.name} · {s.duration_minutes}min · €{(s.price_cents/100).toFixed(2)}</option>
-                  ))}
-                </optgroup>
-              ))}
-              {/* Non categorizzati */}
-              {(servicesByCat.get(null) || []).length > 0 && (
-                <optgroup label="Altro">
-                  {(servicesByCat.get(null) || []).map(s => (
-                    <option key={s.id} value={s.id}>{s.name} · {s.duration_minutes}min · €{(s.price_cents/100).toFixed(2)}</option>
-                  ))}
-                </optgroup>
-              )}
-            </select>
+            {/* Lista servizi filtrabile */}
+            <div className={`border rounded-lg overflow-hidden ${errors.service ? 'border-red-400' : ''}`}>
+              <div className="max-h-48 overflow-y-auto">
+                {categories.filter(c => servicesByCat.has(c.id)).map(cat => (
+                  <div key={cat.id}>
+                    <div className="px-3 py-1.5 text-xs font-semibold text-gray-500 bg-gray-50 border-b flex items-center gap-1.5">
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color_hex }} />
+                      {cat.name}
+                    </div>
+                    {(servicesByCat.get(cat.id) || []).map(s => (
+                      <button key={s.id} type="button"
+                        onClick={() => { setForm(f => ({ ...f, service_id: s.id })); clearError('service'); }}
+                        className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 border-b border-gray-50 flex justify-between items-center ${form.service_id === s.id ? 'bg-blue-50 text-blue-700 font-medium' : ''}`}>
+                        <span>{s.name} <span className="text-gray-400 text-xs">{s.duration_minutes}min</span></span>
+                        <span className="text-xs font-semibold">€{(s.price_cents/100).toFixed(2)}</span>
+                      </button>
+                    ))}
+                  </div>
+                ))}
+                {(servicesByCat.get(null) || []).length > 0 && (
+                  <div>
+                    <div className="px-3 py-1.5 text-xs font-semibold text-gray-500 bg-gray-50 border-b">Altro</div>
+                    {(servicesByCat.get(null) || []).map(s => (
+                      <button key={s.id} type="button"
+                        onClick={() => { setForm(f => ({ ...f, service_id: s.id })); clearError('service'); }}
+                        className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 border-b border-gray-50 flex justify-between items-center ${form.service_id === s.id ? 'bg-blue-50 text-blue-700 font-medium' : ''}`}>
+                        <span>{s.name} <span className="text-gray-400 text-xs">{s.duration_minutes}min</span></span>
+                        <span className="text-xs font-semibold">€{(s.price_cents/100).toFixed(2)}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {filteredServices.length === 0 && (
+                  <p className="text-xs text-gray-400 text-center py-3">Nessun servizio trovato</p>
+                )}
+              </div>
+            </div>
             {errors.service && <p className="text-red-500 text-xs mt-1">{errors.service}</p>}
 
             {/* Duration + buffer display */}
