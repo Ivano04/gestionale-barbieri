@@ -36,6 +36,7 @@ export function AppointmentModal({ appointment, services, categories, clients, s
   const [newServiceId, setNewServiceId] = useState('');
   const [filteredStylists, setFilteredStylists] = useState<Pick<User, 'id' | 'full_name'>[]>([]);
   const [serviceSearch, setServiceSearch] = useState('');
+  const [clientSearch, setClientSearch] = useState('');
   const isNew = !appointment?.id;
 
   // Servizi filtrati per ricerca
@@ -53,6 +54,8 @@ export function AppointmentModal({ appointment, services, categories, clients, s
   useEffect(() => {
     setForm(appointment || {});
     setFilteredStylists(stylists);
+    setServiceSearch('');
+    setClientSearch('');
     if (appointment?.client_id) setClientMode('existing');
     if (appointment?.start_time) setSlotDate(format(parseISO(appointment.start_time), 'yyyy-MM-dd'));
   }, [appointment]);
@@ -165,11 +168,22 @@ export function AppointmentModal({ appointment, services, categories, clients, s
             </div>
 
             {clientMode === 'existing' ? (
-              <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.client_id || ''}
-                onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))}>
-                <option value="">Seleziona cliente...</option>
-                {clients.map(c => <option key={c.id} value={c.id}>{c.first_name} {c.last_name}{c.phone ? ` · ${c.phone}` : ''}</option>)}
-              </select>
+              <div>
+                <div className="relative mb-1.5">
+                  <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input type="text" placeholder="Cerca cliente..." value={clientSearch}
+                    onChange={e => setClientSearch(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 border rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                </div>
+                <select className="w-full border rounded-lg px-3 py-2 text-sm" size={6}
+                  value={form.client_id || ''}
+                  onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))}>
+                  <option value="">Seleziona cliente...</option>
+                  {clients.filter(c => !clientSearch ||
+                    `${c.first_name} ${c.last_name} ${c.phone||''}`.toLowerCase().includes(clientSearch.toLowerCase())
+                  ).map(c => <option key={c.id} value={c.id}>{c.first_name} {c.last_name}{c.phone ? ` · ${c.phone}` : ''}</option>)}
+                </select>
+              </div>
             ) : (
               <div className="space-y-2">
                 <div className="flex gap-2">
