@@ -126,6 +126,47 @@ export async function pushToTreatwell(
   }
 }
 
+/** Aggiorna durata su Treatwell dopo modifica sul gestionale */
+export async function pushUpdateToTreatwell(
+  treatwellAppointmentId: string,
+  salonId: string,
+  appointmentId: string,
+  data: { startTime?: string; endTime?: string },
+) {
+  if (!process.env.TREATWELL_API_TOKEN) return;
+
+  const supabase = createAdminClient();
+  const { data: salon } = await supabase
+    .from('salons')
+    .select('treatwell_api_enabled')
+    .eq('id', salonId)
+    .single();
+  if (!salon?.treatwell_api_enabled) return;
+
+  const tw = getClient();
+  try {
+    const durationSec = data.startTime && data.endTime
+      ? Math.round((new Date(data.endTime).getTime() - new Date(data.startTime).getTime()) / 1000)
+      : undefined;
+    await tw.updateAppointment(Number(treatwellAppointmentId), { duration: durationSec });
+    await supabase.from('sync_log').insert({
+      salon_id: salonId,
+      direction: 'us→treatwell',
+      appointment_id: appointmentId,
+      status: 'success',
+      external_id: treatwellAppointmentId,
+    });
+  } catch (e: any) {
+    await supabase.from('sync_log').insert({
+      salon_id: salonId,
+      direction: 'us→treatwell',
+      appointment_id: appointmentId,
+      status: 'failed',
+      error_message: e.message,
+    });
+  }
+}
+
 export async function deleteFromTreatwell(
   treatwellAppointmentId: string,
   salonId: string,

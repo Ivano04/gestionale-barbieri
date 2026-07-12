@@ -5,7 +5,7 @@ import { sendN8nEvent } from '@/lib/sync-webhook';
 import { fetchServiceDuration } from '@/services/booking-engine/queries';
 import { computeBusyPeriods } from '@/services/booking-engine/overlap';
 import { updateGHLAppointment, deleteGHLAppointment } from '@/services/ghl-sync/sync';
-import { deleteFromTreatwell } from '@/services/treatwell-sync/sync';
+import { deleteFromTreatwell, pushUpdateToTreatwell } from '@/services/treatwell-sync/sync';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -168,6 +168,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         console.error('[ghl] update failed:', err);
       });
     }
+  }
+
+  // Sync update to Treatwell
+  if (data.treatwell_appointment_id && data.salon_id && (data.start_time || data.end_time)) {
+    pushUpdateToTreatwell(
+      data.treatwell_appointment_id,
+      data.salon_id,
+      data.id,
+      { startTime: data.start_time, endTime: data.end_time },
+    ).catch(err => { console.error('[treatwell] update failed:', err); });
   }
 
   return Response.json(data);
