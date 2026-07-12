@@ -5,10 +5,11 @@ import { TreatwellClient } from './client';
 const polling = new Set<string>();
 // Throttle full load: max 1 ogni 30 minuti
 const lastFullLoad = new Map<string, number>();
-/** Margine di sovrapposizione della finestra di sync incrementale.
- *  Protegge dalle modifiche fatte su Treatwell mentre il poller sta elaborando
- *  (il watermark è l'istante di scrittura, non quello di lettura). */
-const SYNC_OVERLAP_MS = 15 * 60 * 1000;
+/** Watermark per salone, ancorato all'istante di LETTURA da Uala.
+ *  In memoria: al riavvio si riparte dall'ultimo sync_log riuscito. */
+const lastSyncAt = new Map<string, number>();
+/** Sovrapposizione di sicurezza della finestra di sync (clock skew, poll persi). */
+const SYNC_OVERLAP_MS = 2 * 60 * 1000;
 
 /** Sincronizza l'email da Uala al nostro cliente, se mancante */
 async function syncClientEmail(
@@ -87,6 +88,56 @@ function logPayloadShape(tw: any, context: string) {
   }));
 }
 
+/** Riga che l'appuntamento DOVREBBE avere secondo Uala.
+ *  Preserva il buffer (delta fra buffer_end_time ed end_time) impostato da noi. */
+function buildDesiredRow(
+  tw: any,
+  current: any,
+  startTime: string,
+  endTime: string,
+  stylistId: string | undefined,
+  serviceId: string | null,
+  clientId: string | null,
+) {
+  const prevBufferMs = current.buffer_end_time
+    ? new Date(current.buffer_end_time).getTime() - new Date(current.end_time).getTime()
+    : 0;
+  const bufferEndTime = prevBufferMs > 0
+    ? new Date(new Date(endTime).getTime() + prevBufferMs).toISOString()
+    : endTime;
+
+  return {
+    start_time: startTime,
+    end_time: endTime,
+    buffer_end_time: bufferEndTime,
+    stylist_id: stylistId || current.stylist_id,
+    service_id: serviceId || current.service_id,
+    client_id: clientId || current.client_id,
+    // Un appuntamento tornato non-cancellato su Uala torna confermato
+    status: 'confirmed' as const,
+  };
+}
+
+/** Confronta due istanti tollerando formati diversi (+02:00 vs Z). */
+function sameInstant(a: string | null, b: string | null): boolean {
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+  return new Date(a).getTime() === new Date(b).getTime();
+}
+
+/** True se la riga desiderata differisce da quella a DB. */
+function hasChanges(current: any, desired: ReturnType<typeof buildDesiredRow>): boolean {
+  return (
+    !sameInstant(desired.start_time, current.start_time) ||
+    !sameInstant(desired.end_time, current.end_time) ||
+    !sameInstant(desired.buffer_end_time, current.buffer_end_time) ||
+    desired.stylist_id !== current.stylist_id ||
+    desired.service_id !== current.service_id ||
+    desired.client_id !== current.client_id ||
+    desired.status !== current.status
+  );
+}
+
 export async function pollTreatwell(salonId: string, twClient: TreatwellClient) {
   // Anti-concorrenza: se un poll è già in corso per questo salone, esci
   if (polling.has(salonId)) return;
@@ -95,25 +146,29 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
   const supabase = createAdminClient();
 
   try {
-    // Get last sync timestamp for this salon
-    const { data: lastLog } = await supabase
-      .from('sync_log')
-      .select('created_at')
-      .eq('salon_id', salonId)
-      .eq('direction', 'treatwell→us')
-      .eq('status', 'success')
-      .order('created_at', { ascending: false })
-      .limit(1);
+    // Il watermark va ancorato all'istante in cui LEGGIAMO da Uala, non a quello in cui
+    // scriviamo: il poller impiega secondi a elaborare, e una modifica fatta su Treatwell
+    // nel frattempo verrebbe altrimenti scavalcata dal watermark e persa per sempre.
+    const readAt = Date.now();
 
-    // Il watermark in sync_log è il momento in cui ABBIAMO SCRITTO, non quello in cui
-    // abbiamo LETTO da Uala. Il poller impiega diversi secondi a elaborare (query
-    // sequenziali + chiamate HTTP), quindi una modifica fatta su Treatwell durante
-    // l'elaborazione ha updated_at < nuovo watermark e verrebbe saltata per sempre.
-    // Rileggiamo quindi una finestra sovrapposta: l'upsert è idempotente, riprocessare
-    // lo stesso appuntamento è innocuo.
-    const updatedSince = lastLog?.length
-      ? new Date(new Date(lastLog[0].created_at).getTime() - SYNC_OVERLAP_MS).toISOString()
-      : new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    let watermark = lastSyncAt.get(salonId);
+    if (watermark === undefined) {
+      // Cold start (riavvio del processo): riparti dall'ultimo sync riuscito a DB
+      const { data: lastLog } = await supabase
+        .from('sync_log')
+        .select('created_at')
+        .eq('salon_id', salonId)
+        .eq('direction', 'treatwell→us')
+        .eq('status', 'success')
+        .order('created_at', { ascending: false })
+        .limit(1);
+      watermark = lastLog?.length
+        ? new Date(lastLog[0].created_at).getTime()
+        : Date.now() - 60 * 60 * 1000;
+    }
+
+    // Piccola sovrapposizione di sicurezza (clock skew fra noi e Uala, poll persi)
+    const updatedSince = new Date(watermark - SYNC_OVERLAP_MS).toISOString();
 
     const data = await twClient.getSync(updatedSince);
     const appointments: any[] = data?.data?.appointments || [];
@@ -129,10 +184,13 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
       if (isCancelledState(tw.state)) {
         const { data: existing } = await supabase
           .from('appointments')
-          .select('id')
+          .select('id, status')
           .eq('treatwell_appointment_id', twId)
           .limit(1);
         if (!existing?.length) continue;
+        // Già cancellato: non riscrivere, altrimenti ogni poll emette un evento
+        // Realtime e il calendario si ricarica in loop.
+        if (existing[0].status === 'cancelled') continue;
 
         await supabase
           .from('appointments')
@@ -245,39 +303,22 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
       ).toISOString();
 
       // ── UPSERT: cerca per treatwell_appointment_id, aggiorna se esiste, altrimenti crea ──
-      // NB: non ci affidiamo più ai timestamp created_at/updated_at per distinguere
-      // "new" da "updated" — se Uala non li espone, le modifiche venivano scartate.
       const { data: existing } = await supabase
         .from('appointments')
-        .select('id, start_time, end_time, stylist_id, service_id, client_id, buffer_end_time')
+        .select('id, start_time, end_time, stylist_id, service_id, client_id, buffer_end_time, status')
         .eq('treatwell_appointment_id', twId)
         .eq('salon_id', salonId)
         .limit(1);
 
       if (existing?.length) {
         const current = existing[0];
+        const desired = buildDesiredRow(tw, current, startTime, endTime, stylist?.[0]?.id, serviceId, clientId);
 
-        // Mantieni il buffer (differenza tra buffer_end_time ed end_time) se presente
-        const prevBufferMs = current.buffer_end_time
-          ? new Date(current.buffer_end_time).getTime() - new Date(current.end_time).getTime()
-          : 0;
-        const bufferEndTime = prevBufferMs > 0
-          ? new Date(new Date(endTime).getTime() + prevBufferMs).toISOString()
-          : endTime;
+        // Scrivi SOLO se qualcosa è davvero cambiato: ogni UPDATE emette un evento
+        // Realtime, il calendario ricarica, il GET rilancia un poll → loop infinito.
+        if (!hasChanges(current, desired)) continue;
 
-        await supabase
-          .from('appointments')
-          .update({
-            start_time: startTime,
-            end_time: endTime,
-            buffer_end_time: bufferEndTime,
-            stylist_id: stylist?.[0]?.id || current.stylist_id,
-            service_id: serviceId || current.service_id,
-            client_id: clientId || current.client_id,
-            // Un appuntamento tornato non-cancellato su Uala torna confermato
-            status: 'confirmed',
-          })
-          .eq('id', current.id);
+        await supabase.from('appointments').update(desired).eq('id', current.id);
       } else {
         await supabase.from('appointments').insert({
           salon_id: salonId,
@@ -300,6 +341,9 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
         external_id: twId,
       });
     }
+
+    // Watermark = istante di LETTURA, non di scrittura (vedi commento sopra)
+    lastSyncAt.set(salonId, readAt);
     // ── FULL LOAD: recupera appuntamenti di oggi e prossimi giorni ──
     // synch.json da solo non basta: appuntamenti creati giorni fa hanno
     // updated_at vecchio e non compaiono nel delta.
@@ -343,7 +387,7 @@ async function fullLoadRecent(salonId: string, twClient: TreatwellClient, supaba
       // di eventuali disallineamenti di orario/durata), altrimenti lo creiamo.
       const { data: existing } = await supabase
         .from('appointments')
-        .select('id, end_time, buffer_end_time, stylist_id, service_id, client_id')
+        .select('id, start_time, end_time, buffer_end_time, stylist_id, service_id, client_id, status')
         .eq('treatwell_appointment_id', twId)
         .eq('salon_id', salonId)
         .limit(1);
@@ -423,27 +467,13 @@ async function fullLoadRecent(salonId: string, twClient: TreatwellClient, supaba
       const endTime = new Date(new Date(startTime).getTime() + duration * 1000).toISOString();
 
       if (existing?.length) {
-        // Auto-riparazione: riallinea orario/durata/stylist a quanto c'è su Uala
+        // Auto-riparazione: riallinea orario/durata/stylist a quanto c'è su Uala,
+        // ma solo se differisce davvero (altrimenti eventi Realtime a vuoto).
         const current = existing[0];
-        const prevBufferMs = current.buffer_end_time
-          ? new Date(current.buffer_end_time).getTime() - new Date(current.end_time).getTime()
-          : 0;
-        const bufferEndTime = prevBufferMs > 0
-          ? new Date(new Date(endTime).getTime() + prevBufferMs).toISOString()
-          : endTime;
+        const desired = buildDesiredRow(tw, current, startTime, endTime, stylist?.[0]?.id, serviceId, clientId);
+        if (!hasChanges(current, desired)) continue;
 
-        await supabase
-          .from('appointments')
-          .update({
-            start_time: startTime,
-            end_time: endTime,
-            buffer_end_time: bufferEndTime,
-            stylist_id: stylist?.[0]?.id || current.stylist_id,
-            service_id: serviceId || current.service_id,
-            client_id: clientId || current.client_id,
-            status: 'confirmed',
-          })
-          .eq('id', current.id);
+        await supabase.from('appointments').update(desired).eq('id', current.id);
       } else {
         await supabase.from('appointments').insert({
           salon_id: salonId,
