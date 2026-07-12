@@ -452,6 +452,7 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
                 const colLeft = cols && cols.total > 1 ? `${(cols.col / cols.total) * 100}%` : undefined;
 
                 const cardHeight = parseFloat(style?.height as string) || MIN_HEIGHT;
+                const isResizing = isDragging && dragState.mode === 'resize';
                 return (
                   <div key={app.id}
                     className={`absolute rounded-lg px-1.5 py-0.5 cursor-pointer z-10 border-l-[3px] text-xs overflow-hidden flex flex-col
@@ -465,7 +466,10 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
                       borderLeftColor: cfg.border,
                       backgroundColor: cfg.bg,
                       touchAction: 'none',
-                      transform: isDragging ? `translate(${dragState.offsetX}px, ${dragState.offsetY}px)` : undefined,
+                      // Resize: espandi altezza in live (no translate)
+                      height: isResizing ? `${Math.max(MIN_HEIGHT, cardHeight + dragState.offsetY)}px` : style.height,
+                      // Move: trasla la card col cursore
+                      transform: isDragging && !isResizing ? `translate(${dragState.offsetX}px, ${dragState.offsetY}px)` : undefined,
                       transition: isDragging ? 'none' : undefined,
                     }}
                     onClick={(e) => {
