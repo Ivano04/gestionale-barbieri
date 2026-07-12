@@ -19,6 +19,24 @@ const lastFullLoad = new Map<string, number>();
 const DEEP_SYNC_INTERVAL_MS = 15 * 60 * 1000;
 const DEEP_SYNC_DAYS = 7;
 
+/** Registra un fallimento di scrittura in sync_log.
+ *  Senza questo gli errori di insert/update passavano inosservati: il codice
+ *  non controllava `error` e la route inghiotte tutto con .catch(() => {}). */
+async function logSyncFailure(
+  supabase: ReturnType<typeof createAdminClient>,
+  salonId: string,
+  twId: string,
+  message: string,
+) {
+  await supabase.from('sync_log').insert({
+    salon_id: salonId,
+    direction: 'treatwell→us',
+    status: 'failed',
+    external_id: twId,
+    error_message: message,
+  });
+}
+
 /** Sincronizza l'email da Uala al nostro cliente, se mancante */
 async function syncClientEmail(
   supabase: ReturnType<typeof createAdminClient>,
@@ -127,9 +145,10 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
   if (polling.has(salonId)) return;
   polling.add(salonId);
 
-  const supabase = createAdminClient();
-
   try {
+    // NB: dentro il try — se lanciasse qui fuori, il `finally` non scatterebbe
+    // e il flag `polling` resterebbe alzato per sempre, bloccando ogni poll futuro.
+    const supabase = createAdminClient();
     // Il watermark va ancorato all'istante in cui LEGGIAMO da Uala, non a quello in cui
     // scriviamo: il poller impiega secondi a elaborare, e una modifica fatta su Treatwell
     // nel frattempo verrebbe altrimenti scavalcata dal watermark e persa per sempre.
@@ -298,9 +317,14 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
         // Realtime, il calendario ricarica, il GET rilancia un poll → loop infinito.
         if (!hasChanges(current, desired)) continue;
 
-        await supabase.from('appointments').update(desired).eq('id', current.id);
+        const { error } = await supabase.from('appointments').update(desired).eq('id', current.id);
+        if (error) {
+          console.error(`[treatwell] UPDATE fallita per ${twId}:`, error.message);
+          await logSyncFailure(supabase, salonId, twId, error.message);
+          continue;
+        }
       } else {
-        await supabase.from('appointments').insert({
+        const { error } = await supabase.from('appointments').insert({
           salon_id: salonId,
           client_id: clientId,
           stylist_id: stylist?.[0]?.id,
@@ -312,6 +336,11 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
           source: 'treatwell',
           treatwell_appointment_id: twId,
         });
+        if (error) {
+          console.error(`[treatwell] INSERT fallita per ${twId}:`, error.message);
+          await logSyncFailure(supabase, salonId, twId, error.message);
+          continue;
+        }
       }
 
       await supabase.from('sync_log').insert({
@@ -485,11 +514,15 @@ async function syncRange(
       // Il cliente NON viene ririsolto (vedi resolveClient): teniamo quello attuale.
       const desired = buildDesiredRow(tw, current, startTime, endTime, stylistId, serviceId, null);
       if (!hasChanges(current, desired)) continue;
-      await supabase.from('appointments').update(desired).eq('id', current.id);
+      const { error } = await supabase.from('appointments').update(desired).eq('id', current.id);
+      if (error) {
+        console.error(`[treatwell] UPDATE fallita per ${twId}:`, error.message);
+        await logSyncFailure(supabase, salonId, twId, error.message);
+      }
     } else {
       // Nuovo: solo qui paghiamo la risoluzione del cliente
       const clientId = await resolveClient(supabase, twClient, salonId, tw);
-      await supabase.from('appointments').insert({
+      const { error } = await supabase.from('appointments').insert({
         salon_id: salonId,
         client_id: clientId,
         stylist_id: stylistId,
@@ -501,6 +534,10 @@ async function syncRange(
         source: 'treatwell',
         treatwell_appointment_id: twId,
       });
+      if (error) {
+        console.error(`[treatwell] INSERT fallita per ${twId}:`, error.message);
+        await logSyncFailure(supabase, salonId, twId, error.message);
+      }
     }
   }
 }
