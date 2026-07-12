@@ -126,7 +126,7 @@ export async function pushToTreatwell(
   }
 }
 
-/** Aggiorna durata su Treatwell dopo modifica sul gestionale */
+/** Aggiorna appuntamento su Treatwell dopo modifica sul gestionale (spostamento o estensione) */
 export async function pushUpdateToTreatwell(
   treatwellAppointmentId: string,
   salonId: string,
@@ -148,7 +148,8 @@ export async function pushUpdateToTreatwell(
     const durationSec = data.startTime && data.endTime
       ? Math.round((new Date(data.endTime).getTime() - new Date(data.startTime).getTime()) / 1000)
       : undefined;
-    await tw.updateAppointment(Number(treatwellAppointmentId), { duration: durationSec });
+    const time = data.startTime ? toItalyTime(data.startTime) : undefined;
+    await tw.updateAppointment(Number(treatwellAppointmentId), { time, duration: durationSec });
     await supabase.from('sync_log').insert({
       salon_id: salonId,
       direction: 'us→treatwell',
