@@ -3,13 +3,21 @@ import { TreatwellClient } from './client';
 
 // Previene poll concorrenti che causano duplicati
 const polling = new Set<string>();
-// Throttle full load: max 1 ogni 30 minuti
-const lastFullLoad = new Map<string, number>();
 /** Watermark per salone, ancorato all'istante di LETTURA da Uala.
  *  In memoria: al riavvio si riparte dall'ultimo sync_log riuscito. */
 const lastSyncAt = new Map<string, number>();
 /** Sovrapposizione di sicurezza della finestra di sync (clock skew, poll persi). */
 const SYNC_OVERLAP_MS = 2 * 60 * 1000;
+
+// ── Riallineamento con Uala (l'unico canale che vede gli edit) ──
+/** Passata veloce sui giorni caldi: leggera, così un refresh la fa scattare. */
+const lastFastSync = new Map<string, number>();
+const FAST_SYNC_INTERVAL_MS = 20 * 1000;
+const FAST_SYNC_DAYS = 3;
+/** Passata profonda sull'intera finestra, per la coda dei giorni successivi. */
+const lastFullLoad = new Map<string, number>();
+const DEEP_SYNC_INTERVAL_MS = 15 * 60 * 1000;
+const DEEP_SYNC_DAYS = 7;
 
 /** Sincronizza l'email da Uala al nostro cliente, se mancante */
 async function syncClientEmail(
@@ -316,15 +324,26 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
 
     // Watermark = istante di LETTURA, non di scrittura (vedi commento sopra)
     lastSyncAt.set(salonId, readAt);
-    // ── FULL LOAD: recupera appuntamenti di oggi e prossimi giorni ──
-    // synch.json da solo non basta: appuntamenti creati giorni fa hanno
-    // updated_at vecchio e non compaiono nel delta.
-    // Throttlato: max 1 volta ogni 30 minuti
+
+    // ── RIALLINEAMENTO CON UALA ──
+    // synch.json (sopra) riporta di fatto solo creazioni e cancellazioni: le
+    // modifiche in-place (spostamenti, cambi durata) NON ci passano. L'unico modo
+    // di vederle è rileggere gli appuntamenti da Uala e confrontarli.
     const now = Date.now();
-    const last = lastFullLoad.get(salonId) || 0;
-    if (now - last > 30 * 60 * 1000) {
+
+    // Passata veloce sui giorni "caldi": leggera (poche query batch), gira quasi
+    // a ogni refresh, così uno spostamento su Treatwell compare entro pochi secondi.
+    const lastFast = lastFastSync.get(salonId) || 0;
+    if (now - lastFast > FAST_SYNC_INTERVAL_MS) {
+      lastFastSync.set(salonId, now);
+      await syncRange(salonId, twClient, supabase, FAST_SYNC_DAYS);
+    }
+
+    // Passata profonda sull'intera finestra, per la coda dei giorni successivi.
+    const lastDeep = lastFullLoad.get(salonId) || 0;
+    if (now - lastDeep > DEEP_SYNC_INTERVAL_MS) {
       lastFullLoad.set(salonId, now);
-      await fullLoadRecent(salonId, twClient, supabase);
+      await syncRange(salonId, twClient, supabase, DEEP_SYNC_DAYS);
     }
   } catch (e: any) {
     console.error('Poll error for salon', salonId, e);
@@ -333,132 +352,155 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
   }
 }
 
-/** Full load degli appuntamenti dei prossimi 7 giorni.
- *  Importa solo quelli che non abbiamo già (per treatwell_appointment_id). */
-async function fullLoadRecent(salonId: string, twClient: TreatwellClient, supabase: ReturnType<typeof createAdminClient>) {
+/** Risolve (o crea) il cliente locale a partire da un appuntamento Uala.
+ *  Costoso: fa query e, per i nuovi, una INSERT. Va chiamato SOLO quando
+ *  stiamo inserendo un appuntamento nuovo — mai per quelli già esistenti,
+ *  altrimenti a ogni passata rischiamo di duplicare clienti senza telefono
+ *  (phone NULL non è coperto dall'indice univoco) e di far cambiare
+ *  client_id all'infinito, generando riscritture e refresh a catena. */
+async function resolveClient(
+  supabase: ReturnType<typeof createAdminClient>,
+  twClient: TreatwellClient,
+  salonId: string,
+  tw: any,
+): Promise<string | null> {
+  let clientId: string | null = null;
+  const rawPhone = tw.customer_phone_number || '';
+  const phone = rawPhone ? normalizePhone(rawPhone) : '';
+  const name = (tw.customer_full_name || '').trim();
+  const twCustomerId = tw.customer_id ? String(tw.customer_id) : '';
+
+  if (phone) {
+    const { data: client } = await supabase
+      .from('clients')
+      .select('id')
+      .eq('salon_id', salonId)
+      .eq('phone', phone)
+      .limit(1);
+    if (client?.length) {
+      clientId = client[0].id;
+    } else {
+      const [firstName, ...lastParts] = name.split(' ');
+      const { data: newClient } = await supabase
+        .from('clients')
+        .insert({ salon_id: salonId, first_name: firstName || 'Cliente', last_name: lastParts.join(' ') || '', phone, treatwell_client_id: twCustomerId })
+        .select('id').single();
+      if (newClient) clientId = newClient.id;
+    }
+  } else if (twCustomerId) {
+    const { data: client } = await supabase
+      .from('clients')
+      .select('id')
+      .eq('salon_id', salonId)
+      .eq('treatwell_client_id', twCustomerId)
+      .limit(1);
+    if (client?.length) clientId = client[0].id;
+  }
+
+  if (!clientId && name && name !== 'Cliente') {
+    const [firstName, ...lastParts] = name.split(' ');
+    const { data: newClient } = await supabase
+      .from('clients')
+      .insert({ salon_id: salonId, first_name: firstName || name, last_name: lastParts.join(' ') || '', phone: null, treatwell_client_id: twCustomerId })
+      .select('id').single();
+    if (newClient) clientId = newClient.id;
+  }
+
+  if (clientId && twCustomerId) {
+    syncClientEmail(supabase, twClient, clientId, twCustomerId);
+  }
+
+  return clientId;
+}
+
+/**
+ * Riallinea gli appuntamenti dei prossimi `days` giorni a quanto risulta su Uala.
+ *
+ * È l'UNICO canale che vede le modifiche in-place (spostamenti, cambi durata):
+ * synch.json riporta di fatto solo creazioni e cancellazioni, non gli edit.
+ *
+ * Ottimizzato per poter girare di frequente: invece di ~4 query per appuntamento
+ * (N+1, ~1000 query per passata) fa una manciata di query batch e confronta in
+ * memoria. Scrive solo dove c'è una differenza reale.
+ */
+async function syncRange(
+  salonId: string,
+  twClient: TreatwellClient,
+  supabase: ReturnType<typeof createAdminClient>,
+  days: number,
+) {
+  // 1. Leggi da Uala i giorni richiesti
   const today = new Date();
-  for (let d = 0; d < 7; d++) {
+  const twAppts: any[] = [];
+  for (let d = 0; d < days; d++) {
     const date = new Date(today);
     date.setDate(date.getDate() + d);
     const dateStr = date.toISOString().split('T')[0];
-
-    let appointments: any[];
     try {
-      appointments = await twClient.getAppointments(dateStr);
+      twAppts.push(...(await twClient.getAppointments(dateStr)));
     } catch {
       continue; // giorno senza dati o errore API
     }
+  }
+  if (!twAppts.length) return;
 
-    for (const tw of appointments) {
-      const twId = String(tw.id);
-      // Salta cancellati/eliminati/scartati
-      if (isCancelledState(tw.state)) continue;
+  const twIds = twAppts.map(a => String(a.id));
 
-      // Cerca l'appuntamento esistente: se c'è lo aggiorniamo (auto-riparazione
-      // di eventuali disallineamenti di orario/durata), altrimenti lo creiamo.
-      const { data: existing } = await supabase
-        .from('appointments')
-        .select('id, start_time, end_time, buffer_end_time, stylist_id, service_id, client_id, status')
-        .eq('treatwell_appointment_id', twId)
-        .eq('salon_id', salonId)
-        .limit(1);
+  // 2. Batch: i nostri appuntamenti corrispondenti, in una sola query
+  const { data: ourRows } = await supabase
+    .from('appointments')
+    .select('id, treatwell_appointment_id, start_time, end_time, buffer_end_time, stylist_id, service_id, client_id, status')
+    .eq('salon_id', salonId)
+    .in('treatwell_appointment_id', twIds);
+  const ourMap = new Map((ourRows || []).map((r: any) => [r.treatwell_appointment_id, r]));
 
-      // Risolvi cliente
-      let clientId: string | null = null;
-      const rawPhone = tw.customer_phone_number || '';
-      const phone = rawPhone ? normalizePhone(rawPhone) : '';
-      const name = (tw.customer_full_name || '').trim();
-      const twCustomerId = tw.customer_id ? String(tw.customer_id) : '';
+  // 3. Batch: mappe di lookup per stylist e servizi (2 query, non 2 per appuntamento)
+  const [{ data: staff }, { data: svcs }] = await Promise.all([
+    supabase.from('users').select('id, uala_staff_id').eq('salon_id', salonId).not('uala_staff_id', 'is', null),
+    supabase.from('services').select('id, uala_treatment_id').eq('salon_id', salonId).not('uala_treatment_id', 'is', null),
+  ]);
+  const staffMap = new Map((staff || []).map((s: any) => [s.uala_staff_id, s.id]));
+  const svcMap = new Map((svcs || []).map((s: any) => [s.uala_treatment_id, s.id]));
 
-      if (phone) {
-        const { data: client } = await supabase
-          .from('clients')
-          .select('id')
-          .eq('salon_id', salonId)
-          .eq('phone', phone)
-          .limit(1);
-        if (client?.length) {
-          clientId = client[0].id;
-        } else {
-          const [firstName, ...lastParts] = name.split(' ');
-          const { data: newClient } = await supabase
-            .from('clients')
-            .insert({ salon_id: salonId, first_name: firstName || 'Cliente', last_name: lastParts.join(' ') || '', phone, treatwell_client_id: twCustomerId })
-            .select('id').single();
-          if (newClient) clientId = newClient.id;
-        }
-      } else if (twCustomerId) {
-        const { data: client } = await supabase
-          .from('clients')
-          .select('id')
-          .eq('salon_id', salonId)
-          .eq('treatwell_client_id', twCustomerId)
-          .limit(1);
-        if (client?.length) clientId = client[0].id;
+  for (const tw of twAppts) {
+    const twId = String(tw.id);
+    const current = ourMap.get(twId);
+
+    // ── Cancellati su Uala ──
+    if (isCancelledState(tw.state)) {
+      if (current && current.status !== 'cancelled') {
+        await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', current.id);
       }
+      continue;
+    }
 
-      if (!clientId && name && name !== 'Cliente') {
-        const [firstName, ...lastParts] = name.split(' ');
-        const { data: newClient } = await supabase
-          .from('clients')
-          .insert({ salon_id: salonId, first_name: firstName || name, last_name: lastParts.join(' ') || '', phone: null, treatwell_client_id: twCustomerId })
-          .select('id').single();
-        if (newClient) clientId = newClient.id;
-      }
+    const duration = extractDuration(tw);
+    const startTime = tw.time;
+    const endTime = new Date(new Date(startTime).getTime() + duration * 1000).toISOString();
+    const stylistId = staffMap.get(tw.staff_member_id);
+    const serviceId = svcMap.get(tw.data?.staff_member_treatment?.venue_treatment_id) ?? null;
 
-      // Sincronizza email cliente da Uala
-      if (clientId && twCustomerId) {
-        syncClientEmail(supabase, twClient, clientId, twCustomerId);
-      }
-
-      // Risolvi stylist
-      const { data: stylist } = await supabase
-        .from('users')
-        .select('id')
-        .eq('uala_staff_id', tw.staff_member_id)
-        .eq('salon_id', salonId)
-        .limit(1);
-
-      // Risolvi servizio
-      const venueTreatmentId = tw.data?.staff_member_treatment?.venue_treatment_id;
-      let serviceId: string | null = null;
-      if (venueTreatmentId) {
-        const { data: service } = await supabase
-          .from('services')
-          .select('id')
-          .eq('uala_treatment_id', venueTreatmentId)
-          .eq('salon_id', salonId)
-          .limit(1);
-        if (service?.length) serviceId = service[0].id;
-      }
-
-      // Durata
-      const duration = extractDuration(tw);
-      const startTime = tw.time;
-      const endTime = new Date(new Date(startTime).getTime() + duration * 1000).toISOString();
-
-      if (existing?.length) {
-        // Auto-riparazione: riallinea orario/durata/stylist a quanto c'è su Uala,
-        // ma solo se differisce davvero (altrimenti eventi Realtime a vuoto).
-        const current = existing[0];
-        const desired = buildDesiredRow(tw, current, startTime, endTime, stylist?.[0]?.id, serviceId, clientId);
-        if (!hasChanges(current, desired)) continue;
-
-        await supabase.from('appointments').update(desired).eq('id', current.id);
-      } else {
-        await supabase.from('appointments').insert({
-          salon_id: salonId,
-          client_id: clientId,
-          stylist_id: stylist?.[0]?.id,
-          service_id: serviceId,
-          start_time: startTime,
-          end_time: endTime,
-          buffer_end_time: endTime,
-          status: 'confirmed',
-          source: 'treatwell',
-          treatwell_appointment_id: twId,
-        });
-      }
+    if (current) {
+      // Esistente: riallinea orario/durata/stylist/servizio.
+      // Il cliente NON viene ririsolto (vedi resolveClient): teniamo quello attuale.
+      const desired = buildDesiredRow(tw, current, startTime, endTime, stylistId, serviceId, null);
+      if (!hasChanges(current, desired)) continue;
+      await supabase.from('appointments').update(desired).eq('id', current.id);
+    } else {
+      // Nuovo: solo qui paghiamo la risoluzione del cliente
+      const clientId = await resolveClient(supabase, twClient, salonId, tw);
+      await supabase.from('appointments').insert({
+        salon_id: salonId,
+        client_id: clientId,
+        stylist_id: stylistId,
+        service_id: serviceId,
+        start_time: startTime,
+        end_time: endTime,
+        buffer_end_time: endTime,
+        status: 'confirmed',
+        source: 'treatwell',
+        treatwell_appointment_id: twId,
+      });
     }
   }
 }
