@@ -111,6 +111,19 @@ export function useCalendarData(salonId: string, date: Date | null) {
   // Load on mount and when dependencies change
   useEffect(() => { loadData(); }, [loadData]);
 
+  // Supabase Realtime: aggiornamento live quando il DB cambia
+  useEffect(() => {
+    if (!salonId) return;
+    const channel = supabase
+      .channel('calendar-live')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'appointments', filter: `salon_id=eq.${salonId}` },
+        () => loadData()
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [salonId, supabase]);
+
   // Refresh on window focus OR page becoming visible
   // (Next.js Router Cache keeps pages alive in background —
   //  without this, navigating back shows stale data)
