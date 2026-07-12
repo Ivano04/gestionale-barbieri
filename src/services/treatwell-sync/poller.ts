@@ -5,7 +5,7 @@ type DeltaCategory = 'new' | 'updated' | 'canceled';
 
 // Previene poll concorrenti che causano duplicati
 const polling = new Set<string>();
-// Throttle full load: max 1 ogni 2 minuti
+// Throttle full load: max 1 ogni 30 minuti
 const lastFullLoad = new Map<string, number>();
 
 /** Sincronizza l'email da Uala al nostro cliente, se mancante */
@@ -269,7 +269,7 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
     // Throttlato: max 1 volta ogni 30 minuti
     const now = Date.now();
     const last = lastFullLoad.get(salonId) || 0;
-    if (now - last > 2 * 60 * 1000) {
+    if (now - last > 30 * 60 * 1000) {
       lastFullLoad.set(salonId, now);
       await fullLoadRecent(salonId, twClient, supabase);
     }
