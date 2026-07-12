@@ -145,7 +145,7 @@ export class TreatwellClient {
   async updateAppointment(appointmentId: number, params: { time?: string; duration?: number }): Promise<void> {
     const body: Record<string, any> = {};
     if (params.time) body.time = params.time;
-    if (params.duration) body.duration = params.duration;
+    if (params.duration) body.custom_duration = params.duration;
     const res = await this.fetch(`/venues/${this.venueId}/appointments/${appointmentId}.json`, {
       method: 'PUT',
       body: JSON.stringify(body),
