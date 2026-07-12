@@ -1,8 +1,13 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { TreatwellClient } from './client';
 
-// Previene poll concorrenti che causano duplicati
-const polling = new Set<string>();
+/** Lock anti-concorrenza per salone: valore = istante di acquisizione.
+ *  NON è un Set: se un poll muore o si pianta senza rilasciare il lock, ogni
+ *  poll successivo uscirebbe subito e il sync Treatwell resterebbe spento fino
+ *  al riavvio del processo. Con il timestamp possiamo scavalcare un lock stantio. */
+const polling = new Map<string, number>();
+/** Oltre questa soglia un lock è considerato orfano e viene scavalcato. */
+const POLL_LOCK_TTL_MS = 3 * 60 * 1000;
 /** Watermark per salone, ancorato all'istante di LETTURA da Uala.
  *  In memoria: al riavvio si riparte dall'ultimo sync_log riuscito. */
 const lastSyncAt = new Map<string, number>();
@@ -141,9 +146,15 @@ function hasChanges(current: any, desired: ReturnType<typeof buildDesiredRow>): 
 }
 
 export async function pollTreatwell(salonId: string, twClient: TreatwellClient) {
-  // Anti-concorrenza: se un poll è già in corso per questo salone, esci
-  if (polling.has(salonId)) return;
-  polling.add(salonId);
+  // Anti-concorrenza: se un poll è già in corso per questo salone, esci.
+  // Ma se il lock è più vecchio del TTL, il poll che lo teneva è morto o
+  // impiantato: lo scavalchiamo, altrimenti il sync resterebbe fermo per sempre.
+  const heldSince = polling.get(salonId);
+  if (heldSince !== undefined && Date.now() - heldSince < POLL_LOCK_TTL_MS) return;
+  if (heldSince !== undefined) {
+    console.warn(`[treatwell] lock orfano da ${Math.round((Date.now() - heldSince) / 1000)}s, lo scavalco`);
+  }
+  polling.set(salonId, Date.now());
 
   try {
     // NB: dentro il try — se lanciasse qui fuori, il `finally` non scatterebbe
