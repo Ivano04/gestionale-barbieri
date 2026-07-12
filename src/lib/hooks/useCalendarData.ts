@@ -118,9 +118,9 @@ export function useCalendarData(salonId: string, date: Date | null) {
       .channel('calendar-live')
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'appointments' },
-        (payload) => { console.log('[realtime] event:', payload.eventType); loadData(); }
+        () => { loadData(); }
       )
-      .subscribe((status) => { console.log('[realtime] sub status:', status); });
+      .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [salonId, supabase]);
 

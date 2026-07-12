@@ -64,30 +64,6 @@ function extractDuration(tw: any): number {
   return 1800; // fallback 30 min
 }
 
-/** Log diagnostico TEMPORANEO: stampa la forma del payload Uala per capire
- *  dove risiedono davvero custom_duration e i timestamp. Rimuovere dopo la diagnosi. */
-function logPayloadShape(tw: any, context: string) {
-  if (process.env.TREATWELL_DEBUG !== '1') return;
-  console.log(`[tw-debug:${context}] id=${tw?.id}`, JSON.stringify({
-    state: tw?.state,
-    time: tw?.time,
-    created_at: tw?.created_at,
-    updated_at: tw?.updated_at,
-    custom_duration: tw?.custom_duration,
-    duration: tw?.duration,
-    data_keys: tw?.data ? Object.keys(tw.data) : null,
-    data_custom_duration: tw?.data?.custom_duration,
-    data_duration: tw?.data?.duration,
-    smt: tw?.data?.staff_member_treatment
-      ? {
-          duration: tw.data.staff_member_treatment.duration,
-          total_duration: tw.data.staff_member_treatment.total_duration,
-        }
-      : null,
-    resolved_duration: extractDuration(tw),
-  }));
-}
-
 /** Riga che l'appuntamento DOVREBBE avere secondo Uala.
  *  Preserva il buffer (delta fra buffer_end_time ed end_time) impostato da noi. */
 function buildDesiredRow(
@@ -172,13 +148,9 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
 
     const data = await twClient.getSync(updatedSince);
     const appointments: any[] = data?.data?.appointments || [];
-    if (process.env.TREATWELL_DEBUG === '1') {
-      console.log(`[tw-debug:window] since=${updatedSince} → ${appointments.length} appuntamenti`);
-    }
 
     for (const tw of appointments) {
       const twId = String(tw.id);
-      logPayloadShape(tw, 'sync');
 
       // ── CANCELLED ──
       if (isCancelledState(tw.state)) {
@@ -379,7 +351,6 @@ async function fullLoadRecent(salonId: string, twClient: TreatwellClient, supaba
 
     for (const tw of appointments) {
       const twId = String(tw.id);
-      logPayloadShape(tw, 'fullload');
       // Salta cancellati/eliminati/scartati
       if (isCancelledState(tw.state)) continue;
 
