@@ -195,7 +195,7 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
       }
 
       // ── End time from duration ──
-      const duration = tw.data?.staff_member_treatment?.total_duration || 1800;
+      const duration = tw.data?.staff_member_treatment?.duration || tw.data?.staff_member_treatment?.total_duration || 1800;
       const startTime = tw.time;
       const endTime = new Date(
         new Date(startTime).getTime() + duration * 1000,
@@ -380,7 +380,7 @@ async function fullLoadRecent(salonId: string, twClient: TreatwellClient, supaba
       }
 
       // Durata
-      const duration = tw.data?.staff_member_treatment?.total_duration || 1800;
+      const duration = tw.data?.staff_member_treatment?.duration || tw.data?.staff_member_treatment?.total_duration || 1800;
       const startTime = tw.time;
       const endTime = new Date(new Date(startTime).getTime() + duration * 1000).toISOString();
 
