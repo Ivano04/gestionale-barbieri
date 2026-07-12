@@ -49,6 +49,26 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         return Response.json({ error: 'Questo operatore non può svolgere il servizio selezionato' }, { status: 400 });
       }
     }
+
+    // Se lo stylist cambia, verifica che lavori nel giorno dell'appuntamento
+    const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    const apptDate = newStartTime.split('T')[0];
+    const dayName = dayNames[new Date(apptDate + 'T12:00:00').getDay()];
+
+    const { data: stylistHours } = await supabase
+      .from('users')
+      .select('working_hours')
+      .eq('id', newStylistId)
+      .single();
+
+    if (stylistHours) {
+      let wh = (stylistHours.working_hours || {}) as Record<string, any>;
+      if (typeof wh === 'string') try { wh = JSON.parse(wh); } catch {}
+      // Se lo stylist ha orari personalizzati e il giorno è esplicitamente null → giorno libero
+      if (Object.keys(wh).length > 0 && wh?.[dayName] === null) {
+        return Response.json({ error: 'Questo operatore non lavora in questa data' }, { status: 400 });
+      }
+    }
   }
 
   // Recalculate end times if service changed or start moved (ma non se end_time è già passato)
