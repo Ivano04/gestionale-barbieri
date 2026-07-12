@@ -117,10 +117,10 @@ export function useCalendarData(salonId: string, date: Date | null) {
     const channel = supabase
       .channel('calendar-live')
       .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'appointments', filter: `salon_id=eq.${salonId}` },
-        () => loadData()
+        { event: '*', schema: 'public', table: 'appointments' },
+        (payload) => { console.log('[realtime] event:', payload.eventType); loadData(); }
       )
-      .subscribe();
+      .subscribe((status) => { console.log('[realtime] sub status:', status); });
     return () => { supabase.removeChannel(channel); };
   }, [salonId, supabase]);
 
