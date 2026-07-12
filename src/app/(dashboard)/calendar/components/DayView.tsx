@@ -451,8 +451,8 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
                 const cardHeight = parseFloat(style?.height as string) || MIN_HEIGHT;
                 return (
                   <div key={app.id}
-                    className={`absolute rounded-lg px-1.5 py-0.5 cursor-pointer transition-shadow z-10 border-l-[3px] text-xs overflow-hidden flex flex-col
-                      ${isDragging ? 'opacity-70 shadow-xl z-30 ring-2 ring-blue-400 scale-[1.02]' : 'hover:shadow-md'}
+                    className={`absolute rounded-lg px-1.5 py-0.5 cursor-pointer z-10 border-l-[3px] text-xs overflow-hidden flex flex-col
+                      ${isDragging ? 'opacity-70 shadow-xl z-30 ring-2 ring-blue-400 scale-[1.02]' : 'hover:shadow-md transition-shadow'}
                       ${isConflicting ? 'ring-2 ring-red-400 border-red-500' : ''}`}
                     style={{
                       ...style,
@@ -462,6 +462,8 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
                       borderLeftColor: cfg.border,
                       backgroundColor: cfg.bg,
                       touchAction: 'none',
+                      transform: isDragging ? `translateY(${dragState.offsetY}px)` : undefined,
+                      transition: isDragging ? 'none' : undefined,
                     }}
                     onClick={(e) => {
                       if (dragState) return;
