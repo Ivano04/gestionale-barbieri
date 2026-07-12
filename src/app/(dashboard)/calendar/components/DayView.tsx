@@ -78,12 +78,27 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
   const [conflictAppointments, setConflictAppointments] = useState<Set<string>>(new Set());
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Compute the earliest open and latest close across all stylists' shifts
+  const activeApps = appointments.filter(a => a.status !== 'cancelled');
+
+  // Compute the earliest open and latest close across all stylists' shifts,
+  // including appointments on off-duty stylists (manual admin assignments)
   let globalOpen = 24 * 60;
   let globalClose = 0;
   stylists.forEach(st => {
     const shifts = getStylistShifts(st, salonShifts, date);
-    if (!shifts) return;
+    if (!shifts) {
+      // Off-duty stylist: expand bounds to include their appointments
+      for (const a of activeApps) {
+        if (a.stylist_id !== st.id) continue;
+        const s = parseISO(a.start_time);
+        const e = parseISO(a.end_time);
+        const sm = s.getHours() * 60 + s.getMinutes();
+        const em = e.getHours() * 60 + e.getMinutes();
+        if (sm < globalOpen) globalOpen = sm;
+        if (em > globalClose) globalClose = em;
+      }
+      return;
+    }
     const bounds = shiftBounds(shifts);
     const open = timeToMinutes(bounds.open);
     const close = timeToMinutes(bounds.close);
@@ -223,8 +238,6 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
     setDragState(null);
   }
 
-  const activeApps = appointments.filter(a => a.status !== 'cancelled');
-
   // ── Layout collision-aware (effetto "stretch" come Treatwell) ──
   /** Assegna colonne agli appuntamenti sovrapposti di uno stylist.
    *  Solo gli appuntamenti che effettivamente si sovrappongono condividono colonne. */
@@ -341,7 +354,82 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
         {/* Stylist columns */}
         {stylists.map((stylist, si) => {
           const stShifts = getStylistShifts(stylist, salonShifts, date);
-          if (stShifts === null || stShifts.length === 0) {
+          const stApps = activeApps.filter(a => a.stylist_id === stylist.id);
+          const stBlocks = timeBlocks.filter(b => !b.stylist_id || b.stylist_id === stylist.id);
+          const isOff = stShifts === null || stShifts.length === 0;
+
+          // Renderizza le card appuntamento (usato sia per colonne normali che off-duty)
+          function renderAppointmentCards() {
+            return stApps.map(app => {
+              const style = getAppointmentStyle(app);
+              if (!style) return null;
+              const cfg = sourceConfig[app.source] || sourceConfig.manual;
+              const isDragging = dragState?.appointmentId === app.id;
+              const isConflicting = conflictAppointments.has(app.id);
+              const hasBuffer = app.buffer_end_time && app.buffer_end_time !== app.end_time;
+
+              const cols = columnMap.get(stylist.id)?.get(app.id);
+              const colWidth = cols && cols.total > 1 ? `${100 / cols.total}%` : undefined;
+              const colLeft = cols && cols.total > 1 ? `${(cols.col / cols.total) * 100}%` : undefined;
+
+              const cardHeight = parseFloat(style?.height as string) || MIN_HEIGHT;
+              const isResizing = isDragging && dragState.mode === 'resize';
+              return (
+                <div key={app.id}
+                  className={`absolute rounded-lg px-1.5 py-0.5 cursor-pointer z-10 border-l-[3px] text-xs overflow-hidden flex flex-col
+                    ${isDragging ? 'opacity-70 shadow-xl z-30 ring-2 ring-blue-400 scale-[1.02]' : 'hover:shadow-md transition-shadow'}
+                    ${isConflicting ? 'ring-2 ring-red-400 border-red-500' : ''}`}
+                  style={{
+                    ...style,
+                    left: colLeft || '2px',
+                    width: colWidth ? `calc(${colWidth} - 4px)` : undefined,
+                    right: colLeft ? undefined : '2px',
+                    borderLeftColor: cfg.border,
+                    backgroundColor: cfg.bg,
+                    touchAction: 'none',
+                    height: isResizing ? `${Math.max(MIN_HEIGHT, cardHeight + dragState.offsetY)}px` : style.height,
+                    transform: isDragging && !isResizing ? `translate(${dragState.offsetX}px, ${dragState.offsetY}px)` : undefined,
+                    transition: isDragging ? 'none' : undefined,
+                  }}
+                  onClick={(e) => {
+                    if (dragState) return;
+                    e.stopPropagation();
+                    onAppointmentClick(app);
+                  }}
+                  onPointerDown={(e) => handlePointerDownCard(e, app, 'move')}>
+                  <div className="flex items-center justify-between gap-1 leading-tight">
+                    <span className="font-medium truncate text-[10px]">
+                      {app.client?.first_name} {app.client?.last_name || ''}
+                    </span>
+                    <span className="text-[9px] text-gray-400 flex-shrink-0">
+                      {format(parseISO(app.start_time), 'HH:mm')}
+                    </span>
+                  </div>
+                  <div className="text-gray-500 truncate text-[9px] leading-tight">{app.service?.name}</div>
+                  {app.service?.price_cents != null && cardHeight >= 38 && (
+                    <div className="text-[9px] font-medium text-green-600 leading-tight">€{(app.service.price_cents / 100).toFixed(0)}</div>
+                  )}
+
+                  {hasBuffer && (
+                    <div className="absolute left-0 right-0 bottom-0 h-1.5 bg-gray-300/50 rounded-b-md border-t border-dashed border-gray-400"
+                      title="Tempo buffer (pulizia)" />
+                  )}
+
+                  {isConflicting && (
+                    <div className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-white text-[8px] font-bold">!</div>
+                  )}
+
+                  <div
+                    className="absolute left-0 right-0 bottom-0 h-2 cursor-s-resize hover:bg-blue-200/50 rounded-b-md"
+                    onPointerDown={(e) => handlePointerDownCard(e, app, 'resize')}
+                    title="Trascina per estendere" />
+                </div>
+              );
+            });
+          }
+
+          // Off-duty senza appuntamenti → semplice "giorno libero"
+          if (isOff && stApps.length === 0) {
             return (
               <div key={stylist.id} className="flex-1 border-l border-gray-100 relative" style={{ height: `${totalHeight}px` }}>
                 <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-400">Giorno libero</div>
@@ -349,7 +437,19 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
             );
           }
 
-          // Compute gaps between shifts (non-working time)
+          // Off-duty con appuntamenti manuali → card visibili su sfondo grigio
+          if (isOff) {
+            return (
+              <div key={stylist.id} className="flex-1 border-l border-gray-100 relative bg-gray-100/50" style={{ height: `${totalHeight}px` }}>
+                <div className="absolute top-1.5 left-0 right-0 text-center z-0 pointer-events-none">
+                  <span className="text-[10px] text-gray-400 bg-white/70 px-2 py-0.5 rounded-full">Giorno libero</span>
+                </div>
+                {renderAppointmentCards()}
+              </div>
+            );
+          }
+
+          // ── Stylist in servizio: colonna normale con griglia, fasce, blocchi ──
           const gaps: { top: number; height: number; label?: string }[] = [];
           const stOpen = timeToMinutes(stShifts[0].open);
           const stClose = timeToMinutes(stShifts[stShifts.length - 1].close);
@@ -374,10 +474,6 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
           if (stClose < globalClose) {
             gaps.push({ top: minuteToY(stClose), height: totalHeight - minuteToY(stClose) });
           }
-
-          // Get appointments for this stylist
-          const stApps = activeApps.filter(a => a.stylist_id === stylist.id);
-          const stBlocks = timeBlocks.filter(b => !b.stylist_id || b.stylist_id === stylist.id);
 
           /** Check if a minute value falls within any working shift */
           function isInShift(minute: number): boolean {
@@ -441,78 +537,7 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
               })}
 
               {/* Appointments */}
-              {stApps.map(app => {
-                const style = getAppointmentStyle(app);
-                if (!style) return null;
-                const cfg = sourceConfig[app.source] || sourceConfig.manual;
-                const isDragging = dragState?.appointmentId === app.id;
-                const isConflicting = conflictAppointments.has(app.id);
-                const hasBuffer = app.buffer_end_time && app.buffer_end_time !== app.end_time;
-
-                // Layout collision-aware: colonne per appuntamenti sovrapposti
-                const cols = columnMap.get(stylist.id)?.get(app.id);
-                const colWidth = cols && cols.total > 1 ? `${100 / cols.total}%` : undefined;
-                const colLeft = cols && cols.total > 1 ? `${(cols.col / cols.total) * 100}%` : undefined;
-
-                const cardHeight = parseFloat(style?.height as string) || MIN_HEIGHT;
-                const isResizing = isDragging && dragState.mode === 'resize';
-                return (
-                  <div key={app.id}
-                    className={`absolute rounded-lg px-1.5 py-0.5 cursor-pointer z-10 border-l-[3px] text-xs overflow-hidden flex flex-col
-                      ${isDragging ? 'opacity-70 shadow-xl z-30 ring-2 ring-blue-400 scale-[1.02]' : 'hover:shadow-md transition-shadow'}
-                      ${isConflicting ? 'ring-2 ring-red-400 border-red-500' : ''}`}
-                    style={{
-                      ...style,
-                      left: colLeft || '2px',
-                      width: colWidth ? `calc(${colWidth} - 4px)` : undefined,
-                      right: colLeft ? undefined : '2px',
-                      borderLeftColor: cfg.border,
-                      backgroundColor: cfg.bg,
-                      touchAction: 'none',
-                      // Resize: espandi altezza in live (no translate)
-                      height: isResizing ? `${Math.max(MIN_HEIGHT, cardHeight + dragState.offsetY)}px` : style.height,
-                      // Move: trasla la card col cursore
-                      transform: isDragging && !isResizing ? `translate(${dragState.offsetX}px, ${dragState.offsetY}px)` : undefined,
-                      transition: isDragging ? 'none' : undefined,
-                    }}
-                    onClick={(e) => {
-                      if (dragState) return;
-                      e.stopPropagation();
-                      onAppointmentClick(app);
-                    }}
-                    onPointerDown={(e) => handlePointerDownCard(e, app, 'move')}>
-                    <div className="flex items-center justify-between gap-1 leading-tight">
-                      <span className="font-medium truncate text-[10px]">
-                        {app.client?.first_name} {app.client?.last_name || ''}
-                      </span>
-                      <span className="text-[9px] text-gray-400 flex-shrink-0">
-                        {format(parseISO(app.start_time), 'HH:mm')}
-                      </span>
-                    </div>
-                    <div className="text-gray-500 truncate text-[9px] leading-tight">{app.service?.name}</div>
-                    {app.service?.price_cents != null && cardHeight >= 38 && (
-                      <div className="text-[9px] font-medium text-green-600 leading-tight">€{(app.service.price_cents / 100).toFixed(0)}</div>
-                    )}
-
-                    {/* Buffer indicator */}
-                    {hasBuffer && (
-                      <div className="absolute left-0 right-0 bottom-0 h-1.5 bg-gray-300/50 rounded-b-md border-t border-dashed border-gray-400"
-                        title="Tempo buffer (pulizia)" />
-                    )}
-
-                    {/* Conflict indicator */}
-                    {isConflicting && (
-                      <div className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-white text-[8px] font-bold">!</div>
-                    )}
-
-                    {/* Resize handle */}
-                    <div
-                      className="absolute left-0 right-0 bottom-0 h-2 cursor-s-resize hover:bg-blue-200/50 rounded-b-md"
-                      onPointerDown={(e) => handlePointerDownCard(e, app, 'resize')}
-                      title="Trascina per estendere" />
-                  </div>
-                );
-              })}
+              {renderAppointmentCards()}
 
               {/* Empty slot click area — only within working shifts */}
               <div className="absolute inset-0 z-0"
