@@ -194,8 +194,8 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
         if (service?.length) serviceId = service[0].id;
       }
 
-      // ── End time from duration ──
-      const duration = tw.custom_duration || tw.data?.staff_member_treatment?.duration || tw.data?.staff_member_treatment?.total_duration || 1800;
+      // ── End time from duration: controlla custom_duration sia a livello top che nested in data ──
+      const duration = tw.custom_duration || tw.data?.custom_duration || tw.data?.staff_member_treatment?.duration || tw.data?.staff_member_treatment?.total_duration || 1800;
       const startTime = tw.time;
       const endTime = new Date(
         new Date(startTime).getTime() + duration * 1000,
@@ -379,8 +379,8 @@ async function fullLoadRecent(salonId: string, twClient: TreatwellClient, supaba
         if (service?.length) serviceId = service[0].id;
       }
 
-      // Durata
-      const duration = tw.custom_duration || tw.data?.staff_member_treatment?.duration || tw.data?.staff_member_treatment?.total_duration || 1800;
+      // Durata (custom_duration può essere top-level o nested in data)
+      const duration = tw.custom_duration || tw.data?.custom_duration || tw.data?.staff_member_treatment?.duration || tw.data?.staff_member_treatment?.total_duration || 1800;
       const startTime = tw.time;
       const endTime = new Date(new Date(startTime).getTime() + duration * 1000).toISOString();
 
