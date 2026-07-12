@@ -5,6 +5,10 @@ import { TreatwellClient } from './client';
 const polling = new Set<string>();
 // Throttle full load: max 1 ogni 30 minuti
 const lastFullLoad = new Map<string, number>();
+/** Margine di sovrapposizione della finestra di sync incrementale.
+ *  Protegge dalle modifiche fatte su Treatwell mentre il poller sta elaborando
+ *  (il watermark è l'istante di scrittura, non quello di lettura). */
+const SYNC_OVERLAP_MS = 15 * 60 * 1000;
 
 /** Sincronizza l'email da Uala al nostro cliente, se mancante */
 async function syncClientEmail(
@@ -42,15 +46,13 @@ function isCancelledState(state: unknown): boolean {
 }
 
 /** Estrae la durata (in secondi) da un appuntamento Uala.
- *  custom_duration ha la precedenza (è la durata modificata manualmente su Treatwell)
- *  e può trovarsi a livello top oppure annidato in `data`. */
+ *  Forma del payload verificata sull'API reale:
+ *    custom_duration        → top-level, number oppure null (durata modificata a mano su Treatwell)
+ *    data.staff_member_treatment.duration / .total_duration → durata standard del trattamento
+ *  custom_duration ha la precedenza quando valorizzato. */
 function extractDuration(tw: any): number {
   const candidates = [
     tw?.custom_duration,
-    tw?.data?.custom_duration,
-    tw?.data?.appointment?.custom_duration,
-    tw?.duration,
-    tw?.data?.duration,
     tw?.data?.staff_member_treatment?.duration,
     tw?.data?.staff_member_treatment?.total_duration,
   ];
@@ -103,12 +105,21 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
       .order('created_at', { ascending: false })
       .limit(1);
 
+    // Il watermark in sync_log è il momento in cui ABBIAMO SCRITTO, non quello in cui
+    // abbiamo LETTO da Uala. Il poller impiega diversi secondi a elaborare (query
+    // sequenziali + chiamate HTTP), quindi una modifica fatta su Treatwell durante
+    // l'elaborazione ha updated_at < nuovo watermark e verrebbe saltata per sempre.
+    // Rileggiamo quindi una finestra sovrapposta: l'upsert è idempotente, riprocessare
+    // lo stesso appuntamento è innocuo.
     const updatedSince = lastLog?.length
-      ? new Date(lastLog[0].created_at).toISOString()
+      ? new Date(new Date(lastLog[0].created_at).getTime() - SYNC_OVERLAP_MS).toISOString()
       : new Date(Date.now() - 60 * 60 * 1000).toISOString();
 
     const data = await twClient.getSync(updatedSince);
     const appointments: any[] = data?.data?.appointments || [];
+    if (process.env.TREATWELL_DEBUG === '1') {
+      console.log(`[tw-debug:window] since=${updatedSince} → ${appointments.length} appuntamenti`);
+    }
 
     for (const tw of appointments) {
       const twId = String(tw.id);
