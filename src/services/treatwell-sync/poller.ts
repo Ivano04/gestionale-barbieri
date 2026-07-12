@@ -1,8 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { TreatwellClient } from './client';
 
-type DeltaCategory = 'new' | 'updated' | 'canceled';
-
 // Previene poll concorrenti che causano duplicati
 const polling = new Set<string>();
 // Throttle full load: max 1 ogni 30 minuti
@@ -36,21 +34,55 @@ function normalizePhone(raw: string): string {
   return p;
 }
 
-/** Classifica un delta come fa il Python: new / updated / canceled.
- *  Case-insensitive e tollerante su varianti (canceled/cancelled/deleted). */
-function classifyDelta(appt: any): DeltaCategory {
-  const rawState = (appt.state || '').toLowerCase().trim();
-  // Qualsiasi variante di cancellazione/eliminazione/sostituzione
-  // Uala usa: canceled, cancelled, deleted, discarded
-  if (rawState.startsWith('cancel') || rawState === 'deleted' || rawState === 'discarded') return 'canceled';
-  const created = appt.created_at || '';
-  const updated = appt.updated_at || '';
-  // Se created_at == updated_at, è la prima volta che vediamo questo record
-  if (created && updated && created === updated) return 'new';
-  // Se created_at != updated_at, è stato modificato dopo la creazione
-  if (created && updated && created !== updated) return 'updated';
-  // Fallback: se non abbiamo i timestamp, assumiamo "new"
-  return 'new';
+/** True se lo stato Uala indica una cancellazione/eliminazione.
+ *  Uala usa: canceled, cancelled, deleted, discarded. */
+function isCancelledState(state: unknown): boolean {
+  const s = String(state || '').toLowerCase().trim();
+  return s.startsWith('cancel') || s === 'deleted' || s === 'discarded';
+}
+
+/** Estrae la durata (in secondi) da un appuntamento Uala.
+ *  custom_duration ha la precedenza (è la durata modificata manualmente su Treatwell)
+ *  e può trovarsi a livello top oppure annidato in `data`. */
+function extractDuration(tw: any): number {
+  const candidates = [
+    tw?.custom_duration,
+    tw?.data?.custom_duration,
+    tw?.data?.appointment?.custom_duration,
+    tw?.duration,
+    tw?.data?.duration,
+    tw?.data?.staff_member_treatment?.duration,
+    tw?.data?.staff_member_treatment?.total_duration,
+  ];
+  for (const c of candidates) {
+    const n = Number(c);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 1800; // fallback 30 min
+}
+
+/** Log diagnostico TEMPORANEO: stampa la forma del payload Uala per capire
+ *  dove risiedono davvero custom_duration e i timestamp. Rimuovere dopo la diagnosi. */
+function logPayloadShape(tw: any, context: string) {
+  if (process.env.TREATWELL_DEBUG !== '1') return;
+  console.log(`[tw-debug:${context}] id=${tw?.id}`, JSON.stringify({
+    state: tw?.state,
+    time: tw?.time,
+    created_at: tw?.created_at,
+    updated_at: tw?.updated_at,
+    custom_duration: tw?.custom_duration,
+    duration: tw?.duration,
+    data_keys: tw?.data ? Object.keys(tw.data) : null,
+    data_custom_duration: tw?.data?.custom_duration,
+    data_duration: tw?.data?.duration,
+    smt: tw?.data?.staff_member_treatment
+      ? {
+          duration: tw.data.staff_member_treatment.duration,
+          total_duration: tw.data.staff_member_treatment.total_duration,
+        }
+      : null,
+    resolved_duration: extractDuration(tw),
+  }));
 }
 
 export async function pollTreatwell(salonId: string, twClient: TreatwellClient) {
@@ -80,10 +112,10 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
 
     for (const tw of appointments) {
       const twId = String(tw.id);
-      const category = classifyDelta(tw);
+      logPayloadShape(tw, 'sync');
 
       // ── CANCELLED ──
-      if (category === 'canceled') {
+      if (isCancelledState(tw.state)) {
         const { data: existing } = await supabase
           .from('appointments')
           .select('id')
@@ -194,67 +226,61 @@ export async function pollTreatwell(salonId: string, twClient: TreatwellClient) 
         if (service?.length) serviceId = service[0].id;
       }
 
-      // ── End time from duration: controlla custom_duration sia a livello top che nested in data ──
-      const duration = tw.custom_duration || tw.data?.custom_duration || tw.data?.staff_member_treatment?.duration || tw.data?.staff_member_treatment?.total_duration || 1800;
+      // ── End time from duration ──
+      const duration = extractDuration(tw);
       const startTime = tw.time;
       const endTime = new Date(
         new Date(startTime).getTime() + duration * 1000,
       ).toISOString();
 
-      // ── UPDATED: modifica appuntamento esistente ──
-      if (category === 'updated') {
-        const { data: existing } = await supabase
-          .from('appointments')
-          .select('id, start_time, end_time, stylist_id, service_id, client_id')
-          .eq('treatwell_appointment_id', twId)
-          .eq('salon_id', salonId)
-          .limit(1);
-
-        if (existing?.length) {
-          const current = existing[0];
-
-          await supabase
-            .from('appointments')
-            .update({
-              start_time: startTime,
-              end_time: endTime,
-              stylist_id: stylist?.[0]?.id || current.stylist_id,
-              service_id: serviceId || current.service_id,
-              client_id: clientId || current.client_id,
-            })
-            .eq('id', current.id);
-
-          await supabase.from('sync_log').insert({
-            salon_id: salonId,
-            direction: 'treatwell→us',
-            status: 'success',
-            external_id: twId,
-          });
-          continue;
-        }
-        // Fall through to NEW if not found
-      }
-
-      // ── NEW: crea nuovo appuntamento ──
-      // Usa upsert su treatwell_appointment_id per prevenire duplicati
-      const { data: alreadyExists } = await supabase
+      // ── UPSERT: cerca per treatwell_appointment_id, aggiorna se esiste, altrimenti crea ──
+      // NB: non ci affidiamo più ai timestamp created_at/updated_at per distinguere
+      // "new" da "updated" — se Uala non li espone, le modifiche venivano scartate.
+      const { data: existing } = await supabase
         .from('appointments')
-        .select('id')
+        .select('id, start_time, end_time, stylist_id, service_id, client_id, buffer_end_time')
         .eq('treatwell_appointment_id', twId)
+        .eq('salon_id', salonId)
         .limit(1);
-      if (alreadyExists?.length) continue;
 
-      await supabase.from('appointments').insert({
-        salon_id: salonId,
-        client_id: clientId,
-        stylist_id: stylist?.[0]?.id,
-        service_id: serviceId,
-        start_time: startTime,
-        end_time: endTime,
-        status: 'confirmed',
-        source: 'treatwell',
-        treatwell_appointment_id: twId,
-      });
+      if (existing?.length) {
+        const current = existing[0];
+
+        // Mantieni il buffer (differenza tra buffer_end_time ed end_time) se presente
+        const prevBufferMs = current.buffer_end_time
+          ? new Date(current.buffer_end_time).getTime() - new Date(current.end_time).getTime()
+          : 0;
+        const bufferEndTime = prevBufferMs > 0
+          ? new Date(new Date(endTime).getTime() + prevBufferMs).toISOString()
+          : endTime;
+
+        await supabase
+          .from('appointments')
+          .update({
+            start_time: startTime,
+            end_time: endTime,
+            buffer_end_time: bufferEndTime,
+            stylist_id: stylist?.[0]?.id || current.stylist_id,
+            service_id: serviceId || current.service_id,
+            client_id: clientId || current.client_id,
+            // Un appuntamento tornato non-cancellato su Uala torna confermato
+            status: 'confirmed',
+          })
+          .eq('id', current.id);
+      } else {
+        await supabase.from('appointments').insert({
+          salon_id: salonId,
+          client_id: clientId,
+          stylist_id: stylist?.[0]?.id,
+          service_id: serviceId,
+          start_time: startTime,
+          end_time: endTime,
+          buffer_end_time: endTime,
+          status: 'confirmed',
+          source: 'treatwell',
+          treatwell_appointment_id: twId,
+        });
+      }
 
       await supabase.from('sync_log').insert({
         salon_id: salonId,
@@ -298,17 +324,18 @@ async function fullLoadRecent(salonId: string, twClient: TreatwellClient, supaba
 
     for (const tw of appointments) {
       const twId = String(tw.id);
-      const state = (tw.state || '').toLowerCase().trim();
+      logPayloadShape(tw, 'fullload');
       // Salta cancellati/eliminati/scartati
-      if (state.startsWith('cancel') || state === 'deleted' || state === 'discarded') continue;
+      if (isCancelledState(tw.state)) continue;
 
-      // Già importato?
+      // Cerca l'appuntamento esistente: se c'è lo aggiorniamo (auto-riparazione
+      // di eventuali disallineamenti di orario/durata), altrimenti lo creiamo.
       const { data: existing } = await supabase
         .from('appointments')
-        .select('id')
+        .select('id, end_time, buffer_end_time, stylist_id, service_id, client_id')
         .eq('treatwell_appointment_id', twId)
+        .eq('salon_id', salonId)
         .limit(1);
-      if (existing?.length) continue;
 
       // Risolvi cliente
       let clientId: string | null = null;
@@ -379,22 +406,47 @@ async function fullLoadRecent(salonId: string, twClient: TreatwellClient, supaba
         if (service?.length) serviceId = service[0].id;
       }
 
-      // Durata (custom_duration può essere top-level o nested in data)
-      const duration = tw.custom_duration || tw.data?.custom_duration || tw.data?.staff_member_treatment?.duration || tw.data?.staff_member_treatment?.total_duration || 1800;
+      // Durata
+      const duration = extractDuration(tw);
       const startTime = tw.time;
       const endTime = new Date(new Date(startTime).getTime() + duration * 1000).toISOString();
 
-      await supabase.from('appointments').insert({
-        salon_id: salonId,
-        client_id: clientId,
-        stylist_id: stylist?.[0]?.id,
-        service_id: serviceId,
-        start_time: startTime,
-        end_time: endTime,
-        status: 'confirmed',
-        source: 'treatwell',
-        treatwell_appointment_id: twId,
-      });
+      if (existing?.length) {
+        // Auto-riparazione: riallinea orario/durata/stylist a quanto c'è su Uala
+        const current = existing[0];
+        const prevBufferMs = current.buffer_end_time
+          ? new Date(current.buffer_end_time).getTime() - new Date(current.end_time).getTime()
+          : 0;
+        const bufferEndTime = prevBufferMs > 0
+          ? new Date(new Date(endTime).getTime() + prevBufferMs).toISOString()
+          : endTime;
+
+        await supabase
+          .from('appointments')
+          .update({
+            start_time: startTime,
+            end_time: endTime,
+            buffer_end_time: bufferEndTime,
+            stylist_id: stylist?.[0]?.id || current.stylist_id,
+            service_id: serviceId || current.service_id,
+            client_id: clientId || current.client_id,
+            status: 'confirmed',
+          })
+          .eq('id', current.id);
+      } else {
+        await supabase.from('appointments').insert({
+          salon_id: salonId,
+          client_id: clientId,
+          stylist_id: stylist?.[0]?.id,
+          service_id: serviceId,
+          start_time: startTime,
+          end_time: endTime,
+          buffer_end_time: endTime,
+          status: 'confirmed',
+          source: 'treatwell',
+          treatwell_appointment_id: twId,
+        });
+      }
     }
   }
 }
