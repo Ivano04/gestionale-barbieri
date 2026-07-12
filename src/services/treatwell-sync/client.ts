@@ -141,11 +141,18 @@ export class TreatwellClient {
     return data.data.appointment.id;
   }
 
-  /** Aggiorna la durata di un appuntamento (es. estensione manuale) */
-  async updateAppointment(appointmentId: number, params: { time?: string; duration?: number }): Promise<void> {
+  /** Aggiorna un appuntamento (orario, durata, staff) */
+  async updateAppointment(appointmentId: number, params: {
+    time?: string;
+    duration?: number;
+    staffMemberId?: number;
+    staffMemberTreatmentId?: number;
+  }): Promise<void> {
     const body: Record<string, any> = {};
     if (params.time) body.time = params.time;
     if (params.duration) body.custom_duration = params.duration;
+    if (params.staffMemberId) body.staff_member_id = params.staffMemberId;
+    if (params.staffMemberTreatmentId) body.staff_member_treatment_id = params.staffMemberTreatmentId;
     const res = await this.fetch(`/venues/${this.venueId}/appointments/${appointmentId}.json`, {
       method: 'PUT',
       body: JSON.stringify(body),

@@ -171,12 +171,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
 
   // Sync update to Treatwell
-  if (data.treatwell_appointment_id && data.salon_id && (data.start_time || data.end_time)) {
+  if (data.treatwell_appointment_id && data.salon_id) {
+    const stylist = data.stylist as any;
+    const service = data.service as any;
     pushUpdateToTreatwell(
       data.treatwell_appointment_id,
       data.salon_id,
       data.id,
-      { startTime: data.start_time, endTime: data.end_time },
+      {
+        startTime: data.start_time,
+        endTime: data.end_time,
+        ualaStaffId: stylist?.uala_staff_id,
+        ualaTreatmentId: service?.uala_treatment_id,
+      },
     ).catch(err => { console.error('[treatwell] update failed:', err); });
   }
 

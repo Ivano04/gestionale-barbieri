@@ -126,12 +126,19 @@ export async function pushToTreatwell(
   }
 }
 
-/** Aggiorna appuntamento su Treatwell dopo modifica sul gestionale (spostamento o estensione) */
+/** Aggiorna appuntamento su Treatwell dopo modifica sul gestionale (spostamento, estensione o cambio stylist) */
 export async function pushUpdateToTreatwell(
   treatwellAppointmentId: string,
   salonId: string,
   appointmentId: string,
-  data: { startTime?: string; endTime?: string },
+  data: {
+    startTime?: string;
+    endTime?: string;
+    /** Nuovo stylist — richiede anche ualaTreatmentId per risolvere lo staff_member_treatment_id */
+    ualaStaffId?: number;
+    /** Trattamento associato al servizio (necessario se cambia lo stylist) */
+    ualaTreatmentId?: number;
+  },
 ) {
   if (!process.env.TREATWELL_API_TOKEN) return;
 
@@ -149,7 +156,29 @@ export async function pushUpdateToTreatwell(
       ? Math.round((new Date(data.endTime).getTime() - new Date(data.startTime).getTime()) / 1000)
       : undefined;
     const time = data.startTime ? toItalyTime(data.startTime) : undefined;
-    await tw.updateAppointment(Number(treatwellAppointmentId), { time, duration: durationSec });
+
+    // Se cambia lo stylist, risolvi lo staff_member_treatment_id per la nuova combinazione
+    let staffMemberId: number | undefined;
+    let staffMemberTreatmentId: number | undefined;
+    if (data.ualaStaffId && data.ualaTreatmentId) {
+      staffMemberId = data.ualaStaffId;
+      const staffTreatments = await tw.getStaffMemberTreatments();
+      const match = staffTreatments.find(
+        (st: any) =>
+          st.staff_member_id === data.ualaStaffId &&
+          st.venue_treatment_id === data.ualaTreatmentId,
+      );
+      if (match) {
+        staffMemberTreatmentId = match.id;
+      }
+    }
+
+    await tw.updateAppointment(Number(treatwellAppointmentId), {
+      time,
+      duration: durationSec,
+      staffMemberId,
+      staffMemberTreatmentId,
+    });
     await supabase.from('sync_log').insert({
       salon_id: salonId,
       direction: 'us→treatwell',
