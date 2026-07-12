@@ -71,6 +71,7 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
     origEndTime: string;
     currentStylistId: string;
     offsetY: number;
+    offsetX: number;
     mode: 'move' | 'resize';
   } | null>(null);
   const [resizeTarget, setResizeTarget] = useState<string | null>(null);
@@ -132,6 +133,7 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
       origEndTime: app.end_time,
       currentStylistId: app.stylist_id!,
       offsetY: 0,
+      offsetX: 0,
       mode,
     });
   }
@@ -139,7 +141,8 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
   function handlePointerMove(e: React.PointerEvent) {
     if (!dragState) return;
     const dy = e.clientY - dragState.startY;
-    setDragState({ ...dragState, offsetY: dy });
+    const dx = e.clientX - dragState.startX;
+    setDragState({ ...dragState, offsetY: dy, offsetX: dx });
 
     // Check which stylist column we're over (for cross-stylist move)
     if (dragState.mode === 'move' && containerRef.current) {
@@ -462,7 +465,7 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
                       borderLeftColor: cfg.border,
                       backgroundColor: cfg.bg,
                       touchAction: 'none',
-                      transform: isDragging ? `translateY(${dragState.offsetY}px)` : undefined,
+                      transform: isDragging ? `translate(${dragState.offsetX}px, ${dragState.offsetY}px)` : undefined,
                       transition: isDragging ? 'none' : undefined,
                     }}
                     onClick={(e) => {
