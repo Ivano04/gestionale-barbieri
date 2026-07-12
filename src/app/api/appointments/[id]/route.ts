@@ -51,8 +51,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
   }
 
-  // Recalculate end times if service changed or start moved
-  if (body.start_time || body.service_id) {
+  // Recalculate end times if service changed or start moved (ma non se end_time è già passato)
+  if ((body.start_time || body.service_id) && !body.end_time) {
     if (!serviceId) {
       return Response.json({ error: 'Servizio non specificato' }, { status: 400 });
     }

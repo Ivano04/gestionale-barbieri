@@ -173,7 +173,9 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
     const origStart = parseISO(dragState.origStartTime);
 
     if (dragState.mode === 'move') {
+      const origEnd = parseISO(dragState.origEndTime);
       const newStart = addMinutes(origStart, minutesDelta);
+      const newEnd = addMinutes(origEnd, minutesDelta);
       const newStartStr = newStart.toISOString();
 
       try {
@@ -181,6 +183,7 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
           dragState.appointmentId,
           dragState.currentStylistId,
           newStartStr,
+          newEnd.toISOString(),
         );
         if (res.error) {
           toast.error(res.error);
