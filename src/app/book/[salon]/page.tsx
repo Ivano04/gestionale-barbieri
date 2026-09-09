@@ -78,7 +78,10 @@ export default function BookPage() {
     }
   }, [selectedService, selectedDate, step, salonData?.id]);
 
-  async function handleBook() {
+  // Paga per confermare: NON crea subito l'appuntamento. Avvia il pagamento
+  // (che riserva lo slot) e reindirizza alla pagina di cassa. L'appuntamento
+  // viene creato solo a pagamento riuscito (webhook).
+  async function handlePayAndBook() {
     if (!salonData) return;
     if (!name || !surname || !phone || !email) {
       setError('Compila tutti i campi obbligatori (Nome, Cognome, Telefono, Email)');
@@ -87,23 +90,48 @@ export default function BookPage() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/appointments', {
+      const booking = {
+        salon_id: salonData.id,
+        service_id: selectedService!.id,
+        stylist_id: selectedSlot!.stylist_id,
+        start_time: buildSlotTime(format(selectedDate, 'yyyy-MM-dd'), selectedSlot!.time),
+        source: 'widget',
+        client: { first_name: name, last_name: surname, phone: formatPhone(phonePrefix + phone), email: email || null },
+        notes: note,
+      };
+      const res = await fetch('/api/payments/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          salon_id: salonData.id,
-          service_id: selectedService!.id,
-          stylist_id: selectedSlot!.stylist_id,
-          start_time: buildSlotTime(format(selectedDate, 'yyyy-MM-dd'), selectedSlot!.time),
-          source: 'widget',
-          client: { first_name: name, last_name: surname, phone: formatPhone(phonePrefix + phone), email: email || null },
-          notes: note,
-        }),
+        body: JSON.stringify({ booking }),
       });
-      if (res.ok) { setDone(true); }
-      else { const err = await res.json(); setError(err.error || 'Errore nella prenotazione'); }
-    } catch { setError('Errore di connessione'); }
-    setLoading(false);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setError(err.error || 'Errore avvio pagamento');
+        setLoading(false);
+        return;
+      }
+      const result = await res.json();
+      if (result.method === 'POST' && result.fields) {
+        // Reindirizza via form POST verso la pagina di cassa (Nexi)
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = result.url;
+        for (const [k, v] of Object.entries(result.fields as Record<string, string>)) {
+          const input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = k;
+          input.value = v;
+          form.appendChild(input);
+        }
+        document.body.appendChild(form);
+        form.submit();
+      } else {
+        window.location.href = result.url;
+      }
+    } catch {
+      setError('Errore di connessione');
+      setLoading(false);
+    }
   }
 
   if (done) {
@@ -375,11 +403,11 @@ export default function BookPage() {
                 className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
               <textarea placeholder="Note (opzionale)" value={note} onChange={e => setNote(e.target.value)}
                 className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" rows={2} />
-              <button onClick={handleBook} disabled={!name || !surname || !phone || !email || loading}
+              <button onClick={handlePayAndBook} disabled={!name || !surname || !phone || !email || loading}
                 className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50">
-                {loading ? 'Prenotazione...' : 'Conferma Prenotazione'}
+                {loading ? 'Reindirizzamento al pagamento...' : `Paga e conferma €${(selectedService!.price_cents / 100).toFixed(2)}`}
               </button>
-              <p className="text-xs text-center text-gray-400">Riceverai conferma via SMS</p>
+              <p className="text-xs text-center text-gray-400">Il pagamento online conferma la prenotazione</p>
             </div>
           </div>
         )}

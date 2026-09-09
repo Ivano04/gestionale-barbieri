@@ -62,8 +62,10 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const body = await request.json();
-  const supabase = await createServerSupabase();
+  // Creazione server-side fidata (staff autenticato o webhook col segreto interno):
+  // usa il service role, che bypassa la RLS, coerentemente con le altre scritture server.
   const adminSupabase = createAdminClient();
+  const supabase = adminSupabase;
 
   const duration = await fetchServiceDuration(body.service_id);
   if (!duration) return Response.json({ error: 'Servizio non trovato' }, { status: 404 });

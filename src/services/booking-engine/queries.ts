@@ -2,6 +2,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import type { ServiceOverride } from '@/lib/types';
 import { normalizeShifts, type WorkingHoursShift } from '@/lib/working-hours';
 import { computeBusyPeriods } from './overlap';
+import { activeHoldsToBlocks, HOLD_TTL_MS } from '@/services/payments/holds';
 
 export async function fetchSalonHours(salonId: string, dayName: string): Promise<WorkingHoursShift[] | null> {
   const supabase = createAdminClient();
@@ -146,6 +147,22 @@ export async function fetchOccupiedSlots(
     : { data: [] };
   const serviceMap = new Map((services || []).map((s: any) => [s.id, s]));
 
+  // Blocchi slot temporanei: pagamenti pending recenti riservano lo slot.
+  // Protetto: se la tabella payments non esiste ancora, si degrada a "nessun blocco".
+  let holdBlocks: { stylist_id: string | null; start_time: Date; end_time: Date }[] = [];
+  try {
+    const cutoff = new Date(Date.now() - HOLD_TTL_MS).toISOString();
+    const { data: holds } = await supabase
+      .from('payments')
+      .select('status, created_at, metadata')
+      .eq('salon_id', salonId)
+      .eq('status', 'pending')
+      .gte('created_at', cutoff);
+    holdBlocks = activeHoldsToBlocks(holds || [], new Date());
+  } catch {
+    holdBlocks = [];
+  }
+
   const mapBlock = (b: any) => {
     const startTime = new Date(b.start_time);
     const endTime = b.buffer_end_time ? new Date(b.buffer_end_time) : new Date(b.end_time);
@@ -168,5 +185,6 @@ export async function fetchOccupiedSlots(
       start_time: new Date(b.start_time),
       end_time: new Date(b.end_time),
     })),
+    ...holdBlocks,
   ];
 }

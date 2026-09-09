@@ -5,13 +5,22 @@ export default async function proxy(request: NextRequest) {
   const supabaseResponse = NextResponse.next({ request });
 
   const isPublic = request.nextUrl.pathname.startsWith('/book/') ||
+                   request.nextUrl.pathname.startsWith('/pagamento/') ||
                    request.nextUrl.pathname.startsWith('/login') ||
                    request.nextUrl.pathname.startsWith('/auth') ||
                    request.nextUrl.pathname.startsWith('/api/book/') ||
                    request.nextUrl.pathname.startsWith('/api/slots') ||
                    request.nextUrl.pathname.startsWith('/api/services') ||
+                   request.nextUrl.pathname.startsWith('/api/payments/create') ||
+                   request.nextUrl.pathname.startsWith('/api/webhooks/') ||
                    request.nextUrl.pathname.startsWith('/_next') ||
                    request.nextUrl.pathname === '/favicon.ico';
+
+  // Bypass auth per le chiamate server-to-server interne (es. il webhook che crea
+  // l'appuntamento via /api/appointments), autenticate con un segreto condiviso.
+  const internalSecret = request.headers.get('x-internal-secret');
+  const isInternal = !!process.env.CRON_SECRET && internalSecret === process.env.CRON_SECRET;
+  if (isInternal) return supabaseResponse;
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
