@@ -4,5 +4,11 @@ export async function register() {
     const { startTreatwellCron } = await import('@/services/treatwell-sync/cron');
     startTreatwellCron();
     console.log('[cron] Treatwell sync avviato (ogni 15 min)');
+
+    const { startNotificationsCron } = await import('@/services/notifications/cron');
+    startNotificationsCron();
+    if (process.env.RESEND_API_KEY) {
+      console.log('[cron] Notifiche email avviate (ogni 15 min)');
+    }
   }
 }

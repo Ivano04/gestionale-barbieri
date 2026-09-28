@@ -11,6 +11,9 @@ import { TreatwellClient } from '@/services/treatwell-sync/client';
 import { pollGHL } from '@/services/ghl-sync/poller';
 import { normalizeShifts, type WorkingHoursShift } from '@/lib/working-hours';
 import { computeBusyPeriods } from '@/services/booking-engine/overlap';
+import { emailConfigFromEnv, createEmailProvider } from '@/services/notifications';
+import { createSupabaseNotificationsRepo } from '@/services/notifications/repo';
+import { sendConfirmation } from '@/services/notifications/service';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -238,6 +241,36 @@ export async function POST(request: Request) {
     await pushToTreatwell(fullAppt as any, (fullAppt as any).client);
   } catch (err: any) {
     console.error('[treatwell] sync failed:', err);
+  }
+
+  // Email di conferma (fire-and-forget; non blocca la prenotazione).
+  // Se Resend non e' configurato (RESEND_API_KEY assente) o il cliente non ha email, salta.
+  try {
+    const emailCfg = emailConfigFromEnv();
+    const clientEmail = (fullAppt as any)?.client?.email;
+    if (emailCfg.apiKey && clientEmail) {
+      const { data: salonRow } = await adminSupabase
+        .from('salons').select('name').eq('id', appointment.salon_id).single();
+      const start = new Date(appointment.start_time);
+      const dateText = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(start);
+      const timeText = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' }).format(start);
+      sendConfirmation({
+        provider: createEmailProvider(emailCfg),
+        repo: createSupabaseNotificationsRepo(adminSupabase),
+        data: {
+          salonId: appointment.salon_id,
+          appointmentId: appointment.id,
+          to: clientEmail,
+          clientName: (fullAppt as any)?.client?.first_name || 'Cliente',
+          serviceName: (fullAppt as any)?.service?.name || 'Servizio',
+          dateText,
+          timeText,
+          salonName: salonRow?.name || 'Il salone',
+        },
+      }).catch((err) => console.error('[email] conferma fallita:', err));
+    }
+  } catch (err) {
+    console.error('[email] setup conferma fallito:', err);
   }
 
   return Response.json(appointment, { status: 201 });
