@@ -146,7 +146,7 @@ export class NexiProvider implements PaymentProvider {
     const res = await this.fetchImpl(STORNA_ENDPOINTS[this.config.env], {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ apikey: this.config.alias, codiceTransazione, importo, divisa, timeStamp, mac }),
+      body: JSON.stringify({ apiKey: this.config.alias, codiceTransazione, importo, divisa, timeStamp, mac }),
     });
     const data: any = await res.json();
     if (data?.esito !== 'OK') {

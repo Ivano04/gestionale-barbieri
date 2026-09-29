@@ -113,7 +113,7 @@ describe('NexiProvider.refund (storno)', () => {
     expect(url).toBe('https://int-ecommerce.nexi.it/ecomm/api/bo/storna');
     expect(opts.method).toBe('POST');
     const body = JSON.parse(opts.body);
-    expect(body.apikey).toBe('ALIAS_TEST');
+    expect(body.apiKey).toBe('ALIAS_TEST');
     expect(body.codiceTransazione).toBe('ORDER1');
     expect(body.importo).toBe('2500');
     expect(body.divisa).toBe('978');
