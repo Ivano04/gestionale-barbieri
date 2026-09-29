@@ -14,6 +14,7 @@ import { computeBusyPeriods } from '@/services/booking-engine/overlap';
 import { emailConfigFromEnv, createEmailProvider } from '@/services/notifications';
 import { createSupabaseNotificationsRepo } from '@/services/notifications/repo';
 import { sendConfirmation } from '@/services/notifications/service';
+import { makeCancelToken } from '@/services/cancellation/token';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -254,6 +255,8 @@ export async function POST(request: Request) {
       const start = new Date(appointment.start_time);
       const dateText = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(start);
       const timeText = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' }).format(start);
+      const base = process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
+      const cancelUrl = `${base}/prenotazione/annulla?token=${makeCancelToken(appointment.id, process.env.CRON_SECRET || '')}`;
       sendConfirmation({
         provider: createEmailProvider(emailCfg),
         repo: createSupabaseNotificationsRepo(adminSupabase),
@@ -266,6 +269,7 @@ export async function POST(request: Request) {
           dateText,
           timeText,
           salonName: salonRow?.name || 'Il salone',
+          cancelUrl,
         },
       }).catch((err) => console.error('[email] conferma fallita:', err));
     }

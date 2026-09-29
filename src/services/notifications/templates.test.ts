@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { confirmationEmail, reminderEmail, reviewEmail } from './templates';
+import { confirmationEmail, reminderEmail, reviewEmail, cancellationEmail } from './templates';
 
 describe('confirmationEmail', () => {
   const data = {
@@ -47,5 +47,24 @@ describe('reviewEmail', () => {
   it('include il link recensione quando fornito', () => {
     const html = reviewEmail({ ...base, reviewUrl: 'https://g.page/r/xyz' }).html;
     expect(html).toContain('https://g.page/r/xyz');
+  });
+});
+
+describe('cancellationEmail', () => {
+  const base = { clientName: 'Mario', serviceName: 'Piega', dateText: 'lunedì 23 dicembre 2026', timeText: '10:00', salonName: 'HairForce' };
+
+  it('oggetto sull\'annullamento e include il servizio', () => {
+    const email = cancellationEmail({ ...base, refunded: true });
+    expect(email.subject).toMatch(/annull|cancellat/i);
+    expect(email.html).toContain('Piega');
+  });
+
+  it('se rimborsato lo dice', () => {
+    expect(cancellationEmail({ ...base, refunded: true }).html).toMatch(/rimbors/i);
+  });
+
+  it('se NON rimborsato non promette rimborsi', () => {
+    const html = cancellationEmail({ ...base, refunded: false }).html;
+    expect(html).not.toMatch(/ti abbiamo rimborsato/i);
   });
 });

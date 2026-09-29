@@ -4,8 +4,9 @@ import { addMinutes } from 'date-fns';
 import { sendN8nEvent } from '@/lib/sync-webhook';
 import { fetchServiceDuration } from '@/services/booking-engine/queries';
 import { computeBusyPeriods } from '@/services/booking-engine/overlap';
-import { updateGHLAppointment, deleteGHLAppointment } from '@/services/ghl-sync/sync';
-import { deleteFromTreatwell, pushUpdateToTreatwell } from '@/services/treatwell-sync/sync';
+import { updateGHLAppointment } from '@/services/ghl-sync/sync';
+import { pushUpdateToTreatwell } from '@/services/treatwell-sync/sync';
+import { cancelAndMaybeRefund } from '@/services/cancellation/service';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -190,44 +191,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   return Response.json(data);
 }
 
-export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const supabase = await createServerSupabase();
-
-  const adminSupabase = createAdminClient();
-  const { data: existing } = await adminSupabase
-    .from('appointments')
-    .select('ghl_appointment_id, treatwell_appointment_id, salon_id')
-    .eq('id', id)
-    .single();
-
-  const { error } = await adminSupabase
-    .from('appointments')
-    .update({ status: 'cancelled' })
-    .eq('id', id);
-
-  if (error) return Response.json({ error: error.message }, { status: 500 });
-
-  sendN8nEvent('appointment.cancelled', {
-    id,
-    salon_id: existing?.salon_id,
-    ghl_appointment_id: existing?.ghl_appointment_id,
-    treatwell_appointment_id: existing?.treatwell_appointment_id,
-  });
-
-  // Sync deletion to GHL
-  if (existing?.ghl_appointment_id && existing?.salon_id) {
-    deleteGHLAppointment(existing.ghl_appointment_id, existing.salon_id, id).catch(err => {
-      console.error('[ghl] delete failed:', err);
-    });
-  }
-
-  // Sync deletion to Treatwell/Uala
-  if (existing?.treatwell_appointment_id && existing?.salon_id) {
-    deleteFromTreatwell(existing.treatwell_appointment_id, existing.salon_id, id).catch(err => {
-      console.error('[treatwell] delete failed:', err);
-    });
-  }
-
-  return Response.json({ status: 'ok' });
+  // Annullo lato staff: soft-cancel + sync esterni + rimborso automatico (policy staff)
+  // + email di annullamento. Logica centralizzata nel servizio di cancellazione.
+  const result = await cancelAndMaybeRefund(id, 'staff');
+  if (!result.ok) return Response.json({ error: 'Appuntamento non trovato' }, { status: 404 });
+  return Response.json({ status: 'ok', refunded: result.refunded });
 }

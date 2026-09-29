@@ -19,12 +19,23 @@ const ENDPOINTS = {
   live: 'https://ecommerce.nexi.it/ecomm/ecomm/DispatcherServlet',
 } as const;
 
+// API back office Storno/Rimborso (server-to-server, JSON): annulla o rimborsa
+// in base allo stato della transazione.
+const STORNA_ENDPOINTS = {
+  test: 'https://int-ecommerce.nexi.it/ecomm/api/bo/storna',
+  live: 'https://ecommerce.nexi.it/ecomm/api/bo/storna',
+} as const;
+
 export interface NexiConfig {
   alias: string;
   macKey: string;
   env: 'test' | 'live';
   /** Generatore del codTrans univoco (iniettabile per i test) */
   genCodTrans?: () => string;
+  /** fetch iniettabile (per i test); default: fetch globale */
+  fetchImpl?: typeof fetch;
+  /** Orologio iniettabile (per i test); default: Date.now */
+  nowMs?: () => number;
 }
 
 function sha1(input: string): string {
@@ -52,9 +63,13 @@ function defaultCodTrans(): string {
 
 export class NexiProvider implements PaymentProvider {
   private readonly genCodTrans: () => string;
+  private readonly fetchImpl: typeof fetch;
+  private readonly nowMs: () => number;
 
   constructor(private readonly config: NexiConfig) {
     this.genCodTrans = config.genCodTrans ?? defaultCodTrans;
+    this.fetchImpl = config.fetchImpl ?? fetch;
+    this.nowMs = config.nowMs ?? Date.now;
   }
 
   async createCheckout(params: CreateCheckoutParams): Promise<CheckoutResult> {
@@ -111,9 +126,31 @@ export class NexiProvider implements PaymentProvider {
     };
   }
 
-  async refund(_providerRef: string, _amountCents?: number): Promise<void> {
-    // L'XPay classico rimborsa tramite l'API di storno (endpoint separato).
-    // Per ora si opera dal back office Nexi; l'implementazione verra' aggiunta poi.
-    throw new Error('Rimborso Nexi non ancora implementato (usare il back office)');
+  // Storno/Rimborso via API back office XPay: POST /ecomm/api/bo/storna (JSON).
+  // Annulla o rimborsa automaticamente in base allo stato della transazione.
+  // providerRef = codiceTransazione (il nostro codTrans). importo obbligatorio.
+  //   MAC = SHA1("apiKey=<>codiceTransazione=<>divisa=<>importo=<>timeStamp=<><chiaveSegreta>")
+  //   divisa = 978 (codice numerico EUR).
+  async refund(codiceTransazione: string, amountCents?: number): Promise<void> {
+    if (amountCents == null) {
+      throw new Error('Rimborso Nexi: importo obbligatorio');
+    }
+    const importo = String(amountCents);
+    const divisa = '978';
+    const timeStamp = String(this.nowMs());
+    const mac = sha1(
+      `apiKey=${this.config.alias}codiceTransazione=${codiceTransazione}` +
+        `divisa=${divisa}importo=${importo}timeStamp=${timeStamp}${this.config.macKey}`,
+    );
+
+    const res = await this.fetchImpl(STORNA_ENDPOINTS[this.config.env], {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apikey: this.config.alias, codiceTransazione, importo, divisa, timeStamp, mac }),
+    });
+    const data: any = await res.json();
+    if (data?.esito !== 'OK') {
+      throw new Error(`Storno Nexi fallito: ${data?.errore?.messaggio || data?.esito || 'sconosciuto'}`);
+    }
   }
 }

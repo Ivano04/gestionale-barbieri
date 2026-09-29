@@ -27,7 +27,7 @@ export function createSupabasePaymentsRepo(supabase: SupabaseClient): PaymentsRe
     async getByProviderRef(providerRef: string): Promise<PaymentRow | null> {
       const { data } = await supabase
         .from('payments')
-        .select('id, appointment_id, status, metadata')
+        .select('id, appointment_id, status, metadata, provider_payment_id, amount_cents')
         .eq('provider_payment_id', providerRef)
         .maybeSingle();
       return (data as PaymentRow) ?? null;

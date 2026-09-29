@@ -88,3 +88,46 @@ describe('NexiProvider.verifyWebhook', () => {
     expect(ev.status).toBe('canceled');
   });
 });
+
+describe('NexiProvider.refund (storno)', () => {
+  const STORNA_MAC = 'ea8c0efc6c03dded15e54a9aaab0e04213f40584';
+
+  function makeProviderWithFetch(response: any) {
+    const calls: any = { fetch: [] };
+    const fetchImpl = async (url: string, opts: any) => {
+      calls.fetch.push({ url, opts });
+      return { json: async () => response } as any;
+    };
+    const provider = new NexiProvider({
+      alias: 'ALIAS_TEST', macKey: 'SECRET123', env: 'test',
+      nowMs: () => 1700000000000, fetchImpl: fetchImpl as any,
+    });
+    return { provider, calls };
+  }
+
+  it('fa POST allo storna endpoint di test con body e MAC corretti', async () => {
+    const { provider, calls } = makeProviderWithFetch({ esito: 'OK', idOperazione: 'op1' });
+    await provider.refund('ORDER1', 2500);
+
+    const { url, opts } = calls.fetch[0];
+    expect(url).toBe('https://int-ecommerce.nexi.it/ecomm/api/bo/storna');
+    expect(opts.method).toBe('POST');
+    const body = JSON.parse(opts.body);
+    expect(body.apikey).toBe('ALIAS_TEST');
+    expect(body.codiceTransazione).toBe('ORDER1');
+    expect(body.importo).toBe('2500');
+    expect(body.divisa).toBe('978');
+    expect(body.timeStamp).toBe('1700000000000');
+    expect(body.mac).toBe(STORNA_MAC);
+  });
+
+  it('lancia se esito KO', async () => {
+    const { provider } = makeProviderWithFetch({ esito: 'KO', errore: { messaggio: 'transazione non trovata' } });
+    await expect(provider.refund('ORDER1', 2500)).rejects.toThrow(/transazione non trovata|storno/i);
+  });
+
+  it('lancia se manca l\'importo', async () => {
+    const { provider } = makeProviderWithFetch({ esito: 'OK' });
+    await expect(provider.refund('ORDER1')).rejects.toThrow(/importo/i);
+  });
+});

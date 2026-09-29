@@ -7,6 +7,8 @@ export interface BookingEmailData {
   timeText: string; // gia' formattato (es. "10:00")
   salonName: string;
   reviewUrl?: string; // solo per l'email recensione
+  cancelUrl?: string; // link di annullo (conferma/promemoria)
+  refunded?: boolean; // solo per l'email di annullamento
 }
 
 export interface RenderedEmail {
@@ -26,6 +28,9 @@ function layout(salonName: string, bodyHtml: string): string {
 
 export function confirmationEmail(d: BookingEmailData): RenderedEmail {
   const subject = `Prenotazione confermata — ${d.serviceName} ${d.dateText}`;
+  const cancelLine = d.cancelUrl
+    ? `<p style="font-size:13px;color:#666">Hai un imprevisto? Puoi <a href="${d.cancelUrl}">disdire la prenotazione qui</a>.</p>`
+    : '';
   const html = layout(
     d.salonName,
     `<p>Ciao ${d.clientName},</p>
@@ -35,7 +40,8 @@ export function confirmationEmail(d: BookingEmailData): RenderedEmail {
        <li><strong>Data:</strong> ${d.dateText}</li>
        <li><strong>Ora:</strong> ${d.timeText}</li>
      </ul>
-     <p>Ti aspettiamo!</p>`,
+     <p>Ti aspettiamo!</p>
+     ${cancelLine}`,
   );
   const text = `Ciao ${d.clientName}, la tua prenotazione è confermata: ${d.serviceName}, ${d.dateText} alle ${d.timeText}. — ${d.salonName}`;
   return { subject, html, text };
@@ -55,6 +61,26 @@ export function reminderEmail(d: BookingEmailData): RenderedEmail {
      <p>A presto!</p>`,
   );
   const text = `Ciao ${d.clientName}, promemoria appuntamento: ${d.serviceName}, ${d.dateText} alle ${d.timeText}. — ${d.salonName}`;
+  return { subject, html, text };
+}
+
+export function cancellationEmail(d: BookingEmailData): RenderedEmail {
+  const subject = `Prenotazione annullata — ${d.serviceName} ${d.dateText}`;
+  const refundLine = d.refunded
+    ? `<p>Ti abbiamo rimborsato l'importo pagato: lo vedrai riaccreditato sul metodo di pagamento originale entro qualche giorno lavorativo.</p>`
+    : `<p>Come da termini di cancellazione, per un annullamento a ridosso dell'appuntamento non è previsto il rimborso. Per qualsiasi necessità, contattaci pure.</p>`;
+  const html = layout(
+    d.salonName,
+    `<p>Ciao ${d.clientName},</p>
+     <p>la tua prenotazione è stata <strong>annullata</strong>:</p>
+     <ul>
+       <li><strong>Servizio:</strong> ${d.serviceName}</li>
+       <li><strong>Data:</strong> ${d.dateText}</li>
+       <li><strong>Ora:</strong> ${d.timeText}</li>
+     </ul>
+     ${refundLine}`,
+  );
+  const text = `Ciao ${d.clientName}, la tua prenotazione (${d.serviceName}, ${d.dateText} ${d.timeText}) è stata annullata.${d.refunded ? ' Rimborso in corso.' : ''} — ${d.salonName}`;
   return { subject, html, text };
 }
 

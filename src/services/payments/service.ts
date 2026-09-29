@@ -19,12 +19,14 @@ export interface PaymentPatch {
   appointment_id?: string | null;
 }
 
-// Riga di pagamento letta dal DB (campi che servono alla conferma prenotazione).
+// Riga di pagamento letta dal DB (campi che servono a conferma e rimborso).
 export interface PaymentRow {
   id: string;
   appointment_id: string | null;
   status: PaymentStatus;
   metadata: Record<string, unknown> | null;
+  provider_payment_id: string | null;
+  amount_cents: number;
 }
 
 // "Porta" verso la persistenza: l'implementazione concreta (Supabase) sta altrove,
