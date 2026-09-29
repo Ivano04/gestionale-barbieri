@@ -1,5 +1,6 @@
 import { createServerSupabase } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { hasBlockingAppointment } from '@/services/clients/deletion';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -72,17 +73,17 @@ export async function DELETE(request: Request) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  // Check if client has appointments
+  // Blocca solo se il cliente ha appuntamenti ATTIVI e FUTURI.
+  // Appuntamenti annullati o gia' passati (storico) non impediscono la cancellazione.
   const adminSupabase = createAdminClient();
   const { data: apps } = await adminSupabase
     .from('appointments')
-    .select('id')
-    .eq('client_id', id)
-    .limit(1);
+    .select('status, start_time')
+    .eq('client_id', id);
 
-  if (apps?.length) {
+  if (hasBlockingAppointment(apps || [], new Date())) {
     return Response.json(
-      { error: 'Impossibile eliminare: il cliente ha appuntamenti associati' },
+      { error: 'Impossibile eliminare: il cliente ha appuntamenti futuri in programma' },
       { status: 409 }
     );
   }
