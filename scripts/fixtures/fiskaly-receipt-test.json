@@ -1,0 +1,62 @@
+{
+  "type": "RECEIPT",
+  "document": {
+    "number": "TEST-0001"
+  },
+  "breakdown": [
+    {
+      "type": "VAT_RATE",
+      "code": "STANDARD",
+      "percentage": "22.00",
+      "exclusive": "20.00",
+      "inclusive": "24.40",
+      "amount": "4.40"
+    }
+  ],
+  "totals": {
+    "vat": {
+      "amount": "4.40",
+      "exclusive": "20.00",
+      "inclusive": "24.40"
+    }
+  },
+  "entries": [
+    {
+      "type": "SALE",
+      "details": {
+        "concept": "SERVICE"
+      },
+      "data": {
+        "type": "ITEM",
+        "text": "Servizio fittizio TEST",
+        "unit": {
+          "quantity": "1.00",
+          "price": {
+            "inclusive": "24.40",
+            "exclusive": "20.00"
+          }
+        },
+        "value": {
+          "base": "20.00",
+          "discount": "0.00"
+        },
+        "vat": {
+          "type": "VAT_RATE",
+          "code": "STANDARD",
+          "percentage": "22.00",
+          "exclusive": "20.00",
+          "inclusive": "24.40",
+          "amount": "4.40"
+        }
+      }
+    }
+  ],
+  "payments": [
+    {
+      "type": "CASH",
+      "details": {
+        "amount": "24.40"
+      }
+    }
+  ]
+}
