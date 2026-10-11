@@ -71,6 +71,22 @@ export async function POST(request: Request) {
   const adminSupabase = createAdminClient();
   const supabase = adminSupabase;
 
+  if (body.internal_payment_id) {
+    if (!process.env.CRON_SECRET || request.headers.get('x-internal-secret') !== process.env.CRON_SECRET) {
+      return Response.json({ error: 'Internal payment creation requires server authentication' }, { status: 403 });
+    }
+    const { data: payment } = await supabase.from('payments')
+      .select('id,salon_id,status,metadata').eq('id', body.internal_payment_id).single();
+    const saved = payment?.metadata?.booking;
+    if (!payment || payment.status !== 'succeeded' || payment.salon_id !== body.salon_id ||
+        !saved || saved.service_id !== body.service_id || saved.stylist_id !== body.stylist_id ||
+        saved.start_time !== body.start_time) {
+      return Response.json({ error: 'Payment booking mismatch' }, { status: 409 });
+    }
+    const { data: existing } = await supabase.from('appointments').select('*')
+      .eq('id', payment.id).eq('salon_id', payment.salon_id).maybeSingle();
+    if (existing) return Response.json(existing);
+  }
   const duration = await fetchServiceDuration(body.service_id);
   if (!duration) return Response.json({ error: 'Servizio non trovato' }, { status: 404 });
 
@@ -196,6 +212,7 @@ export async function POST(request: Request) {
     .from('appointments')
     .insert({
       salon_id: body.salon_id,
+      id: body.internal_payment_id || undefined,
       client_id: clientId,
       stylist_id: body.stylist_id,
       service_id: body.service_id,

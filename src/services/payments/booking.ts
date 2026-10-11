@@ -2,6 +2,7 @@ import type { CreateCheckoutInput } from './service';
 
 // Dati minimi di una prenotazione da creare a pagamento avvenuto.
 export interface BookingPayload {
+  internal_payment_id?: string;
   salon_id: string;
   service_id: string;
   stylist_id: string;

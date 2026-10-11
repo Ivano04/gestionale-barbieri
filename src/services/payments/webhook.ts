@@ -22,6 +22,7 @@ export async function applyWebhookEvent(args: {
 export async function confirmBookingFromPayment(args: {
   repo: PaymentsRepo;
   event: WebhookEvent;
+  idempotentBooking?: boolean;
   createAppointment: (booking: BookingPayload) => Promise<{ id: string }>;
 }): Promise<void> {
   const { repo, event, createAppointment } = args;
@@ -35,6 +36,6 @@ export async function confirmBookingFromPayment(args: {
   const booking = (payment.metadata as any)?.booking as BookingPayload | undefined;
   if (!booking) return;
 
-  const appt = await createAppointment(booking);
+  const appt = await createAppointment(args.idempotentBooking ? { ...booking, internal_payment_id: payment.id } : booking);
   await repo.updateByProviderRef(event.providerRef, { appointment_id: appt.id });
 }

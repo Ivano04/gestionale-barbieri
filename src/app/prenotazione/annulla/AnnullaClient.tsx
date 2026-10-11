@@ -19,7 +19,7 @@ export function AnnullaClient() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState(false);
-  const [done, setDone] = useState<{ refunded: boolean } | null>(null);
+  const [done, setDone] = useState<{ refunded: boolean; refundPending: boolean; refundStatus?: string } | null>(null);
 
   useEffect(() => {
     fetch(`/api/appointments/cancel?token=${encodeURIComponent(token)}`)
@@ -43,7 +43,7 @@ export function AnnullaClient() {
       });
       if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || 'Errore'); }
       const d = await r.json();
-      setDone({ refunded: !!d.refunded });
+      setDone({ refunded: !!d.refunded, refundPending: !!d.refundPending, refundStatus: d.refundStatus });
     } catch (e: any) {
       setError(e.message || 'Errore di connessione');
     } finally {
@@ -68,7 +68,7 @@ export function AnnullaClient() {
     <div className={box}><div className={card}>
       <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3"><Check className="text-green-600" /></div>
       <h2 className="text-xl font-bold mb-1">Prenotazione annullata</h2>
-      <p className="text-gray-600 text-sm">{done.refunded ? 'Ti abbiamo rimborsato: vedrai l\'accredito entro qualche giorno.' : 'Nessun rimborso previsto per questo annullo.'}</p>
+      <p className="text-gray-600 text-sm">{done.refunded ? 'Ti abbiamo rimborsato: vedrai l\'accredito entro qualche giorno.' : done.refundPending ? 'La richiesta di rimborso e in elaborazione.' : ['failed', 'uncertain'].includes(done.refundStatus ?? '') ? 'Il rimborso richiede una verifica. Contatta il salone.' : 'Nessun rimborso previsto per questo annullo.'}</p>
     </div></div>
   );
 

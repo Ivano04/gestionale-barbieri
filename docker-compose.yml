@@ -1,8 +1,12 @@
 services:
   nextjs:
+    image: gestionale-parrucchiere:${DEPLOY_COMMIT:-latest}
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
     environment:
       - NODE_ENV=production
       - PORT=3002

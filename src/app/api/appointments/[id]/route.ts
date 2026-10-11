@@ -193,9 +193,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const supabase = await createServerSupabase();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return Response.json({ error: 'Non autenticato' }, { status: 401 });
+  const { data: profile } = await supabase.from('users').select('salon_id').eq('id', user.id).single();
+  const { data: appointment } = await supabase.from('appointments').select('id')
+    .eq('id', id).eq('salon_id', profile?.salon_id ?? '').maybeSingle();
+  if (!appointment) return Response.json({ error: 'Appuntamento non trovato' }, { status: 404 });
   // Annullo lato staff: soft-cancel + sync esterni + rimborso automatico (policy staff)
   // + email di annullamento. Logica centralizzata nel servizio di cancellazione.
   const result = await cancelAndMaybeRefund(id, 'staff');
   if (!result.ok) return Response.json({ error: 'Appuntamento non trovato' }, { status: 404 });
-  return Response.json({ status: 'ok', refunded: result.refunded });
+  return Response.json({ status: 'ok', refunded: result.refunded, refundPending: !!result.refundPending, refundStatus: result.refundStatus });
 }

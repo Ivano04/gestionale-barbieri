@@ -63,5 +63,5 @@ export async function POST(request: NextRequest) {
   const result = await cancelAndMaybeRefund(appointmentId, 'client');
   if (!result.ok) return Response.json({ error: 'Prenotazione non trovata' }, { status: 404 });
 
-  return Response.json({ ok: true, refunded: result.refunded, alreadyCancelled: !!result.alreadyCancelled });
+  return Response.json({ ok: true, refunded: result.refunded, refundPending: !!result.refundPending, refundStatus: result.refundStatus, alreadyCancelled: !!result.alreadyCancelled });
 }

@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter, usePathname } from 'next/navigation';
-import { CalendarDays, Users, Settings, LogOut, Menu, X, LayoutDashboard, Scissors, UserCog, ExternalLink } from 'lucide-react';
+import { CalendarDays, Users, Settings, LogOut, Menu, X, LayoutDashboard, Scissors, UserCog, Receipt, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 
 const navItems = [
@@ -10,6 +10,7 @@ const navItems = [
   { href: '/calendar', label: 'Calendario', icon: CalendarDays },
   { href: '/services', label: 'Servizi', icon: Scissors },
   { href: '/staff', label: 'Staff', icon: UserCog },
+  { href: '/cassa', label: 'Cassa', icon: Receipt },
   { href: '/clients', label: 'Clienti', icon: Users },
   { href: '/settings', label: 'Impostazioni', icon: Settings },
 ];

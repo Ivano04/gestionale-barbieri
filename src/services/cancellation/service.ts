@@ -14,6 +14,8 @@ export interface CancelResult {
   reason?: 'not_found';
   alreadyCancelled?: boolean;
   refunded: boolean;
+  refundPending?: boolean;
+  refundStatus?: string;
 }
 
 function fmtDate(iso: string) {
@@ -36,7 +38,17 @@ export async function cancelAndMaybeRefund(appointmentId: string, initiatedBy: C
     .maybeSingle();
 
   if (!appt) return { ok: false, reason: 'not_found', refunded: false };
-  if (appt.status === 'cancelled') return { ok: true, alreadyCancelled: true, refunded: false };
+  let testResult: CancelResult | undefined;
+  if (process.env.FISKALY_TEST_ENABLED === 'true') {
+    if (process.env.FISKALY_ENV !== 'test' || process.env.NEXI_ENV !== 'test') throw new Error('TEST cancellation required');
+    const { data, error } = await admin.rpc('cancel_appointment_fiscal_test', {
+      p_appointment_id: appointmentId, p_initiator: initiatedBy, p_window_hours: cancellationWindowHours(),
+    });
+    if (error || !data?.ok) throw new Error('Cancellation transaction failed');
+    testResult = data as CancelResult;
+    if (testResult.alreadyCancelled) return testResult;
+  }
+  if (!testResult && appt.status === 'cancelled') return { ok: true, alreadyCancelled: true, refunded: false };
 
   const willRefund = shouldRefundOnCancel({
     startIso: appt.start_time,
@@ -46,7 +58,10 @@ export async function cancelAndMaybeRefund(appointmentId: string, initiatedBy: C
   });
 
   // 1) soft-cancel
-  await admin.from('appointments').update({ status: 'cancelled' }).eq('id', appointmentId);
+  if (!testResult) {
+    const { error } = await admin.from('appointments').update({ status: 'cancelled' }).eq('id', appointmentId);
+    if (error) throw new Error('Appointment cancellation failed');
+  }
 
   // 2) eventi + sync esterni (stesso comportamento della DELETE staff)
   sendN8nEvent('appointment.cancelled', {
@@ -63,8 +78,8 @@ export async function cancelAndMaybeRefund(appointmentId: string, initiatedBy: C
   }
 
   // 3) rimborso se dovuto e c'e' un pagamento riuscito
-  let refunded = false;
-  if (willRefund) {
+  let refunded = testResult?.refunded ?? false;
+  if (willRefund && !testResult) {
     const { data: pay } = await admin
       .from('payments')
       .select('provider_payment_id')
@@ -96,7 +111,7 @@ export async function cancelAndMaybeRefund(appointmentId: string, initiatedBy: C
         dateText: fmtDate(appt.start_time),
         timeText: fmtTime(appt.start_time),
         salonName: (appt as any).salon?.name || 'Il salone',
-        refunded,
+        refunded, refundPending: testResult?.refundPending, refundIssue: testResult?.refundStatus === 'failed' || testResult?.refundStatus === 'uncertain',
       });
       await createEmailProvider(cfg).send({ to: clientEmail, subject: email.subject, html: email.html, text: email.text });
     }
@@ -104,5 +119,5 @@ export async function cancelAndMaybeRefund(appointmentId: string, initiatedBy: C
     console.error('[cancel] email fallita:', e);
   }
 
-  return { ok: true, refunded };
+  return testResult ?? { ok: true, refunded };
 }

@@ -1,4 +1,5 @@
-import { createHash, randomBytes } from 'crypto';
+import { RefundRejected } from './refund-worker';
+import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import type {
   CheckoutResult,
   CreateCheckoutParams,
@@ -132,7 +133,11 @@ export class NexiProvider implements PaymentProvider {
   //   MAC = SHA1("apiKey=<>codiceTransazione=<>divisa=<>importo=<>timeStamp=<><chiaveSegreta>")
   //   divisa = 978 (codice numerico EUR).
   async refund(codiceTransazione: string, amountCents?: number): Promise<void> {
-    if (amountCents == null) {
+    await this.refundWithResult(codiceTransazione, amountCents);
+  }
+
+  async refundWithResult(codiceTransazione: string, amountCents?: number): Promise<{ operationId: string }> {
+    if (amountCents == null || !Number.isSafeInteger(amountCents) || amountCents <= 0) {
       throw new Error('Rimborso Nexi: importo obbligatorio');
     }
     const importo = String(amountCents);
@@ -147,10 +152,18 @@ export class NexiProvider implements PaymentProvider {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ apiKey: this.config.alias, codiceTransazione, importo, divisa, timeStamp, mac }),
+      signal: AbortSignal.timeout(15_000), redirect: 'error',
     });
-    const data: any = await res.json();
-    if (data?.esito !== 'OK') {
-      throw new Error(`Storno Nexi fallito: ${data?.errore?.messaggio || data?.esito || 'sconosciuto'}`);
+    if (!res.ok) throw new Error('HTTP rimborso Nexi non riuscito');
+    const data = await res.json() as Record<string, unknown>;
+    if (typeof data.esito !== 'string' || typeof data.idOperazione !== 'string' ||
+        !(typeof data.timeStamp === 'string' || (typeof data.timeStamp === 'number' && Number.isSafeInteger(data.timeStamp))) || typeof data.mac !== 'string' || !/^[0-9a-f]{40}$/i.test(data.mac)) {
+      throw new Error('Risposta rimborso Nexi non verificabile');
     }
+    const expected = sha1(`esito=${data.esito}idOperazione=${data.idOperazione}timeStamp=${data.timeStamp}${this.config.macKey}`);
+    if (!timingSafeEqual(Buffer.from(data.mac.toLowerCase()), Buffer.from(expected))) throw new Error('MAC rimborso Nexi non valido');
+    if (data.esito !== 'OK') throw new RefundRejected('Storno Nexi rifiutato');
+    if (!data.idOperazione) throw new Error('Identificativo rimborso Nexi assente');
+    return { operationId: data.idOperazione };
   }
 }

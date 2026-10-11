@@ -1,3 +1,4 @@
+import { registerNexiFiscalTest, linkNexiFiscalAppointment } from '@/services/fiscal/nexi-bridge';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createPaymentProvider, paymentConfigFromEnv } from '@/services/payments';
 import { createSupabasePaymentsRepo } from '@/services/payments/repo';
@@ -23,12 +24,20 @@ export async function POST(request: Request) {
 
   try {
     const repo = createSupabasePaymentsRepo(createAdminClient());
-    await applyWebhookEvent({ repo, event });
+    if (process.env.FISKALY_TEST_ENABLED === 'true' && event.status === 'succeeded') {
+      if (config.provider !== 'nexi' || config.nexiEnv !== 'test' || process.env.FISKALY_ENV !== 'test') {
+        throw new Error('Fiscal integration requires TEST');
+      }
+      await registerNexiFiscalTest(createAdminClient(), event);
+    } else {
+      await applyWebhookEvent({ repo, event });
+    }
 
     // A pagamento riuscito, crea l'appuntamento riusando l'endpoint esistente
     // (mantiene i controlli conflitti e la sync verso Treatwell).
     const base = process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
     await confirmBookingFromPayment({
+      idempotentBooking: process.env.FISKALY_TEST_ENABLED === 'true',
       repo,
       event,
       createAppointment: async (booking: BookingPayload) => {
@@ -48,6 +57,9 @@ export async function POST(request: Request) {
         return { id: data.id };
       },
     });
+    if (process.env.FISKALY_TEST_ENABLED === 'true' && event.status === 'succeeded') {
+      await linkNexiFiscalAppointment(createAdminClient(), event.providerRef);
+    }
   } catch (err: any) {
     // Errore di persistenza/creazione: rispondiamo 500 cosi' Nexi puo' ritentare la notifica.
     return new Response(`Errore interno: ${err?.message || 'persistenza'}`, { status: 500 });

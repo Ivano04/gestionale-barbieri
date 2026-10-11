@@ -1,8 +1,7 @@
 node_modules
 .next
 .git
-.env.local
-.env
+.env*
 *.log
 *.yml
 *.yaml
@@ -11,3 +10,5 @@ docs
 .claude
 .playwright-mcp
 .superpowers
+
+fiscal-settings.json

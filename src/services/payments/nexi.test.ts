@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, it, expect } from 'vitest';
 import { NexiProvider } from './nexi';
 
@@ -96,7 +97,9 @@ describe('NexiProvider.refund (storno)', () => {
     const calls: any = { fetch: [] };
     const fetchImpl = async (url: string, opts: any) => {
       calls.fetch.push({ url, opts });
-      return { json: async () => response } as any;
+      const signed = { idOperazione: 'op1', timeStamp: '1700000000000', ...response };
+      const mac = createHash('sha1').update(`esito=${signed.esito}idOperazione=${signed.idOperazione}timeStamp=${signed.timeStamp}SECRET123`).digest('hex');
+      return { ok: true, json: async () => ({ ...signed, mac: response.mac ?? mac }) } as any;
     };
     const provider = new NexiProvider({
       alias: 'ALIAS_TEST', macKey: 'SECRET123', env: 'test',
@@ -124,6 +127,16 @@ describe('NexiProvider.refund (storno)', () => {
   it('lancia se esito KO', async () => {
     const { provider } = makeProviderWithFetch({ esito: 'KO', errore: { messaggio: 'transazione non trovata' } });
     await expect(provider.refund('ORDER1', 2500)).rejects.toThrow(/transazione non trovata|storno/i);
+  });
+
+  it('rifiuta una risposta di rimborso con MAC errato', async () => {
+    const { provider } = makeProviderWithFetch({ esito: 'OK', idOperazione: 'op1', mac: '0'.repeat(40) });
+    await expect(provider.refundWithResult('ORDER1', 2500)).rejects.toThrow(/MAC/);
+  });
+
+  it('restituisce il riferimento del rimborso verificato', async () => {
+    const { provider } = makeProviderWithFetch({ esito: 'OK', idOperazione: 'op1' });
+    await expect(provider.refundWithResult('ORDER1', 2500)).resolves.toEqual({ operationId: 'op1' });
   });
 
   it('lancia se manca l\'importo', async () => {

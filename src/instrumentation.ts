@@ -5,6 +5,8 @@ export async function register() {
     startTreatwellCron();
     console.log('[cron] Treatwell sync avviato (ogni 15 min)');
 
+    const { startFiscalTestCron } = await import('@/services/fiscal/cron');
+    startFiscalTestCron();
     const { startNotificationsCron } = await import('@/services/notifications/cron');
     startNotificationsCron();
     if (process.env.RESEND_API_KEY) {

@@ -2,11 +2,12 @@
 
 ## Ambito
 Documento commerciale di prova, separato da fattura elettronica SdI.
-Prima milestone: autenticazione, verifica sistema, intenzione, invio ricevuta e recupero stato.
-Nessun collegamento a pagamenti, appuntamenti, email o database del salone.
-La prova remota non è validata finché non è eseguita con credenziali TEST.
-Download ufficiale, annullo/reso e pagamento elettronico richiedono verifica dello schema API e della sandbox prima di completare la fase 2.
-Il fixture usa CASH, come l'esempio ufficiale; non rappresenta un pagamento Nexi né una regola IVA del salone.
+Il client isolato e il collegamento fiscale del gestionale operano esclusivamente in TEST.
+Sono verificati setup, ricevute CASH/CARD, PDF dimostrativo, annullo isolato,
+persistenza dei pagamenti e delle operazioni fiscali, recupero della coda e pagina Cassa.
+La notifica Nexi del flusso locale ? simulata e firmata: non ? un pagamento effettuato
+sulla pagina sandbox Nexi. Il modulo email Resend TEST e implementato; la consegna reale richiede configurazione e verifica.
+I rimborsi del flusso integrato restano da completare.
 
 ## Configurazione locale
 Creare .env.local (ignorato da Git), copiando le variabili:
@@ -85,5 +86,208 @@ node --env-file=.env.local scripts/fiskaly-cancel-test.mjs cancel
 ~~~
 L'annullo usa la ricevuta registrata in prova-001.json e salva una sessione separata
 prova-001-annullo.json. Non cancellare o modificare queste sessioni.
-Rimangono da verificare pagamento elettronico, recupero di una scrittura interrotta e reso CORRECTION.
-Il modulo non e ancora collegato a Nexi, database, Cassa o Resend.
+Il pagamento CARD ? stato verificato in sandbox. Il recupero di una risposta persa ? verificato
+con provider simulato; il reso CORRECTION e il rimborso integrato restano da implementare.
+
+## Flusso integrato locale e Cassa
+Applicare le migrazioni 012?015 secondo lo stato del database. Nella prova locale sono
+state applicate 012, 013, 014 e 015, senza modificare il database del server.
+La configurazione fiscal_configs deve contenere gli identificativi UNIT, taxpayer,
+location e system TEST ed essere abilitata. Le credenziali restano nelle variabili server.
+
+~~~dotenv
+FISKALY_TEST_ENABLED=true
+FISKALY_TEST_VAT_PERCENT=22
+CRON_SECRET=valore_casuale_server
+~~~
+L'aliquota 22 ? una scelta esplicita della prova, da configurare correttamente prima del LIVE.
+Il checkout salva prezzo e dati fiscali immutabili. Il webhook verificato registra
+pagamento, evento, documento e job in una transazione; la conferma collega l'appuntamento.
+Il worker riprende le emissioni con le stesse chiavi di idempotenza. Numero documento
+TEST di massimo 20 caratteri, con i caratteri ammessi dallo schema provider.
+
+Il recupero PDF usa una coda separata basata sui documenti completati, con tentativi e
+ritardo persistenti: un errore Storage non provoca un'altra emissione. Bucket privato
+fiscal-documents, percorso salone/ambiente/documento.pdf, accessibile soltanto dal server.
+/api/cassa legge tramite RLS dell'utente; il download verifica anche l'appartenenza al
+salone e il percorso previsto prima di accedere a Storage. Nessun URL pubblico o
+percorso Storage ? esposto nella lista. La pagina /cassa mostra pagamento, stato fiscale,
+ambiente e disponibilit? del PDF, con paginazione e aggiornamento manuale.
+
+Riavviare npm run dev dopo la modifica del cron: emissione e recupero PDF vengono
+controllati ogni 30 secondi. Questa modalit? richiede un processo server persistente.
+Il PDF TEST fornito da fiskaly ? dimostrativo e pu? mostrare importi diversi.
+
+~~~powershell
+npm test
+npx tsc --noEmit --incremental false
+node --env-file=.env.local scripts/fiscal-local-flow-test.mjs
+$env:FISCAL_LOCAL_INTEGRATION='true'
+node --env-file=.env.local node_modules/vitest/vitest.mjs run scripts/fiscal-cassa-local.test.ts
+Remove-Item Env:FISCAL_LOCAL_INTEGRATION
+~~~
+La prova del flusso crea appuntamenti e documenti fittizi nel salone locale e li conserva.
+La prova Cassa verifica la ricevuta di quel flusso (payment ID presente nello script),
+crea due utenti temporanei e un secondo salone, e li rimuove al termine. Ha verificato:
+download PDF autorizzato, lista del proprio salone, negazione al secondo salone,
+negazione del download anonimo e della lettura diretta anonima su Storage.
+Per un database locale differente adattare gli ID degli script, senza usarli in LIVE.
+Rimane aperto il crash PostgreSQL della prova isolata di invocazione RPC non autorizzata;
+i permessi delle RPC sono verificati tramite catalogo e i download tramite HTTP/RLS.
+Nexi non raggiunge localhost: la prova reale server-to-server richiede un indirizzo pubblico.
+
+
+## Invio ricevuta con Resend TEST
+Migrazione 016: fiscal_email_jobs, coda persistente con un solo lavoro per documento,
+lease di 120 secondi, snapshot immutabile di mittente, destinatario, contenuto e hash PDF.
+L'invio parte dopo l'archiviazione del PDF. Nessuna email viene inviata per documenti falliti.
+Lo stato email compare in Cassa ed e separato da emissione e pagamento.
+
+~~~dotenv
+RESEND_API_KEY=chiave_da_inserire_localmente
+RESEND_FROM=onboarding@resend.dev
+FISKALY_TEST_EMAIL_TO=indirizzo_autorizzato
+FISKALY_TEST_EMAIL_ENABLED=true
+~~~
+In locale il flag rimane false fino alla configurazione. Il destinatario di prova viene
+preso esclusivamente dalla variabile autorizzata, mai dal cliente della prenotazione.
+Salvare .env.local e riavviare npm run dev. Il worker inserira anche la ricevuta TEST
+completata gia presente, se non ha ancora un lavoro email. Le email sono etichettate TEST,
+con PDF dimostrativo allegato. La chiave Resend resta sul server e fuori da Git.
+
+Invii con risposta persa e riprese usano sempre lo stesso payload, PDF e chiave di
+idempotenza. Resend conserva le chiavi per 24 ore: dopo 23 ore dal primo tentativo il
+job viene fermato in uncertain, da verificare prima di decidere un nuovo invio.
+Lo stato sent significa accettato da Resend, non consegna alla casella certificata.
+Eventi di delivery/bounce e reinvio manuale non sono implementati in questa fase.
+
+Verifiche: adapter con allegati e chiavi, destinatari TEST, snapshot PDF, errori e retry;
+prova PostgreSQL locale con enqueue duplicato, snapshot immutabile, risposta accettata
+seguita da errore DB, ripresa con stessa chiave, job sent e blocco oltre la finestra.
+Il provider nella prova locale e simulato: nessuna consegna email reale e dichiarata.
+
+~~~powershell
+$env:FISCAL_LOCAL_INTEGRATION='true'
+node --env-file=.env.local node_modules/vitest/vitest.mjs run scripts/fiscal-email-local.test.ts
+Remove-Item Env:FISCAL_LOCAL_INTEGRATION
+~~~
+La prova richiede coda vuota e rimuove il lavoro temporaneo al termine; non eseguirla
+su una coda con invii reali attivi.
+Riferimenti: https://resend.com/docs/dashboard/emails/idempotency-keys
+https://resend.com/docs/api-reference/emails/send-email
+
+
+## Prova Resend reale del 2026-10-11
+Configurazione locale completata dall'utente e server riavviato. Il worker ha inviato
+la ricevuta TEST gia completata con PDF archiviato, ottenendo l'accettazione Resend
+al primo tentativo. fiscal_email_jobs registra state=sent, provider_email_id e sent_at,
+senza errore. Non e stata creata una nuova ricevuta o avviato un nuovo pagamento.
+La consegna alla casella resta da confermare dal destinatario: non e stata verificata
+tramite webhook delivery/bounce. La chiave Sending access non viene usata per leggere
+lo stato remoto. Non rieseguire la prova email locale simulata sulla coda attiva.
+
+
+## Cancellazioni e rimborsi integrati TEST (2026-10-11)
+Il destinatario ha confermato la ricezione della prima email con PDF TEST.
+Migrazione 017: cancellazione appuntamento e richiesta di rimborso atomiche,
+refund_jobs con snapshot immutabile, un solo lavoro per pagamento e lease.
+La decisione della finestra cliente viene conservata al primo annullo, senza
+ricalcolarla durante una ripresa. L'annullo staff usa la policy di rimborso integrale.
+Le DELETE staff verificano autenticazione e salone prima dell'azione finanziaria.
+
+Il worker registra l'inizio della chiamata prima di contattare Nexi; verifica MAC,
+esito e riferimento operativo della risposta. Un esito OK verificato aggiorna in
+transazione pagamento, evento e job. Prima della chiamata una lease scaduta e
+recuperabile; dopo l'inizio della chiamata un timeout/crash viene fermato come
+uncertain per evitare un doppio rimborso. Un KO firmato viene conservato come failed.
+Esiti incerti e rifiuti richiedono verifica/correzione prima di un nuovo tentativo:
+la riconciliazione Nexi e il comando staff di ripresa non sono ancora implementati.
+Una notifica OK tardiva gia registrata non annulla lo stato refunded.
+
+Per annullo prima dell'inizio e rimborso completo verificato, viene accodato un
+CANCELLATION collegato alla ricevuta originale, usando la sua configurazione fiscale
+immutabile. L'annullo ha proprie chiavi persistenti, stato e PDF. La ricevuta originale
+viene marcata canceled solo dopo COMPLETED/FINISHED dell'annullo e rimane consultabile.
+Cassa distingue pagamento, rimborso, documento e email. L'email di annullo usa un
+oggetto specifico nelle nuove sessioni del server. Il primo annullo di prova e stato
+inviato dal cron gia avviato con oggetto generico Ricevuta TEST; il PDF e quello di annullo.
+Riavviare il server per caricare tutti gli aggiornamenti del worker e dei template.
+
+Annullo dopo l'inizio: richiesta monetaria conservata, ma nessun CANCELLATION automatico;
+Cassa segnala che il reso fiscale va gestito. CORRECTION e rimborsi parziali restano separati.
+Il worker monetario viene attivato esplicitamente con FISKALY_TEST_REFUNDS_ENABLED=true;
+per ora resta false: il pagamento del flusso locale era una notifica simulata e non
+esiste in Nexi. La prova di un vero rimborso richiede un vero pagamento sandbox e
+una notifica raggiungibile su indirizzo pubblico.
+
+Verifiche: 21 controlli PostgreSQL in database temporaneo, test worker/MAC/timeout,
+prova locale con risposta Nexi firmata SIMULATA e annullo reale fiskaly TEST
+COMPLETED/FINISHED con PDF. Conservati pagamento, appuntamento annullato, ricevuta
+originale e annullo; il riferimento monetario inizia con SIMULATED. Nessun rimborso
+Nexi remoto e stato effettuato o dichiarato riuscito.
+
+~~~powershell
+node scripts/refund-db-verify.mjs
+$env:FISCAL_LOCAL_CANCELLATION_TEST='true'
+node --env-file=.env.local node_modules/vitest/vitest.mjs run scripts/fiscal-cancellation-local.test.ts
+Remove-Item Env:FISCAL_LOCAL_CANCELLATION_TEST
+~~~
+La prova usa soltanto l'appuntamento locale fittizio identificato nello script e
+verifica nelle note che derivi dalla notifica Nexi simulata. Non eseguirla in LIVE.
+Riferimenti: https://ecommerce.nexi.it/sites/default/files/documenti/specifichetecniche.NEXI.13.2_0.pdf
+https://support.fiskaly.com/hc/en-001/articles/23705053376412-SIGN-IT-When-should-CANCELLATION-be-used
+
+
+## Callback pubblico temporaneo per Nexi sandbox
+
+Per provare un pagamento sandbox reale con il widget su localhost, impostare
+`NEXI_TEST_NOTIFY_URL=https://<tunnel>/api/webhooks/payments/nexi` in `.env.local`.
+L'override funziona esclusivamente con `PAYMENT_PROVIDER=nexi` e `NEXI_ENV=test`.
+Non impostare `NEXT_PUBLIC_APP_URL` al tunnel: ritorno del browser e conferma
+interna dell'appuntamento devono rimanere sull'app locale.
+
+`node --env-file=.env.local scripts/nexi-test-proxy.mjs` avvia su 127.0.0.1:3001
+un proxy limitato al POST form-urlencoded del webhook Nexi (massimo 8 KiB).
+Cloudflared deve puntare a questa porta, non alla porta dell'app. Le altre
+rotte rispondono 404; la verifica MAC rimane nel webhook originale.
+
+Il tunnel avviato durante la preparazione e' temporaneo. Il binario, i log e
+`processes.json` con i PID sono sotto `.superpowers/nexi-test`, esclusa da Git.
+Alla chiusura del tunnel o al riavvio del PC occorre generarne uno nuovo e
+aggiornare l'override prima di avviare altri pagamenti. Riavviare `npm run dev`
+dopo ogni aggiornamento di `.env.local`.
+
+Verificati sei test per override e proxy, TypeScript e lint dei file coinvolti.
+Dal tunnel verificati 404 sulla pagina calendario e 400 per una notifica con
+MAC invalido. Questo verifica la raggiungibilita', non un pagamento Nexi.
+Il checkout sandbox completo deve ancora essere effettuato dal browser;
+`FISKALY_TEST_REFUNDS_ENABLED` rimane false fino a tale verifica.
+
+
+## Deploy sul server di testing
+
+Da main, con modifiche tracciate gia committate, eseguire da PowerShell:
+`./scripts/deploy-test.ps1`. Lo script trasferisce soltanto il contenuto del commit
+con `git archive`, non i file locali extra. La configurazione fiscale TEST viene
+esportata da `.env.local` in un file privato temporaneo e trasferita via SSH;
+Supabase, DATABASE_URL, Nexi e CRON_SECRET del server vengono conservati.
+Il callback temporaneo locale viene rimosso dalla configurazione del server.
+
+Release: `/opt/localvista-releases/<commit>`; release attiva indicata da
+`/opt/localvista-releases/current`. Le variabili pubbliche Supabase vengono passate
+alla build; `.env*` e il file di configurazione privata sono esclusi dall'immagine.
+Le chiavi server sono fornite al container solo durante l'avvio.
+
+Il backup conserva immagine precedente, configurazione precedente e un dump
+PostgreSQL 17 delle tabelle public e dei metadati storage. Non copia i file binari
+dei bucket o lo schema auth. Le migrazioni 014-017 e la configurazione del salone
+vengono applicate in una transazione; un registro privato conserva i checksum per
+non applicarle due volte. La build precede le migrazioni e non ferma l'app attuale.
+Un avvio fallito ripristina l'immagine precedente; le migrazioni additive restano.
+Per ripristino manuale usare `docker compose -p gestionale-parrucchiere -f
+<backup>/rollback-compose.json up -d --no-build nextjs`. Non ripristinare il dump
+senza verificare eventuali nuove operazioni registrate dopo il deploy.
+
+Il primo deploy lascia `FISKALY_TEST_REFUNDS_ENABLED=false`: l'attivazione segue
+la verifica di una nuova prenotazione con pagamento realmente eseguito in sandbox.
+I pagamenti gia presenti sul server non vengono retrofatturati automaticamente.

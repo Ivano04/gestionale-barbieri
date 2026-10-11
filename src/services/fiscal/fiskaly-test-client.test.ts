@@ -198,3 +198,40 @@ describe('annullo ricevuta TEST', () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 });
+describe('risposta persa dopo accettazione e riavvio', () => {
+  it('riprende la ricevuta con stessa chiave e payload dopo riavvio del client', async () => {
+    const accepted = new Map<string, { payload: string; id: string }>();
+    let lost = false;
+    let emissions = 0;
+    const fetcher = mockFetch().mockImplementation(async (url, options) => {
+      if (String(url).endsWith('/tokens')) return auth();
+      if (String(url).endsWith('/records') && options?.method === 'POST') {
+        const requestKey = (options.headers as Record<string, string>)['X-Idempotency-Key'];
+        const payload = options.body as string;
+        let stored = accepted.get(requestKey);
+        if (stored && stored.payload !== payload) return new Response('conflict', { status: 409 });
+        if (!stored) {
+          stored = { payload, id: '10000000-0000-4000-8000-000000000099' };
+          accepted.set(requestKey, stored); emissions++;
+        }
+        if (!lost) { lost = true; throw new Error('Risposta persa dopo accettazione'); }
+        return Response.json({ content: { id: stored.id, state: 'COMPLETED', mode: 'FINISHED' } });
+      }
+      throw new Error('Chiamata inattesa');
+    });
+    // La sessione del chiamante conserva questi valori prima della prima richiesta.
+    const session = { intentionId, transactionKey: key, operation: { type: 'RECEIPT', document: { number: 'RECOVERY-TEST' } } };
+    await expect(new FiskalyTestClient(config, fetcher).submitReceipt(
+      session.intentionId, session.operation, session.transactionKey)).rejects.toMatchObject({ uncertain: true });
+    const resumedSession = JSON.parse(JSON.stringify(session));
+    const result = await new FiskalyTestClient(config, fetcher).submitReceipt(
+      resumedSession.intentionId, resumedSession.operation, resumedSession.transactionKey);
+    expect(result.content.id).toBe('10000000-0000-4000-8000-000000000099');
+    expect(emissions).toBe(1);
+    const posts = fetcher.mock.calls.filter(([url]) => String(url).endsWith('/records'));
+    expect(posts).toHaveLength(2);
+    expect(posts[0][1]!.body).toBe(posts[1][1]!.body);
+    expect((posts[0][1]!.headers as Record<string, string>)['X-Idempotency-Key'])
+      .toBe((posts[1][1]!.headers as Record<string, string>)['X-Idempotency-Key']);
+  });
+});

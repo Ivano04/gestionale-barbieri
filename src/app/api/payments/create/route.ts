@@ -1,3 +1,6 @@
+import { nexiNotifyUrl } from '@/services/payments/notify-url';
+import { randomUUID } from 'node:crypto';
+import { buildTestReceipt } from '@/services/fiscal/receipt-builder';
 import type { NextRequest } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createPaymentProvider, paymentConfigFromEnv } from '@/services/payments';
@@ -11,7 +14,7 @@ import { buildBookingCheckoutInput, type BookingPayload } from '@/services/payme
 // e funge da BLOCCO SLOT temporaneo. L'appuntamento nasce solo a pagamento riuscito
 // (vedi webhook). L'importo e' preso dal prezzo del servizio nel DB, non dal client.
 export async function POST(request: NextRequest) {
-  let body: any;
+  let body: { booking?: BookingPayload } | null;
   try {
     body = await request.json();
   } catch {
@@ -30,6 +33,7 @@ export async function POST(request: NextRequest) {
     .from('services')
     .select('price_cents, duration_minutes, name')
     .eq('id', booking.service_id)
+    .eq('salon_id', booking.salon_id)
     .single();
   if (svcErr || !service) {
     return Response.json({ error: 'Servizio non trovato' }, { status: 404 });
@@ -51,12 +55,20 @@ export async function POST(request: NextRequest) {
       providerName: config.provider,
       successUrl: `${base}/pagamento/esito`,
       cancelUrl: `${base}/pagamento/esito`,
-      notifyUrl: `${base}/api/webhooks/payments/nexi`,
+      notifyUrl: nexiNotifyUrl(base),
     });
 
+    if (process.env.FISKALY_TEST_ENABLED === 'true') {
+      if (config.provider !== 'nexi' || config.nexiEnv !== 'test' || process.env.FISKALY_ENV !== 'test') {
+        throw new Error('Fiscal integration requires Nexi and fiskaly TEST');
+      }
+      input.rowMetadata = { ...input.rowMetadata, payment_environment: 'test',
+        fiscal_receipt: buildTestReceipt(service.price_cents, service.name,
+          'TEST-' + randomUUID().replaceAll('-', '').slice(0, 15).toUpperCase(), Number(process.env.FISKALY_TEST_VAT_PERCENT)) };
+    }
     const result = await createPaymentCheckout({ provider, repo, input });
     return Response.json(result);
-  } catch (err: any) {
-    return Response.json({ error: err?.message || 'Errore creazione pagamento' }, { status: 500 });
+  } catch (err: unknown) {
+    return Response.json({ error: err instanceof Error ? err.message : 'Errore creazione pagamento' }, { status: 500 });
   }
 }
