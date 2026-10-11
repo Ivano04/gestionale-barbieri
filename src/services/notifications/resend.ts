@@ -15,7 +15,7 @@ export class ResendProvider implements EmailProvider {
       subject: msg.subject,
       html: msg.html,
       ...(msg.text ? { text: msg.text } : {}),
-    } as any);
+    }, msg.idempotencyKey ? { idempotencyKey: msg.idempotencyKey } : undefined);
 
     if (error) {
       throw new Error(`Invio email fallito: ${error.message}`);

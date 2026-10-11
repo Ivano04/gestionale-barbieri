@@ -1,3 +1,5 @@
+import { rescheduleLink } from '@/services/rescheduling/token';
+import { makeCancelToken } from '@/services/cancellation/token';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { emailConfigFromEnv, createEmailProvider } from './index';
 import { createSupabaseNotificationsRepo } from './repo';
@@ -54,6 +56,7 @@ async function runNotifications() {
         data: {
           salonId: a.salon_id,
           appointmentId: a.id,
+          appointmentStartTime: a.start_time,
           to: clientEmail,
           clientName: a.client?.first_name || 'Cliente',
           serviceName: a.service?.name || 'Servizio',
@@ -61,6 +64,8 @@ async function runNotifications() {
           timeText: fmtTime(a.start_time),
           salonName: a.salon?.name || 'Il salone',
           reviewUrl: d.type === 'review' ? reviewUrl : undefined,
+          rescheduleUrl: d.type === 'reminder' && process.env.NEXT_PUBLIC_APP_URL && process.env.CRON_SECRET ? rescheduleLink(process.env.NEXT_PUBLIC_APP_URL, a.id, process.env.CRON_SECRET) : undefined,
+          cancelUrl: d.type === 'reminder' && process.env.NEXT_PUBLIC_APP_URL && process.env.CRON_SECRET ? `${process.env.NEXT_PUBLIC_APP_URL}/prenotazione/annulla?token=${makeCancelToken(a.id, process.env.CRON_SECRET)}` : undefined,
         },
       }).catch((err) => console.error('[notif-cron] invio fallito', d, err?.message));
     }

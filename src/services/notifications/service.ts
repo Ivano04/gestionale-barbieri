@@ -3,14 +3,16 @@ import { confirmationEmail, reminderEmail, reviewEmail, type BookingEmailData, t
 
 // "Porta" verso la persistenza delle notifiche (idempotenza + tracciamento).
 export interface NotificationsRepo {
+  isCurrent?(appointmentId: string, startTime: string): Promise<boolean>;
   alreadySent(appointmentId: string, type: NotificationType): Promise<boolean>;
-  markSent(row: { salon_id: string; appointment_id: string; type: NotificationType }): Promise<void>;
+  markSent(row: { salon_id: string; appointment_id: string; type: NotificationType; expectedStart?: string }): Promise<void>;
 }
 
 export interface NotificationData extends BookingEmailData {
   salonId: string;
   appointmentId: string;
   to: string;
+  appointmentStartTime?: string;
 }
 
 // Alias storico
@@ -33,12 +35,13 @@ export async function sendBookingEmail(args: {
   const { provider, repo, type, data } = args;
 
   if (!data.to) return;
+  if (data.appointmentStartTime && repo.isCurrent && !await repo.isCurrent(data.appointmentId, data.appointmentStartTime)) return;
   if (await repo.alreadySent(data.appointmentId, type)) return;
 
   const email = TEMPLATES[type](data);
   await provider.send({ to: data.to, subject: email.subject, html: email.html, text: email.text });
 
-  await repo.markSent({ salon_id: data.salonId, appointment_id: data.appointmentId, type });
+  await repo.markSent({ salon_id: data.salonId, appointment_id: data.appointmentId, type, ...(data.appointmentStartTime ? { expectedStart: data.appointmentStartTime } : {}) });
 }
 
 // Comodità per la conferma (usata dalla creazione appuntamento).

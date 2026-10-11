@@ -119,19 +119,17 @@ export async function fetchOccupiedSlots(
   salonId: string,
   dayStart: Date,
   dayEnd: Date,
+  excludeAppointmentId?: string,
 ) {
   const supabase = createAdminClient();
   // Use overlap queries: fetch any block/appointment that overlaps the day,
   // not just those starting within the day. A block from 23:00 yesterday to
   // 02:00 today must still block today's 01:00 slot.
+  let appointmentsQuery = supabase.from('appointments').select('stylist_id, start_time, end_time, buffer_end_time, service_id')
+    .eq('salon_id', salonId).lt('start_time', dayEnd.toISOString()).gt('end_time', dayStart.toISOString()).neq('status', 'cancelled');
+  if (excludeAppointmentId) appointmentsQuery = appointmentsQuery.neq('id', excludeAppointmentId);
   const [appsRes, blocksRes] = await Promise.all([
-    supabase
-      .from('appointments')
-      .select('stylist_id, start_time, end_time, buffer_end_time, service_id')
-      .eq('salon_id', salonId)
-      .lt('start_time', dayEnd.toISOString())
-      .gt('end_time', dayStart.toISOString())
-      .neq('status', 'cancelled'),
+    appointmentsQuery,
     supabase
       .from('time_blocks')
       .select('stylist_id, start_time, end_time')
@@ -139,6 +137,8 @@ export async function fetchOccupiedSlots(
       .lt('start_time', dayEnd.toISOString())
       .gt('end_time', dayStart.toISOString()),
   ]);
+
+  if (appsRes.error || blocksRes.error) throw new Error('Calendar availability unavailable');
 
   // Fetch service phases for appointments that have a service
   const serviceIds = [...new Set((appsRes.data || []).map((a: any) => a.service_id).filter(Boolean))];

@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import { describe, it, expect } from 'vitest';
 import { sendConfirmation, sendBookingEmail } from './service';
 
@@ -83,4 +84,12 @@ describe('sendBookingEmail (generico)', () => {
     expect(provider.calls.send).toHaveLength(1);
     expect(repo.calls.markSent[0]).toMatchObject({ appointment_id: 'a1', type: 'review' });
   });
+});
+
+
+it('skips a reminder whose date changed while the cron was preparing it', async () => {
+  const provider = { send: vi.fn() };
+  const repo = { alreadySent: vi.fn().mockResolvedValue(false), markSent: vi.fn(), isCurrent: vi.fn().mockResolvedValue(false) };
+  await sendBookingEmail({ provider, repo, type: 'reminder', data: { salonId: 'salon', appointmentId: 'id', appointmentStartTime: '2026-11-01T10:00:00Z', to: 'test@example.invalid', clientName: 'TEST', salonName: 'TEST', serviceName: 'Taglio', dateText: 'domani', timeText: '11:00' } });
+  expect(provider.send).not.toHaveBeenCalled(); expect(repo.markSent).not.toHaveBeenCalled();
 });

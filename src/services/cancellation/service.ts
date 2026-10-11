@@ -33,7 +33,7 @@ export async function cancelAndMaybeRefund(appointmentId: string, initiatedBy: C
 
   const { data: appt } = await admin
     .from('appointments')
-    .select('id, start_time, status, salon_id, treatwell_appointment_id, ghl_appointment_id, client:clients(first_name,email), service:services(name), salon:salons(name)')
+    .select('id, start_time, client_cancellation_deadline_at, status, salon_id, treatwell_appointment_id, ghl_appointment_id, client:clients(first_name,email), service:services(name), salon:salons(name)')
     .eq('id', appointmentId)
     .maybeSingle();
 
@@ -55,6 +55,7 @@ export async function cancelAndMaybeRefund(appointmentId: string, initiatedBy: C
     now: new Date(),
     windowHours: cancellationWindowHours(),
     initiatedBy,
+    deadlineIso: appt.client_cancellation_deadline_at,
   });
 
   // 1) soft-cancel

@@ -4,6 +4,7 @@ import { useSearchParams } from 'next/navigation';
 import { Check, X, AlertTriangle } from 'lucide-react';
 
 interface Info {
+  rescheduleUrl?: string;
   serviceName: string;
   salonName: string;
   dateText: string;
@@ -95,9 +96,10 @@ export function AnnullaClient() {
         <span>
           {info?.refundEligible
             ? `Annullando ora ti verrà rimborsato${eur ? ' ' + eur : ' l\'importo pagato'}.`
-            : 'Sei a ridosso dell\'appuntamento: l\'annullo non prevede rimborso.'}
+            : 'Il termine per ottenere un rimborso e scaduto. Questo annullo non prevede rimborso.'}
         </span>
       </div>
+      {info?.rescheduleUrl && <a href={info.rescheduleUrl} className="block w-full bg-blue-600 text-white py-3 rounded-lg font-semibold mb-3">Preferisci spostare? Modifica data e ora</a>}
       <button onClick={confirmCancel} disabled={cancelling}
         className="w-full bg-red-600 text-white py-3 rounded-lg font-semibold hover:bg-red-700 disabled:opacity-50">
         {cancelling ? 'Annullamento…' : 'Conferma annullamento'}

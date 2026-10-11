@@ -1,3 +1,4 @@
+import { rescheduleLink } from '@/services/rescheduling/token';
 import type { NextRequest } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { verifyCancelToken } from '@/services/cancellation/token';
@@ -24,7 +25,7 @@ export async function GET(request: NextRequest) {
   const admin = createAdminClient();
   const { data: appt } = await admin
     .from('appointments')
-    .select('start_time, status, service:services(name), salon:salons(name)')
+    .select('start_time, client_cancellation_deadline_at, status, service:services(name), salon:salons(name)')
     .eq('id', appointmentId)
     .maybeSingle();
   if (!appt) return Response.json({ error: 'Prenotazione non trovata' }, { status: 404 });
@@ -36,13 +37,14 @@ export async function GET(request: NextRequest) {
     .eq('status', 'succeeded')
     .maybeSingle();
 
-  const refundEligible = isRefundEligible(appt.start_time, new Date(), cancellationWindowHours());
+  const refundEligible = isRefundEligible(appt.start_time, new Date(), cancellationWindowHours(), appt.client_cancellation_deadline_at);
 
   return Response.json({
     serviceName: (appt as any).service?.name || 'Servizio',
     salonName: (appt as any).salon?.name || 'Il salone',
     dateText: fmtDate(appt.start_time),
     timeText: fmtTime(appt.start_time),
+    rescheduleUrl: process.env.CRON_SECRET ? rescheduleLink(process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin, appointmentId, process.env.CRON_SECRET) : undefined,
     alreadyCancelled: appt.status === 'cancelled',
     refundEligible,
     amountCents: pay?.amount_cents ?? null,

@@ -291,3 +291,36 @@ senza verificare eventuali nuove operazioni registrate dopo il deploy.
 Il primo deploy lascia `FISKALY_TEST_REFUNDS_ENABLED=false`: l'attivazione segue
 la verifica di una nuova prenotazione con pagamento realmente eseguito in sandbox.
 I pagamenti gia presenti sul server non vengono retrofatturati automaticamente.
+
+
+## Cambio data cliente (migrazione 018)
+
+Le conferme e i promemoria includono Modifica data e ora con un token HMAC distinto
+da quello di disdetta. Anche la pagina del vecchio link di disdetta offre lo
+spostamento per gli appuntamenti ancora attivi. Un appuntamento annullato,
+completato o iniziato non viene riattivato.
+
+Il cliente sceglie un nuovo slot entro 365 giorni, per lo stesso servizio e
+operatore. Durata, buffer, identita dell'appuntamento, pagamento e ricevuta
+rimangono invariati. API e database verificano conflitti, blocchi e checkout
+pending; le scritture del calendario condividono un lock del salone per impedire
+che una prenotazione concorrente occupi lo slot appena spostato. Le fasi di posa
+mantengono la semantica del motore esistente. Richieste duplicate riutilizzano
+la stessa chiave, richieste basate su una vecchia data richiedono un aggiornamento.
+
+Il termine di rimborso non viene prorogato posticipando l'appuntamento. Se viene
+anticipato, il termine puo anticiparsi; la disdetta staff mantiene la policy
+esistente. La pagina e le mail di disdetta usano la decisione effettiva, senza
+attribuire automaticamente un mancato rimborso alla distanza dalla nuova data.
+
+Uno storico server-only registra ogni cambio e accoda la mail con il nuovo orario.
+Il worker usa una chiave Resend stabile, lease e tentativi limitati; non reinvia
+alla cieca oltre la finestra di idempotenza. I cambi superati da un altro cambio
+o da una cancellazione non generano notifiche obsolete. I promemoria vengono
+riarmati sulla nuova data. Gli aggiornamenti GHL/Treatwell e n8n riutilizzano le
+integrazioni esistenti; i loro errori rimangono nel relativo sync_log.
+
+Verifiche: `node scripts/reschedule-db-verify.mjs`, suite Vitest e build Next.js.
+Il deploy include 018 nel registro delle migrazioni e conserva anche il registro
+privato nel backup. Per la prova dal browser creare una nuova prenotazione sandbox:
+quella cancellata il 2026-10-11 rimane annullata.

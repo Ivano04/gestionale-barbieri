@@ -14,6 +14,8 @@ export interface GetAvailableSlotsParams {
   service_id: string;
   stylist_id?: string;
   date: string;
+  exclude_appointment_id?: string;
+  duration_minutes?: number;
 }
 
 export async function getAvailableSlots(params: GetAvailableSlotsParams): Promise<Slot[]> {
@@ -25,7 +27,7 @@ export async function getAvailableSlots(params: GetAvailableSlotsParams): Promis
   const hours = await fetchSalonHours(salon_id, today);
   if (!hours) return [];
 
-  const duration = await fetchServiceDuration(service_id);
+  const duration = params.duration_minutes ?? await fetchServiceDuration(service_id);
   if (!duration) return [];
 
   const stylists = await fetchStylists(salon_id, stylist_id, service_id);
@@ -35,7 +37,7 @@ export async function getAvailableSlots(params: GetAvailableSlotsParams): Promis
   const dayStart = new Date(`${date}T${bounds.open}:00${tzOffset}`);
   const dayEnd = new Date(`${date}T${bounds.close}:00${tzOffset}`);
 
-  const occupied = await fetchOccupiedSlots(salon_id, dayStart, dayEnd);
+  const occupied = await fetchOccupiedSlots(salon_id, dayStart, dayEnd, params.exclude_appointment_id);
 
   const allSlots: Slot[] = [];
 

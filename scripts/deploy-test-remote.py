@@ -59,7 +59,7 @@ def main():
     db = urlparse(env['DATABASE_URL'])
     pg = dict(os.environ, PGHOST=db.hostname, PGPORT=str(db.port or 5432), PGDATABASE=unquote(db.path.lstrip('/')), PGUSER=unquote(db.username), PGPASSWORD=unquote(db.password), PGSSLMODE='require')
     print('Backing up application tables and storage metadata.',flush=True)
-    run(['docker','run','--rm','--network','host','-e','PGHOST','-e','PGPORT','-e','PGDATABASE','-e','PGUSER','-e','PGPASSWORD','-e','PGSSLMODE','-v',str(backup)+':/backup','postgres:17-alpine','pg_dump','-Fc','-n','public','-n','storage','-f','/backup/before.dump'],env=pg)
+    run(['docker','run','--rm','--network','host','-e','PGHOST','-e','PGPORT','-e','PGDATABASE','-e','PGUSER','-e','PGPASSWORD','-e','PGSSLMODE','-v',str(backup)+':/backup','postgres:17-alpine','pg_dump','-Fc','-n','public','-n','storage','-n','localvista_deploy','-f','/backup/before.dump'],env=pg)
     if not (backup / 'before.dump').stat().st_size: raise ValueError('Empty database backup')
     (backup / 'before.dump').chmod(0o600)
     compose = ['docker','compose','--env-file',str(environment_file),'-p','gestionale-parrucchiere','-f',str(release/'docker-compose.yml')]
@@ -68,8 +68,9 @@ def main():
     # The old container supplies the existing database credentials and pg module.
     run(['docker','cp',str(release/'scripts/deploy-test-db.cjs'),'gestionale-parrucchiere-nextjs-1:/app/.deploy-test-db.cjs'])
     migration_stage = '/app/.localvista-migrations'
-    run(['docker','exec','--user','0','gestionale-parrucchiere-nextjs-1','mkdir','-p',migration_stage])
-    run(['docker','cp',str(release/'supabase'),'gestionale-parrucchiere-nextjs-1:'+migration_stage+'/supabase'])
+    run(['docker','exec','--user','0','gestionale-parrucchiere-nextjs-1','mkdir','-p',migration_stage+'/supabase/migrations'])
+    for migration in sorted((release/'supabase/migrations').glob('*.sql')):
+        run(['docker','cp',str(migration),'gestionale-parrucchiere-nextjs-1:'+migration_stage+'/supabase/migrations/'+migration.name])
     run(['docker','cp',str(fiscal_file),'gestionale-parrucchiere-nextjs-1:'+migration_stage+'/fiscal-settings.json'])
     print('Applying fiscal migrations atomically.',flush=True)
     run(['docker','exec','--user','0','gestionale-parrucchiere-nextjs-1','node','/app/.deploy-test-db.cjs',migration_stage])

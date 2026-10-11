@@ -14,6 +14,7 @@ import { computeBusyPeriods } from '@/services/booking-engine/overlap';
 import { emailConfigFromEnv, createEmailProvider } from '@/services/notifications';
 import { createSupabaseNotificationsRepo } from '@/services/notifications/repo';
 import { sendConfirmation } from '@/services/notifications/service';
+import { rescheduleLink } from '@/services/rescheduling/token';
 import { makeCancelToken } from '@/services/cancellation/token';
 
 export async function GET(request: Request) {
@@ -287,6 +288,7 @@ export async function POST(request: Request) {
           timeText,
           salonName: salonRow?.name || 'Il salone',
           cancelUrl,
+          rescheduleUrl: process.env.CRON_SECRET ? rescheduleLink(base, appointment.id, process.env.CRON_SECRET) : undefined,
         },
       }).catch((err) => console.error('[email] conferma fallita:', err));
     }

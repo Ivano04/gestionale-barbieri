@@ -4,7 +4,8 @@
 
 export const DEFAULT_CANCELLATION_HOURS = 24;
 
-export function isRefundEligible(startIso: string, now: Date, windowHours: number): boolean {
+export function isRefundEligible(startIso: string, now: Date, windowHours: number, deadlineIso?: string | null): boolean {
+  if (deadlineIso) return now.getTime() <= Date.parse(deadlineIso);
   const lead = new Date(startIso).getTime() - now.getTime();
   return lead >= windowHours * 60 * 60_000;
 }
@@ -25,7 +26,8 @@ export function shouldRefundOnCancel(args: {
   now: Date;
   windowHours: number;
   initiatedBy: CancelInitiator;
+  deadlineIso?: string | null;
 }): boolean {
   if (args.initiatedBy === 'staff') return true;
-  return isRefundEligible(args.startIso, args.now, args.windowHours);
+  return isRefundEligible(args.startIso, args.now, args.windowHours, args.deadlineIso);
 }

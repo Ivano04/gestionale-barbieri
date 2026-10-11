@@ -68,3 +68,12 @@ describe('cancellationEmail', () => {
     expect(html).not.toMatch(/ti abbiamo rimborsato/i);
   });
 });
+
+
+it('includes separate rescheduling and cancellation links in confirmation and reminder', () => {
+  const data = { clientName: 'TEST', serviceName: 'Taglio', dateText: 'domani', timeText: '11:00', salonName: 'TEST', rescheduleUrl: 'https://example.test/prenotazione/modifica?token=abc', cancelUrl: 'https://example.test/prenotazione/annulla?token=xyz' };
+  for (const render of [confirmationEmail, reminderEmail]) {
+    const email = render(data);
+    expect(email.html).toContain('Modifica data e ora'); expect(email.text).toContain(data.rescheduleUrl); expect(email.text).toContain(data.cancelUrl);
+  }
+});

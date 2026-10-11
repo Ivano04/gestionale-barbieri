@@ -1,4 +1,3 @@
-import type { NotificationType } from './types';
 
 export interface BookingEmailData {
   clientName: string;
@@ -7,6 +6,7 @@ export interface BookingEmailData {
   timeText: string; // gia' formattato (es. "10:00")
   salonName: string;
   reviewUrl?: string; // solo per l'email recensione
+  rescheduleUrl?: string;
   cancelUrl?: string; // link di annullo (conferma/promemoria)
   refundPending?: boolean;
   refundIssue?: boolean;
@@ -28,11 +28,24 @@ function layout(salonName: string, bodyHtml: string): string {
   </div>`;
 }
 
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]!));
+}
+function managementLinks(d: BookingEmailData): string {
+  return `${d.rescheduleUrl ? `<p><a href="${escapeHtml(d.rescheduleUrl)}" style="color:#2563eb;font-weight:600">Modifica data e ora</a></p>` : ''}${d.cancelUrl ? `<p style="font-size:13px;color:#666">Vuoi disdire? <a href="${escapeHtml(d.cancelUrl)}">Annulla la prenotazione</a>.</p>` : ''}`;
+}
+function managementText(d: BookingEmailData): string {
+  return `${d.rescheduleUrl ? '\nModifica data e ora: ' + d.rescheduleUrl : ''}${d.cancelUrl ? '\nAnnulla prenotazione: ' + d.cancelUrl : ''}`;
+}
+export function rescheduledEmail(d: BookingEmailData): RenderedEmail {
+  const subject = `Appuntamento spostato - ${d.serviceName} ${d.dateText}`;
+  const html = layout(escapeHtml(d.salonName), `<p>Ciao ${escapeHtml(d.clientName)},</p><p>Il nuovo orario e confermato:</p><ul><li>${escapeHtml(d.serviceName)}</li><li>${escapeHtml(d.dateText)} alle ${escapeHtml(d.timeText)}</li></ul><p>Il pagamento resta associato alla stessa prenotazione.</p>${managementLinks(d)}`);
+  return { subject, html, text: `Ciao ${d.clientName}, appuntamento spostato: ${d.serviceName}, ${d.dateText} alle ${d.timeText}. Il pagamento resta valido.` + managementText(d) };
+}
+
 export function confirmationEmail(d: BookingEmailData): RenderedEmail {
   const subject = `Prenotazione confermata â€” ${d.serviceName} ${d.dateText}`;
-  const cancelLine = d.cancelUrl
-    ? `<p style="font-size:13px;color:#666">Hai un imprevisto? Puoi <a href="${d.cancelUrl}">disdire la prenotazione qui</a>.</p>`
-    : '';
+  const cancelLine = managementLinks(d);
   const html = layout(
     d.salonName,
     `<p>Ciao ${d.clientName},</p>
@@ -46,7 +59,7 @@ export function confirmationEmail(d: BookingEmailData): RenderedEmail {
      ${cancelLine}`,
   );
   const text = `Ciao ${d.clientName}, la tua prenotazione Ã¨ confermata: ${d.serviceName}, ${d.dateText} alle ${d.timeText}. â€” ${d.salonName}`;
-  return { subject, html, text };
+  return { subject, html, text: text + managementText(d) };
 }
 
 export function reminderEmail(d: BookingEmailData): RenderedEmail {
@@ -60,10 +73,11 @@ export function reminderEmail(d: BookingEmailData): RenderedEmail {
        <li><strong>Data:</strong> ${d.dateText}</li>
        <li><strong>Ora:</strong> ${d.timeText}</li>
      </ul>
-     <p>A presto!</p>`,
+     <p>A presto!</p>
+     ${managementLinks(d)}`,
   );
   const text = `Ciao ${d.clientName}, promemoria appuntamento: ${d.serviceName}, ${d.dateText} alle ${d.timeText}. â€” ${d.salonName}`;
-  return { subject, html, text };
+  return { subject, html, text: text + managementText(d) };
 }
 
 export function cancellationEmail(d: BookingEmailData): RenderedEmail {
@@ -72,7 +86,7 @@ export function cancellationEmail(d: BookingEmailData): RenderedEmail {
     ? `<p>Ti abbiamo rimborsato l'importo pagato: lo vedrai riaccreditato sul metodo di pagamento originale entro qualche giorno lavorativo.</p>`
     : d.refundPending ? `<p>La richiesta di rimborso e stata registrata ed e in elaborazione. Contattaci per aggiornamenti.</p>`
     : d.refundIssue ? `<p>Il rimborso richiede una verifica del salone. Contattaci per aggiornamenti.</p>`
-    : `<p>Come da termini di cancellazione, per un annullamento a ridosso dell'appuntamento non Ã¨ previsto il rimborso. Per qualsiasi necessitÃ , contattaci pure.</p>`;
+    : `<p>Secondo le condizioni di cancellazione, per questo annullamento non e previsto un rimborso. Per qualsiasi necessita, contatta il salone.</p>`;
   const html = layout(
     d.salonName,
     `<p>Ciao ${d.clientName},</p>

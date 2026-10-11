@@ -13,6 +13,7 @@ export default async function proxy(request: NextRequest) {
                    request.nextUrl.pathname.startsWith('/api/slots') ||
                    request.nextUrl.pathname.startsWith('/api/services') ||
                    request.nextUrl.pathname.startsWith('/api/payments/create') ||
+                   request.nextUrl.pathname.startsWith('/api/appointments/reschedule') ||
                    request.nextUrl.pathname.startsWith('/api/appointments/cancel') ||
                    request.nextUrl.pathname.startsWith('/api/webhooks/') ||
                    request.nextUrl.pathname.startsWith('/_next') ||
