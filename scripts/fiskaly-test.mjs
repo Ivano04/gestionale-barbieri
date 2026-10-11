@@ -4,12 +4,13 @@ import { resolve, dirname } from 'node:path';
 import { FiskalyTestClient, fiskalyTestConfigFromEnv } from '../src/services/fiscal/fiskaly-test-client.ts';
 
 const help = `Prova isolata fiskaly SIGN IT (solo TEST, Node >= 22.18).
-node --env-file=.env.fiskaly.test.local scripts/fiskaly-test.mjs auth
-node --env-file=.env.fiskaly.test.local scripts/fiskaly-test.mjs system
-node --env-file=.env.fiskaly.test.local scripts/fiskaly-test.mjs receipt <operation.json> <session.json>
-node --env-file=.env.fiskaly.test.local scripts/fiskaly-test.mjs record <record-uuid>
+node --env-file=.env.local scripts/fiskaly-test.mjs auth
+node --env-file=.env.local scripts/fiskaly-test.mjs system
+node --env-file=.env.local scripts/fiskaly-test.mjs receipt <operation.json> <session.json>
+node --env-file=.env.local scripts/fiskaly-test.mjs record <record-uuid>
 La sessione conserva le chiavi e gli ID. Riutilizzare lo stesso file per riprendere.
-Download ufficiale e rettifica saranno aggiunti dopo verifica della sandbox.`;
+PDF: node --env-file=.env.local scripts/fiskaly-test.mjs pdf <record-uuid>
+Rettifica ancora da implementare.`;
 
 function summary(result) {
   const c = result?.content;
@@ -20,8 +21,8 @@ function summary(result) {
 async function main() {
   const [command, arg, sessionArg] = process.argv.slice(2);
   if (!command || command === 'help') { console.log(help); return; }
-  if (!['auth', 'system', 'receipt', 'record'].includes(command)) throw new Error(help);
-  if ((command === 'record' && !arg) || (command === 'receipt' && (!arg || !sessionArg))) throw new Error(help);
+  if (!['auth', 'system', 'receipt', 'record', 'pdf'].includes(command)) throw new Error(help);
+  if ((['record', 'pdf'].includes(command) && !arg) || (command === 'receipt' && (!arg || !sessionArg))) throw new Error(help);
   const config = fiskalyTestConfigFromEnv();
   const client = new FiskalyTestClient(config);
   if (command === 'auth') {
@@ -29,7 +30,14 @@ async function main() {
     console.log('Autenticazione TEST riuscita. Token e segreti non vengono stampati.');
   } else if (command === 'system') {
     console.log(summary(await client.getSystem()));
-  } else if (command === 'record') {
+  } else if (command === 'pdf') {
+    const pdf = await client.getRecordPdf(arg);
+    const root = resolve('.superpowers/fiskaly-test');
+    mkdirSync(root, { recursive: true });
+    const output = resolve(root, arg + '.pdf');
+    writeFileSync(output, pdf, { flag: 'wx', mode: 0o600 });
+    console.log('PDF TEST salvato: ' + output);
+    console.log('In sandbox il PDF e un esempio e non riproduce gli importi inviati.');  } else if (command === 'record') {
     console.log(summary(await client.getRecord(arg)));
   } else {
     const operation = JSON.parse(readFileSync(resolve(arg), 'utf8'));

@@ -54,7 +54,7 @@ Versione API fissata a 2026-06-01. Gli schemi di rettifica/artifact non vengono 
 ## Setup TEST verificato
 Autenticazione della Unit, creazione e attivazione del Taxpayer, verifica HEAD_OFFICE,
 creazione e attivazione del System sono state eseguite con successo in sandbox.
-Prima ricevuta, download e rettifica restano da verificare.
+Ricevuta CASH, recupero della sessione completata, PDF dimostrativo e annullo sono stati verificati in TEST.
 
 Dalla radice del progetto:
 ~~~powershell
@@ -73,3 +73,17 @@ Il warning MODULE_TYPELESS_PACKAGE_JSON di Node non impedisce l'esecuzione.
 Questa prova viene eseguita localmente. Non richiede il deploy dell'app.
 Il repository contiene un deploy manuale Hetzner in scripts/deploy.sh.
 Le impostazioni esterne di GitHub o del server non sono determinate dai file del repository.
+## Ricevuta, PDF e annullo verificati in TEST
+La ricevuta e il documento di annullo hanno restituito COMPLETED / FINISHED.
+La ripetizione dei comandi con le stesse sessioni recupera gli stessi ID:
+questo verifica il recupero di sessioni completate, non simula timeout durante emissione.
+Il PDF TEST e dimostrativo e non riproduce necessariamente gli importi inviati.
+
+~~~powershell
+node --env-file=.env.local scripts/fiskaly-test.mjs pdf UUID_RICEVUTA
+node --env-file=.env.local scripts/fiskaly-cancel-test.mjs cancel
+~~~
+L'annullo usa la ricevuta registrata in prova-001.json e salva una sessione separata
+prova-001-annullo.json. Non cancellare o modificare queste sessioni.
+Rimangono da verificare pagamento elettronico, recupero di una scrittura interrotta e reso CORRECTION.
+Il modulo non e ancora collegato a Nexi, database, Cassa o Resend.

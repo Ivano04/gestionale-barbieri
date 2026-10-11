@@ -159,3 +159,42 @@ describe('attivazione System TEST', () => {
     expect(fetcher.mock.calls.some(([, options]) => options!.method === 'PATCH')).toBe(false);
   });
 });
+describe('recupero PDF TEST', () => {
+  it('richiede artifact e decodifica il PDF senza emettere nuovi record', async () => {
+    const fetcher = mockFetch().mockResolvedValueOnce(auth()).mockResolvedValueOnce(Response.json({
+      content: { id: intentionId, state: 'COMPLETED', mode: 'FINISHED',
+        compliance: { artifact: { data: Buffer.from('%PDF-1.4 test').toString('base64') } } },
+    }));
+    const pdf = await new FiskalyTestClient(config, fetcher).getRecordPdf(intentionId);
+    expect(pdf.toString()).toBe('%PDF-1.4 test');
+    expect(fetcher.mock.calls[1][0]).toBe(FISKALY_TEST_URL + '/records/' + intentionId + '?compliance-artifact');
+    expect(fetcher.mock.calls[1][1]!.method).toBe('GET');
+  });
+  it('rifiuta artifact che non contiene un PDF', async () => {
+    const fetcher = mockFetch().mockResolvedValueOnce(auth()).mockResolvedValueOnce(Response.json({
+      content: { id: intentionId, state: 'COMPLETED', mode: 'FINISHED',
+        compliance: { artifact: { data: Buffer.from('invalid').toString('base64') } } },
+    }));
+    await expect(new FiskalyTestClient(config, fetcher).getRecordPdf(intentionId)).rejects.toThrow(/non riconosciuto/);
+  });
+});
+describe('annullo ricevuta TEST', () => {
+  it('collega intenzione e originale senza modificare la ricevuta', async () => {
+    const fetcher = mockFetch().mockResolvedValueOnce(auth()).mockResolvedValueOnce(Response.json({
+      content: { id: systemId, type: 'TRANSACTION::RECEIPT', state: 'COMPLETED', mode: 'FINISHED' },
+    })).mockResolvedValueOnce(Response.json({ content: { id: key } }));
+    await new FiskalyTestClient(config, fetcher).submitCancellation(intentionId, systemId, key);
+    const options = fetcher.mock.calls[2][1]!;
+    expect(JSON.parse(options.body as string)).toEqual({ content: { type: 'TRANSACTION',
+      record: { id: intentionId }, operation: { type: 'CANCELLATION', record: { id: systemId } } } });
+    expect((options.headers as Record<string, string>)['X-Idempotency-Key']).toBe(key);
+  });
+  it('non invia annulli di documenti falliti', async () => {
+    const fetcher = mockFetch().mockResolvedValueOnce(auth()).mockResolvedValueOnce(Response.json({
+      content: { id: systemId, type: 'TRANSACTION::RECEIPT', state: 'FAILED', mode: 'FINISHED' },
+    }));
+    await expect(new FiskalyTestClient(config, fetcher).submitCancellation(intentionId, systemId, key))
+      .rejects.toThrow(/completata/);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+});

@@ -221,6 +221,22 @@ export class FiskalyTestClient {
     return await this.request('/records/' + id, 'GET', undefined, undefined, this.token!.bearer) as FiskalyRecord;
   }
 
+  async getRecordPdf(id: string): Promise<Buffer> {
+    uuid(id);
+    await this.authenticate();
+    const record = await this.request('/records/' + id + '?compliance-artifact', 'GET',
+      undefined, undefined, this.token!.bearer) as FiskalyRecord;
+    if (record.content?.id !== id || record.content.state !== 'COMPLETED' || record.content.mode !== 'FINISHED') {
+      throw new Error('PDF disponibile solo per il record completato e verificato.');
+    }
+    const artifact = record.content.compliance?.artifact as { data?: unknown } | undefined;
+    const data = artifact?.data;
+    if (typeof data !== 'string' || data.length > 20_000_000 ||
+        !/^[A-Za-z0-9+/]+={0,2}$/.test(data)) throw new Error('Artifact PDF assente o non valido.');
+    const pdf = Buffer.from(data, 'base64');
+    if (pdf.subarray(0, 5).toString('ascii') !== '%PDF-') throw new Error('Artifact restituito non riconosciuto come PDF.');
+    return pdf;
+  }
   async createIntention(key: string): Promise<FiskalyRecord> {
     uuid(key);
     const system = await this.getSystem();
@@ -230,6 +246,19 @@ export class FiskalyTestClient {
     }, key, this.token!.bearer) as FiskalyRecord;
   }
 
+  async submitCancellation(intentionId: string, originalId: string, key: string): Promise<FiskalyRecord> {
+    uuid(intentionId); uuid(originalId); uuid(key);
+    if (intentionId === originalId) throw new Error('Intenzione e ricevuta originale devono essere distinte.');
+    const original = await this.getRecord(originalId);
+    if (original.content?.id !== originalId || original.content.type !== 'TRANSACTION::RECEIPT' ||
+        original.content.state !== 'COMPLETED' || original.content.mode !== 'FINISHED') {
+      throw new Error('Annullo consentito solo per una ricevuta completata e verificata.');
+    }
+    return await this.request('/records', 'POST', { content: {
+      type: 'TRANSACTION', record: { id: intentionId },
+      operation: { type: 'CANCELLATION', record: { id: originalId } },
+    } }, key, this.token!.bearer) as FiskalyRecord;
+  }
   async submitReceipt(intentionId: string, operation: Record<string, unknown>, key: string): Promise<FiskalyRecord> {
     uuid(intentionId);
     uuid(key);
