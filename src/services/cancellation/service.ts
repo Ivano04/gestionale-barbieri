@@ -41,11 +41,14 @@ export async function cancelAndMaybeRefund(appointmentId: string, initiatedBy: C
   let testResult: CancelResult | undefined;
   if (process.env.FISKALY_TEST_ENABLED === 'true') {
     if (process.env.FISKALY_ENV !== 'test' || process.env.NEXI_ENV !== 'test') throw new Error('TEST cancellation required');
+    const { data: salonSale, error: saleError } = await admin.from('salon_sales').select('id').eq('appointment_id', appointmentId).eq('salon_id', appt.salon_id).maybeSingle();
+    if (saleError) throw new Error('Salon payment check failed');
     const { data, error } = await admin.rpc('cancel_appointment_fiscal_test', {
       p_appointment_id: appointmentId, p_initiator: initiatedBy, p_window_hours: cancellationWindowHours(),
     });
     if (error || !data?.ok) throw new Error('Cancellation transaction failed');
     testResult = data as CancelResult;
+    if (salonSale) testResult = { ...testResult, refundStatus: 'manual_review', refundPending: false, refunded: false };
     if (testResult.alreadyCancelled) return testResult;
   }
   if (!testResult && appt.status === 'cancelled') return { ok: true, alreadyCancelled: true, refunded: false };
@@ -112,7 +115,7 @@ export async function cancelAndMaybeRefund(appointmentId: string, initiatedBy: C
         dateText: fmtDate(appt.start_time),
         timeText: fmtTime(appt.start_time),
         salonName: (appt as any).salon?.name || 'Il salone',
-        refunded, refundPending: testResult?.refundPending, refundIssue: testResult?.refundStatus === 'failed' || testResult?.refundStatus === 'uncertain',
+        refunded, refundPending: testResult?.refundPending, refundIssue: testResult?.refundStatus === 'failed' || testResult?.refundStatus === 'uncertain' || testResult?.refundStatus === 'manual_review',
       });
       await createEmailProvider(cfg).send({ to: clientEmail, subject: email.subject, html: email.html, text: email.text });
     }

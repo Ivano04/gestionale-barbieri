@@ -11,6 +11,7 @@ interface Info {
   timeText: string;
   alreadyCancelled: boolean;
   refundEligible: boolean;
+  manualReview?: boolean;
   amountCents: number | null;
 }
 
@@ -69,7 +70,7 @@ export function AnnullaClient() {
     <div className={box}><div className={card}>
       <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3"><Check className="text-green-600" /></div>
       <h2 className="text-xl font-bold mb-1">Prenotazione annullata</h2>
-      <p className="text-gray-600 text-sm">{done.refunded ? 'Ti abbiamo rimborsato: vedrai l\'accredito entro qualche giorno.' : done.refundPending ? 'La richiesta di rimborso e in elaborazione.' : ['failed', 'uncertain'].includes(done.refundStatus ?? '') ? 'Il rimborso richiede una verifica. Contatta il salone.' : 'Nessun rimborso previsto per questo annullo.'}</p>
+      <p className="text-gray-600 text-sm">{done.refunded ? 'Ti abbiamo rimborsato: vedrai l\'accredito entro qualche giorno.' : done.refundPending ? 'La richiesta di rimborso e in elaborazione.' : ['failed', 'uncertain', 'manual_review'].includes(done.refundStatus ?? '') ? 'Il rimborso richiede una verifica. Contatta il salone.' : 'Nessun rimborso previsto per questo annullo.'}</p>
     </div></div>
   );
 
@@ -94,7 +95,7 @@ export function AnnullaClient() {
       <div className={`flex items-start gap-2 text-sm p-3 rounded-lg mb-4 ${info?.refundEligible ? 'bg-green-50 text-green-800' : 'bg-amber-50 text-amber-800'}`}>
         <AlertTriangle size={16} className="mt-0.5 shrink-0" />
         <span>
-          {info?.refundEligible
+          {info?.manualReview ? 'Il pagamento e stato registrato in salone. Contatta il salone per un eventuale rimborso.' : info?.refundEligible
             ? `Annullando ora ti verrà rimborsato${eur ? ' ' + eur : ' l\'importo pagato'}.`
             : 'Il termine per ottenere un rimborso e scaduto. Questo annullo non prevede rimborso.'}
         </span>

@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
   const admin = createAdminClient();
   const { data: appt } = await admin
     .from('appointments')
-    .select('start_time, client_cancellation_deadline_at, status, service:services(name), salon:salons(name)')
+    .select('salon_id, start_time, client_cancellation_deadline_at, status, service:services(name), salon:salons(name)')
     .eq('id', appointmentId)
     .maybeSingle();
   if (!appt) return Response.json({ error: 'Prenotazione non trovata' }, { status: 404 });
@@ -37,7 +37,9 @@ export async function GET(request: NextRequest) {
     .eq('status', 'succeeded')
     .maybeSingle();
 
-  const refundEligible = isRefundEligible(appt.start_time, new Date(), cancellationWindowHours(), appt.client_cancellation_deadline_at);
+  const { data: salonSale, error: saleError } = await admin.from('salon_sales').select('amount_cents').eq('appointment_id', appointmentId).eq('salon_id', appt.salon_id).maybeSingle();
+  if (saleError) return Response.json({ error: 'Impossibile verificare il pagamento' }, { status: 503 });
+  const refundEligible = !salonSale && isRefundEligible(appt.start_time, new Date(), cancellationWindowHours(), appt.client_cancellation_deadline_at);
 
   return Response.json({
     serviceName: (appt as any).service?.name || 'Servizio',
@@ -47,7 +49,8 @@ export async function GET(request: NextRequest) {
     rescheduleUrl: process.env.CRON_SECRET ? rescheduleLink(process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin, appointmentId, process.env.CRON_SECRET) : undefined,
     alreadyCancelled: appt.status === 'cancelled',
     refundEligible,
-    amountCents: pay?.amount_cents ?? null,
+    manualReview: !!salonSale,
+    amountCents: pay?.amount_cents ?? salonSale?.amount_cents ?? null,
   });
 }
 

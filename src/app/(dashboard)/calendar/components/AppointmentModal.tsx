@@ -1,4 +1,6 @@
 'use client';
+import { FinanceMenu } from './FinanceMenu';
+import { FinanceDialog } from './FinanceDialog';
 import { useState, useEffect } from 'react';
 import { X, Trash2, Loader2, ChevronDown, Plus, Clock, Scissors, Search } from 'lucide-react';
 import type { Appointment, Service, ServiceCategory, Client, User, AddedService } from '@/lib/types';
@@ -22,6 +24,7 @@ interface Props {
 }
 
 export function AppointmentModal({ appointment, services, categories, clients, stylists, salonId, onClose, onSave, onDelete, onAddService }: Props) {
+  const [financeMode, setFinanceMode] = useState<'checkout' | 'quote' | null>(null);
   const [form, setForm] = useState<Partial<Appointment>>({});
   const [clientMode, setClientMode] = useState<'existing' | 'new'>('existing');
   const [newClient, setNewClient] = useState({ first_name: '', last_name: '', phone: '' });
@@ -460,8 +463,10 @@ export function AppointmentModal({ appointment, services, categories, clients, s
             )}
           </div>
 
+          {financeMode && appointment.id && <FinanceDialog key={appointment.id + financeMode} appointmentId={appointment.id} initialMode={financeMode} onClose={() => setFinanceMode(null)} />}
           {/* Actions */}
           <div className="flex items-center gap-2 justify-end pt-2 border-t">
+            {!isNew && <FinanceMenu disabled={saving || ['client_id','service_id','stylist_id','start_time','end_time','status','source','notes'].some(key => (form[key as keyof Appointment] ?? '') !== (appointment[key as keyof Appointment] ?? ''))} onSelect={setFinanceMode} />}
             {!isNew && (
               <button
                 onClick={() => { if (confirm('Sicuro di voler cancellare questo appuntamento?')) onDelete(appointment.id); }}

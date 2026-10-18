@@ -1,0 +1,25 @@
+import {beforeEach,afterEach,it,expect,vi} from 'vitest';
+const m=vi.hoisted(()=>({access:vi.fn(),context:vi.fn(),rpc:vi.fn(),eq:vi.fn(),previous:null as unknown,quote:null as unknown}));
+vi.mock('@/services/fiscal/staff-access',()=>({fiscalStaffAccess:m.access}));
+vi.mock('@/lib/supabase/admin',()=>({createAdminClient:()=>({rpc:m.rpc,from:(table:string)=>{const q={select:()=>q,eq:(...args:unknown[])=>{m.eq(...args);return q;},maybeSingle:async()=>({data:table==='salon_sales'?m.previous:m.quote,error:null}),single:async()=>({data:m.quote,error:null})};return q;}})}));
+vi.mock('./repo',async importOriginal=>({...await importOriginal<typeof import('./repo')>(),checkoutContext:m.context}));
+import {POST as collect,GET as contextGet} from '@/app/api/appointments/[id]/checkout/route';
+import {POST as save} from '@/app/api/appointments/[id]/quote/route';
+import {GET as pdf} from '@/app/api/quotes/[id]/pdf/route';
+const id='11111111-1111-4111-8111-111111111111',salon='22222222-2222-4222-8222-222222222222',actor='33333333-3333-4333-8333-333333333333';
+const params={params:Promise.resolve({id})};const lines=[{description:'Taglio',quantity:1,unitPriceCents:2440,discountCents:0}];
+const body={requestId:id,lines,method:'cash',expectedUpdate:'2026-10-18T10:00:00Z',confirmed:true};
+const request=(value:unknown)=>new Request('https://example.test/api/appointments/'+id+'/checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(value)});
+beforeEach(()=>{vi.clearAllMocks();m.previous=null;m.quote=null;m.access.mockResolvedValue({salonId:salon,userId:actor});m.context.mockResolvedValue({appointment:{id,updatedAt:body.expectedUpdate,status:'confirmed'},snapshotBase:{clientName:'Client from database',salonName:'TEST'},canCollect:true,quote:null});m.rpc.mockResolvedValue({data:id,error:null});vi.stubEnv('FISKALY_ENV','test');vi.stubEnv('FISKALY_TEST_ENABLED','true');vi.stubEnv('NEXI_ENV','test');});
+afterEach(()=>vi.unstubAllEnvs());
+it('requires authentication before any privileged read or write',async()=>{m.access.mockResolvedValue({response:Response.json({error:'Unauthorized'},{status:401})});expect((await collect(request(body),params)).status).toBe(401);expect(m.context).not.toHaveBeenCalled();expect(m.rpc).not.toHaveBeenCalled();});
+it('scopes an appointment lookup to the authenticated salon',async()=>{m.context.mockResolvedValue(null);expect((await contextGet(new Request('https://example.test'),params)).status).toBe(404);expect(m.context).toHaveBeenCalledWith(id,salon);});
+it('refuses LIVE emission even if the request claims TEST',async()=>{vi.stubEnv('FISKALY_ENV','live');expect((await collect(request({...body,environment:'test'}),params)).status).toBe(503);expect(m.rpc).not.toHaveBeenCalled();});
+it('requires explicit confirmation and integer amounts',async()=>{expect((await collect(request({...body,confirmed:false}),params)).status).toBe(400);expect((await collect(request({...body,lines:[{...lines[0],unitPriceCents:1.5}]}),params)).status).toBe(400);expect(m.rpc).not.toHaveBeenCalled();});
+it('registers with the real actor and server customer snapshot, not posted identity',async()=>{expect((await collect(request({...body,actor:'attacker',clientName:'spoof'}),params)).status).toBe(200);expect(m.rpc.mock.calls[0][0]).toBe('register_salon_sale_test');expect(m.rpc.mock.calls[0][1]).toMatchObject({p_actor:actor,p_salon:salon,p_snapshot:{clientName:'Client from database'},p_method:'cash'});});
+it('replays the same sale after JSONB reorders the stored fields',async()=>{m.previous={appointment_id:id,payment_method:'cash',quote_id:null,quote_version:null,snapshot:{clientName:'Client from database',lines:[{discountCents:0,quantity:1,description:'Taglio',unitPriceCents:2440}]}};expect((await collect(request(body),params)).status).toBe(200);});
+it('rejects a reused key with different amounts',async()=>{m.previous={appointment_id:id,payment_method:'cash',quote_id:null,quote_version:null,snapshot:{lines:[{...lines[0],unitPriceCents:100}]}};expect((await collect(request(body),params)).status).toBe(409);expect(m.rpc).not.toHaveBeenCalled();});
+it('does not expose a quote PDF from another salon',async()=>{expect((await pdf(new Request('https://example.test'),params)).status).toBe(404);expect(m.eq).toHaveBeenCalledWith('salon_id',salon);});
+it('rejects malformed quote requests without a write',async()=>{expect((await save(request({quoteId:id,version:0,expectedUpdate:body.expectedUpdate,validUntil:'not-a-date',lines}),params)).status).toBe(400);expect(m.rpc).not.toHaveBeenCalled();});
+
+it('refuses conversion when the appointment customer changed after the quote',async()=>{m.context.mockResolvedValue({appointment:{id,updatedAt:body.expectedUpdate,status:'confirmed'},snapshotBase:{clientId:actor},canCollect:true,quote:{id,version:1,status:'draft',snapshot:{clientId:salon,lines}}});expect((await collect(request({...body,quoteId:id,quoteVersion:1}),params)).status).toBe(409);expect(m.rpc).not.toHaveBeenCalled();});

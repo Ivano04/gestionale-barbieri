@@ -324,3 +324,43 @@ Verifiche: `node scripts/reschedule-db-verify.mjs`, suite Vitest e build Next.js
 Il deploy include 018 nel registro delle migrazioni e conserva anche il registro
 privato nel backup. Per la prova dal browser creare una nuova prenotazione sandbox:
 quella cancellata il 2026-10-11 rimane annullata.
+
+
+## Cassa dall'appuntamento e preventivi (migrazione 019)
+
+Nella card espansa compare un solo pulsante LogIn (freccia verso parentesi),
+con menu al passaggio del mouse, al clic e da tastiera. Le opzioni aprono una
+finestra ampia: Vai alla cassa oppure Crea preventivo. Salvare prima eventuali
+modifiche dell'appuntamento: la finestra usa dati gia persistiti.
+
+Cassa: voci dal servizio principale e dagli aggiuntivi presenti nel listino,
+quantita intere, prezzi e sconti in centesimi. Importi IVA inclusa, IVA TEST della
+configurazione server. Il riepilogo richiede una conferma esplicita dell'incasso.
+Contanti e POS esterno sono registrati in salon_sales, senza fingere una
+transazione Nexi e senza comandare il terminale. Incasso, snapshot immutabile,
+documento fiscale e job vengono salvati in una transazione. Il worker fiscale,
+l'archiviazione PDF privata e Resend sono gli stessi del flusso online.
+
+Un solo incasso in salone per appuntamento in questa fase. Pagamenti online
+riusciti, rimborsati, autorizzati o ancora in attesa e documenti gia associati
+impediscono una nuova emissione manuale. Un pagamento ambiguo va verificato,
+anche se vecchio. Un errore fiscale conserva l'incasso, senza una seconda
+emissione tramite un nuovo clic. LIVE rimane bloccato.
+
+Preventivi: una bozza per appuntamento, con numero, versione, scadenza, cliente
+e salone fotografati al salvataggio. Il PDF viene generato dal server dal
+contenuto salvato, non dal carrello non salvato. La pagina Cassa ha la scheda
+Preventivi, con apertura e download. La conversione usa il preventivo salvato,
+controlla versione e scadenza, registra l'incasso e rende il preventivo immutabile.
+Non genera un pagamento o un documento fiscale finche non viene incassato.
+
+L'annullo di un appuntamento con incasso in salone marca l'operazione come
+review_required. Cassa e le schermate di disdetta segnalano la verifica manuale:
+non viene simulato un rimborso Nexi o un annullo fiscale. Restano da estendere
+la gestione di resi e rimborsi per contanti/POS, gli acconti/saldi, i pagamenti
+misti, i prodotti e la fattura elettronica SdI.
+
+Verifiche: `node scripts/checkout-db-verify.mjs`, test basket/API/PDF e suite
+esistente. Emissione isolata con piu voci, quantita e sconto su fiskaly TEST:
+record 01a15103-0dff-7380-9599-30bd41cbe6a8 COMPLETED/FINISHED. Questa prova non
+registra un incasso nel gestionale e non invia mail.

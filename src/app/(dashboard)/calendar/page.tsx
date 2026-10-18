@@ -109,7 +109,9 @@ export default function CalendarPage() {
     try {
       const res = await fetch(`/api/appointments/${id}`, { method: 'DELETE' });
       if (res.ok) {
-        toast.success('Appuntamento cancellato');
+        const result = await res.json();
+        if (result.refundStatus === 'manual_review') toast.warning('Appuntamento annullato. Incasso in salone e documento richiedono verifica manuale.');
+        else toast.success('Appuntamento cancellato');
       } else {
         const err = await res.json();
         toast.error(err.error || 'Errore cancellazione');
