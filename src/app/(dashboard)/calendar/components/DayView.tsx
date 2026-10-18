@@ -64,6 +64,8 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
   const today = isToday(date);
   const [dragState, setDragState] = useState<{
     appointmentId: string;
+    pointerId: number;
+    scrollTop: number;
     startX: number;
     startY: number;
     origStylistId: string;
@@ -74,6 +76,10 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
     offsetX: number;
     mode: 'move' | 'resize';
   } | null>(null);
+  const gesture = useRef<typeof dragState>(null);
+  const captureOwner = useRef<HTMLElement | null>(null);
+  const savingMove = useRef(false);
+  const suppressClick = useRef(false);
   const [resizeTarget, setResizeTarget] = useState<string | null>(null);
   const [conflictAppointments, setConflictAppointments] = useState<Set<string>>(new Set());
   const containerRef = useRef<HTMLDivElement>(null);
@@ -133,109 +139,93 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
     if (h * 60 >= globalOpen && h * 60 < globalClose) hourLabels.push(h);
   }
 
-  // Pointer handlers for drag & resize
+  // Keep the active gesture synchronously available to the release handler.
   function handlePointerDownCard(e: React.PointerEvent, app: Appointment, mode: 'move' | 'resize') {
+    if (e.button !== 0 || !e.isPrimary || savingMove.current) return;
     e.preventDefault();
     e.stopPropagation();
-    const el = e.currentTarget as HTMLElement;
-    el.setPointerCapture(e.pointerId);
-    setDragState({
-      appointmentId: app.id,
-      startX: e.clientX,
-      startY: e.clientY,
-      origStylistId: app.stylist_id!,
-      origStartTime: app.start_time,
-      origEndTime: app.end_time,
-      currentStylistId: app.stylist_id!,
-      offsetY: 0,
-      offsetX: 0,
-      mode,
-    });
+    suppressClick.current = false;
+    captureOwner.current = e.currentTarget as HTMLElement;
+    captureOwner.current.setPointerCapture(e.pointerId);
+    const next = {
+      appointmentId: app.id, pointerId: e.pointerId,
+      scrollTop: containerRef.current?.scrollTop ?? 0,
+      startX: e.clientX, startY: e.clientY,
+      origStylistId: app.stylist_id!, currentStylistId: app.stylist_id!,
+      origStartTime: app.start_time, origEndTime: app.end_time,
+      offsetY: 0, offsetX: 0, mode,
+    };
+    gesture.current = next;
+    setDragState(next);
+  }
+
+  function positionAt(e: React.PointerEvent, current: NonNullable<typeof dragState>) {
+    let stylistId = current.origStylistId;
+    if (current.mode === 'move') {
+      const columns = containerRef.current?.querySelectorAll<HTMLElement>('[data-stylist-id]') ?? [];
+      for (const column of columns) {
+        const bounds = column.getBoundingClientRect();
+        if (e.clientX >= bounds.left && e.clientX < bounds.right) {
+          stylistId = column.dataset.stylistId!;
+          break;
+        }
+      }
+    }
+    return { ...current, currentStylistId: stylistId,
+      offsetX: e.clientX - current.startX,
+      offsetY: e.clientY - current.startY + (containerRef.current?.scrollTop ?? 0) - current.scrollTop };
+  }
+
+  function releaseCapture(pointerId: number) {
+    if (captureOwner.current?.hasPointerCapture(pointerId)) captureOwner.current.releasePointerCapture(pointerId);
+    captureOwner.current = null;
+  }
+
+  function cancelGesture(e: React.PointerEvent) {
+    if (gesture.current?.pointerId !== e.pointerId) return;
+    gesture.current = null;
+    suppressClick.current = true;
+    releaseCapture(e.pointerId);
+    setDragState(null);
   }
 
   function handlePointerMove(e: React.PointerEvent) {
-    if (!dragState) return;
-    const dy = e.clientY - dragState.startY;
-    const dx = e.clientX - dragState.startX;
-    setDragState({ ...dragState, offsetY: dy, offsetX: dx });
-
-    // Check which stylist column we're over (for cross-stylist move)
-    if (dragState.mode === 'move' && containerRef.current) {
-      const containerRect = containerRef.current.getBoundingClientRect();
-      const relX = e.clientX - containerRect.left;
-      const colWidth = (containerRect.width - 56) / stylists.length; // 56px time gutter
-      const colIndex = Math.floor((relX - 56) / colWidth);
-      if (colIndex >= 0 && colIndex < stylists.length) {
-        setDragState(prev => ({ ...prev!, currentStylistId: stylists[colIndex].id }));
-      }
-    }
+    if (!gesture.current || gesture.current.pointerId !== e.pointerId) return;
+    const next = positionAt(e, gesture.current);
+    gesture.current = next;
+    setDragState(next);
   }
 
   async function handlePointerUp(e: React.PointerEvent) {
-    if (!dragState) return;
-    const el = e.currentTarget as HTMLElement;
-    el.releasePointerCapture?.(e.pointerId);
-
-    const dy = e.clientY - dragState.startY;
-    const minutesDelta = snapMinute(Math.round((dy / HOUR_HEIGHT) * 60));
-
-    if (Math.abs(minutesDelta) < 15 && dragState.currentStylistId === dragState.origStylistId) {
-      // No significant movement — treat as click
+    if (!gesture.current || gesture.current.pointerId !== e.pointerId) return;
+    const current = positionAt(e, gesture.current);
+    gesture.current = null;
+    releaseCapture(e.pointerId);
+    const minutesDelta = snapMinute(Math.round((current.offsetY / HOUR_HEIGHT) * 60));
+    const moved = minutesDelta !== 0 || (current.mode === 'move' && current.currentStylistId !== current.origStylistId);
+    suppressClick.current = moved;
+    const bounds = containerRef.current?.getBoundingClientRect();
+    if (!moved || !bounds || e.clientX < bounds.left + 56 || e.clientX >= bounds.right || e.clientY < bounds.top || e.clientY >= bounds.bottom) {
       setDragState(null);
       return;
     }
-
-    const origStart = parseISO(dragState.origStartTime);
-
-    if (dragState.mode === 'move') {
-      const origEnd = parseISO(dragState.origEndTime);
-      const newStart = addMinutes(origStart, minutesDelta);
-      const newEnd = addMinutes(origEnd, minutesDelta);
-      const newStartStr = newStart.toISOString();
-
-      try {
-        const res = await onAppointmentMove(
-          dragState.appointmentId,
-          dragState.currentStylistId,
-          newStartStr,
-          newEnd.toISOString(),
-        );
-        if (res.error) {
-          toast.error(res.error);
-          if (res.warnings?.length) {
-            res.warnings.forEach((w: any) => toast.warning(w.message));
-          }
-        } else if (res.warnings?.length) {
-          toast.warning('Attenzione: sovrapposizione con fase di posa');
-        } else {
-          toast.success('Appuntamento spostato');
-        }
-      } catch {
-        toast.error('Errore spostamento');
-      }
-    } else if (dragState.mode === 'resize') {
-      const origEnd = parseISO(dragState.origEndTime);
-      const newEnd = addMinutes(origEnd, minutesDelta);
-      const newEndStr = newEnd.toISOString();
-
-      try {
-        const res = await onAppointmentResize(dragState.appointmentId, newEndStr);
-        if (res.error) {
-          toast.error(res.error);
-          if (res.warnings?.length) {
-            res.warnings.forEach((w: any) => toast.warning(w.message));
-          }
-        } else if (res.warnings?.length) {
-          toast.warning('Attenzione: estensione invade un altro appuntamento');
-        } else {
-          toast.success('Durata aggiornata');
-        }
-      } catch {
-        toast.error('Errore ridimensionamento');
-      }
+    savingMove.current = true;
+    setDragState(current);
+    try {
+      const newEnd = addMinutes(parseISO(current.origEndTime), minutesDelta).toISOString();
+      const result = current.mode === 'move'
+        ? await onAppointmentMove(current.appointmentId, current.currentStylistId,
+            addMinutes(parseISO(current.origStartTime), minutesDelta).toISOString(), newEnd)
+        : await onAppointmentResize(current.appointmentId, newEnd);
+      if (result.error) toast.error(result.error);
+      else if (result.warnings?.length) toast.warning(result.warnings[0].message || 'Verifica le sovrapposizioni');
+      else toast.success(current.mode === 'move' ? 'Appuntamento spostato' : 'Durata aggiornata');
+    } catch {
+      toast.error('Impossibile salvare lo spostamento. Riprova.');
+    } finally {
+      savingMove.current = false;
+      setDragState(null);
     }
-
-    setDragState(null);
   }
 
   // ── Layout collision-aware (effetto "stretch" come Treatwell) ──
@@ -330,6 +320,8 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
       <div className="flex flex-1 overflow-auto" ref={containerRef}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
+        onPointerCancel={cancelGesture}
+        onLostPointerCapture={cancelGesture}
         style={{ touchAction: 'none' }}>
         {/* Time gutter */}
         <div className="w-14 flex-shrink-0 bg-gray-50/30 relative" style={{ height: `${totalHeight}px` }}>
@@ -375,7 +367,7 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
               const cardHeight = parseFloat(style?.height as string) || MIN_HEIGHT;
               const isResizing = isDragging && dragState.mode === 'resize';
               return (
-                <div key={app.id}
+                <div key={app.id} data-appointment-id={app.id}
                   className={`absolute rounded-lg px-1.5 py-0.5 cursor-pointer z-10 border-l-[3px] text-xs overflow-hidden flex flex-col
                     ${isDragging ? 'opacity-70 shadow-xl z-30 ring-2 ring-blue-400 scale-[1.02]' : 'hover:shadow-md transition-shadow'}
                     ${isConflicting ? 'ring-2 ring-red-400 border-red-500' : ''}`}
@@ -392,7 +384,7 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
                     transition: isDragging ? 'none' : undefined,
                   }}
                   onClick={(e) => {
-                    if (dragState) return;
+                    if (dragState || suppressClick.current || savingMove.current) { e.stopPropagation(); return; }
                     e.stopPropagation();
                     onAppointmentClick(app);
                   }}
@@ -422,7 +414,7 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
                   <div
                     className="absolute left-0 right-0 bottom-0 h-2 cursor-s-resize hover:bg-blue-200/50 rounded-b-md"
                     onPointerDown={(e) => handlePointerDownCard(e, app, 'resize')}
-                    title="Trascina per estendere" />
+                    data-resize-handle="true" title="Trascina per estendere" />
                 </div>
               );
             });
@@ -431,7 +423,7 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
           // Off-duty senza appuntamenti → semplice "giorno libero"
           if (isOff && stApps.length === 0) {
             return (
-              <div key={stylist.id} className="flex-1 border-l border-gray-100 relative" style={{ height: `${totalHeight}px` }}>
+              <div key={stylist.id} data-stylist-id={stylist.id} className="flex-1 border-l border-gray-100 relative" style={{ height: `${totalHeight}px` }}>
                 <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-400">Giorno libero</div>
               </div>
             );
@@ -440,7 +432,7 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
           // Off-duty con appuntamenti manuali → card visibili su sfondo grigio
           if (isOff) {
             return (
-              <div key={stylist.id} className="flex-1 border-l border-gray-100 relative bg-gray-100/50" style={{ height: `${totalHeight}px` }}>
+              <div key={stylist.id} data-stylist-id={stylist.id} className="flex-1 border-l border-gray-100 relative bg-gray-100/50" style={{ height: `${totalHeight}px` }}>
                 <div className="absolute top-1.5 left-0 right-0 text-center z-0 pointer-events-none">
                   <span className="text-[10px] text-gray-400 bg-white/70 px-2 py-0.5 rounded-full">Giorno libero</span>
                 </div>
@@ -485,7 +477,7 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
           }
 
           return (
-            <div key={stylist.id} className="flex-1 border-l border-gray-100 relative bg-white"
+            <div key={stylist.id} data-stylist-id={stylist.id} className="flex-1 border-l border-gray-100 relative bg-white"
               style={{ height: `${totalHeight}px` }}>
               {/* 15-min grid lines */}
               {(() => {

@@ -132,7 +132,7 @@ export default function CalendarPage() {
     });
     const data = await res.json();
     if (res.ok) {
-      refresh();
+      await refresh();
       return { warnings: data.warnings };
     }
     return { error: data.error, warnings: data.warnings };
@@ -146,7 +146,7 @@ export default function CalendarPage() {
     });
     const data = await res.json();
     if (res.ok) {
-      refresh();
+      await refresh();
       return { warnings: data.warnings };
     }
     return { error: data.error, warnings: data.warnings };

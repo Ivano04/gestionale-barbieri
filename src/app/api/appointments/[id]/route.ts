@@ -1,8 +1,7 @@
 import { createServerSupabase } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { addMinutes } from 'date-fns';
+import { resolveAppointmentTiming } from '@/services/appointments/timing';
 import { sendN8nEvent } from '@/lib/sync-webhook';
-import { fetchServiceDuration } from '@/services/booking-engine/queries';
 import { computeBusyPeriods } from '@/services/booking-engine/overlap';
 import { updateGHLAppointment } from '@/services/ghl-sync/sync';
 import { pushUpdateToTreatwell } from '@/services/treatwell-sync/sync';
@@ -13,6 +12,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const supabase = await createServerSupabase();
   const adminSupabase = createAdminClient();
   const body = await request.json();
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return Response.json({ error: 'Dati non validi' }, { status: 400 });
+
+  if (body.client && !body.client_id) return Response.json({ error: 'Seleziona un cliente esistente prima di salvare la modifica.' }, { status: 400 });
 
   const { data: existing } = await supabase
     .from('appointments')
@@ -24,11 +26,21 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return Response.json({ error: 'Appuntamento non trovato' }, { status: 404 });
   }
 
-  let newEndTime = body.end_time;
-  let newBufferEndTime = body.buffer_end_time;
   const newStylistId = body.stylist_id ?? existing.stylist_id;
-  const newStartTime = body.start_time ?? existing.start_time;
   const serviceId = body.service_id ?? existing.service_id;
+  let serviceTiming;
+  if (serviceId !== existing.service_id) {
+    const { data: service } = await supabase.from('services').select('duration_minutes, buffer_time_minutes')
+      .eq('id', serviceId).eq('salon_id', existing.salon_id).single();
+    if (!service) return Response.json({ error: 'Servizio non trovato' }, { status: 404 });
+    serviceTiming = service;
+  }
+  let timing;
+  try { timing = resolveAppointmentTiming(existing, body, serviceTiming); }
+  catch (error) { return Response.json({ error: error instanceof Error ? error.message : 'Orari non validi' }, { status: 400 }); }
+  const newStartTime = timing.start_time;
+  const newEndTime = timing.end_time;
+  const newBufferEndTime = timing.buffer_end_time;
 
   // Se lo stylist cambia, verifica che possa fare questo servizio
   if (body.stylist_id && serviceId) {
@@ -38,7 +50,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const hasAnyAssignments = (assignments || []).length > 0;
     if (hasAnyAssignments) {
       const assigned = (assignments || []).filter(a => a.stylist_id === body.stylist_id);
-      const isAssignedToService = assigned.some(a => true); // ha ALMENO un'assegnazione
+      const isAssignedToService = assigned.length > 0; // ha ALMENO un'assegnazione
       const { data: specificAssignment } = await supabase
         .from('stylist_services')
         .select('stylist_id')
@@ -50,21 +62,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         return Response.json({ error: 'Questo operatore non può svolgere il servizio selezionato' }, { status: 400 });
       }
     }
-  }
-
-  // Recalculate end times if service changed or start moved (ma non se end_time è già passato)
-  if ((body.start_time || body.service_id) && !body.end_time) {
-    if (!serviceId) {
-      return Response.json({ error: 'Servizio non specificato' }, { status: 400 });
-    }
-
-    const duration = await fetchServiceDuration(serviceId);
-    if (!duration) return Response.json({ error: 'Servizio non trovato' }, { status: 404 });
-
-    const bufferMinutes = body.buffer_time_minutes ?? 0;
-    const startTimeDate = new Date(newStartTime);
-    newEndTime = addMinutes(startTimeDate, duration).toISOString();
-    newBufferEndTime = addMinutes(startTimeDate, duration + bufferMinutes).toISOString();
   }
 
   if (new Date(newStartTime) < new Date()) {
@@ -129,13 +126,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
   }
 
-  const clean: Record<string, any> = {};
-  for (const [k, v] of Object.entries(body)) {
-    clean[k] = v === '' ? null : v;
+  // Ignore joined client/service/stylist objects returned by the calendar GET.
+  const clean: Record<string, unknown> = { ...timing };
+  for (const key of ['client_id', 'service_id', 'stylist_id', 'status', 'source', 'notes']) {
+    if (Object.hasOwn(body, key)) clean[key] = body[key] === '' ? null : body[key];
   }
-
-  if (newEndTime) clean.end_time = newEndTime;
-  if (newBufferEndTime) clean.buffer_end_time = newBufferEndTime;
 
   const { data, error } = await supabase
     .from('appointments')
@@ -144,7 +139,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     .select('*, client:clients(*), stylist:users(*), service:services(*)')
     .single();
 
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  if (error) return Response.json({ error: error.code === '23P01' ? 'Lo slot non è più disponibile. Aggiorna il calendario.' : error.message }, { status: error.code === '23P01' ? 409 : 500 });
 
   const moved = body.start_time || body.stylist_id;
   const extended = body.end_time && !moved;

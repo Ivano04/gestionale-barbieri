@@ -4,7 +4,7 @@ import { FinanceDialog } from './FinanceDialog';
 import { useState, useEffect } from 'react';
 import { X, Trash2, Loader2, ChevronDown, Plus, Clock, Scissors, Search } from 'lucide-react';
 import type { Appointment, Service, ServiceCategory, Client, User, AddedService } from '@/lib/types';
-import { format, parseISO, addDays, addMinutes } from 'date-fns';
+import { format, parseISO, addDays } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { formatPhone, countryCodes } from '@/lib/utils';
 import { todayDateStr, buildSlotTime } from '@/lib/date-utils';
@@ -31,6 +31,8 @@ export function AppointmentModal({ appointment, services, categories, clients, s
   const [clientPrefix, setClientPrefix] = useState('+39');
   const [slots, setSlots] = useState<{ time: string; stylist_id: string; stylist_name: string }[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
+  const [timePickerOpen, setTimePickerOpen] = useState(!appointment?.id);
+  const [slotsError, setSlotsError] = useState('');
   const [slotDate, setSlotDate] = useState(todayDateStr());
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -63,17 +65,24 @@ export function AppointmentModal({ appointment, services, categories, clients, s
     setClientSearch('');
     setShowServiceList(false);
     setShowClientList(false);
+    setTimePickerOpen(!appointment?.id);
+    setSlotsError('');
     if (appointment?.client_id) setClientMode('existing');
     if (appointment?.start_time) setSlotDate(format(parseISO(appointment.start_time), 'yyyy-MM-dd'));
   }, [appointment]);
 
   useEffect(() => {
-    if (!salonId || !form.service_id || !form.stylist_id || !slotDate) return;
+    if (!timePickerOpen || !salonId || !form.service_id || !form.stylist_id || !slotDate) return;
+    const controller = new AbortController();
     setSlotsLoading(true);
-    fetch(`/api/slots?salon_id=${salonId}&service_id=${form.service_id}&stylist_id=${form.stylist_id}&date=${slotDate}`)
-      .then(r => r.json())
-      .then(d => { setSlots(Array.isArray(d) ? d : []); setSlotsLoading(false); });
-  }, [salonId, form.service_id, form.stylist_id, slotDate]);
+    setSlotsError('');
+    fetch(`/api/slots?salon_id=${salonId}&service_id=${form.service_id}&stylist_id=${form.stylist_id}&date=${slotDate}`, { signal: controller.signal })
+      .then(async r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(d => { if (!controller.signal.aborted) setSlots(Array.isArray(d) ? d : []); })
+      .catch(() => { if (!controller.signal.aborted) { setSlots([]); setSlotsError('Impossibile caricare gli orari. Chiudi e riapri per riprovare.'); } })
+      .finally(() => { if (!controller.signal.aborted) setSlotsLoading(false); });
+    return () => controller.abort();
+  }, [timePickerOpen, salonId, form.service_id, form.stylist_id, slotDate]);
 
   // Load filtered stylists when service changes
   useEffect(() => {
@@ -118,7 +127,7 @@ export function AppointmentModal({ appointment, services, categories, clients, s
       if (!newClient.first_name) errs.clientFirst = 'Nome richiesto';
       if (!newClient.last_name) errs.clientLast = 'Cognome richiesto';
     }
-    if (Object.keys(errs).length > 0) { setErrors(errs); return; }
+    if (Object.keys(errs).length > 0) { setErrors(errs); if (errs.time) setTimePickerOpen(true); return; }
 
     setSaving(true);
     try {
@@ -318,7 +327,7 @@ export function AppointmentModal({ appointment, services, categories, clients, s
             <label className="text-sm font-medium text-gray-700">Operatore</label>
             <select className={`w-full border rounded-lg px-3 py-2 mt-1 text-sm ${errors.stylist ? 'border-red-400' : ''}`}
               value={form.stylist_id || ''}
-              onChange={e => { setForm(f => ({ ...f, stylist_id: e.target.value, start_time: '' })); clearError('stylist'); }}>
+              onChange={e => { setForm(f => ({ ...f, stylist_id: e.target.value, start_time: '' })); setTimePickerOpen(true); clearError('stylist'); }}>
               <option value="">Seleziona operatore...</option>
               {filteredStylists.map(s => <option key={s.id} value={s.id}>{s.full_name}</option>)}
             </select>
@@ -330,6 +339,18 @@ export function AppointmentModal({ appointment, services, categories, clients, s
             <label className="text-sm font-medium text-gray-700">Data e orario</label>
             {errors.time && <p className="text-red-500 text-xs mt-1">{errors.time}</p>}
 
+            <button type="button" aria-expanded={timePickerOpen} aria-controls="appointment-time-picker"
+              onClick={() => setTimePickerOpen(open => !open)}
+              className="w-full mt-1.5 px-3 py-2 border rounded-lg text-sm text-left flex items-center justify-between gap-2 hover:bg-gray-50">
+              <span className="flex items-center gap-2"><Clock size={15} className="text-gray-400" />
+                {form.start_time ? format(parseISO(form.start_time), 'EEE dd/MM/yyyy HH:mm', { locale: it }) : 'Seleziona data e orario'}
+              </span>
+              <ChevronDown size={14} className={`text-gray-400 transition-transform ${timePickerOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {timePickerOpen && <div id="appointment-time-picker">
+            <input type="date" aria-label="Data appuntamento" value={slotDate} min={todayDateStr()}
+              onChange={e => { setSlotDate(e.target.value); setForm(f => ({ ...f, start_time: '' })); clearError('time'); }}
+              className="w-full mt-2 px-3 py-2 border rounded-lg text-sm" />
             <div className="flex gap-1.5 overflow-x-auto mt-1.5 mb-2">
               {Array.from({ length: 7 }, (_, i) => addDays(new Date(), i)).map(d => {
                 const ds = format(d, 'yyyy-MM-dd');
@@ -357,6 +378,8 @@ export function AppointmentModal({ appointment, services, categories, clients, s
               </div>
             ) : slotsLoading ? (
               <div className="flex items-center justify-center py-3"><Loader2 size={18} className="animate-spin text-gray-400" /></div>
+            ) : slotsError ? (
+              <p role="alert" className="text-xs text-red-600 py-2">{slotsError}</p>
             ) : slots.length === 0 ? (
               <p className="text-xs text-gray-400 text-center py-2">Nessuno slot disponibile</p>
             ) : (
@@ -369,11 +392,11 @@ export function AppointmentModal({ appointment, services, categories, clients, s
                   const endTime = `${String(Math.floor(endM / 60)).padStart(2, '0')}:${String(endM % 60).padStart(2, '0')}`;
 
                   const isSelected = form.start_time
-                    ? form.start_time.startsWith(`${slotDate}T${s.time}:00`)
+                    ? new Date(form.start_time).getTime() === new Date(buildSlotTime(slotDate, s.time)).getTime()
                     : false;
                   return (
                     <button key={i} type="button"
-                      onClick={() => { setForm(f => ({ ...f, start_time: buildSlotTime(slotDate, s.time) })); clearError('time'); }}
+                      onClick={() => { setForm(f => ({ ...f, start_time: buildSlotTime(slotDate, s.time) })); setTimePickerOpen(false); clearError('time'); }}
                       className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium transition-all ${
                         isSelected
                           ? 'bg-blue-600 text-white shadow-md scale-[1.02]'
@@ -388,6 +411,7 @@ export function AppointmentModal({ appointment, services, categories, clients, s
                 })}
               </div>
             )}
+            </div>}
           </div>
 
           {/* 5. In-chair added services */}
