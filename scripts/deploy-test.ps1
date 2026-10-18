@@ -1,4 +1,5 @@
 param(
+  [switch]$UsePrebuiltImage,
   [string]$Server = 'root@178.104.235.228',
   [string]$SshKey = "$env:USERPROFILE/.ssh/hetzner_deploy_key",
   [string]$SalonId = '27c1ebbf-332b-4d9b-9921-5e754c92b684',
@@ -25,6 +26,10 @@ $settings = Join-Path $deployFolder 'fiscal-settings.json'
 git archive --format=tar.gz --output=$archive HEAD
 Check-Exit
 try {
+  if ($UsePrebuiltImage) {
+    python scripts/build-test-image.py $sha $Server $SshKey $archive
+    Check-Exit
+  }
   node --env-file=.env.local scripts/export-fiscal-test-config.mjs $settings $SalonId $OrganizationId $TaxpayerId $LocationId
   Check-Exit
   scp -i $SshKey $archive "${Server}:/tmp/localvista-$sha.tar.gz"
@@ -33,7 +38,8 @@ try {
   Check-Exit
   scp -i $SshKey scripts/deploy-test-remote.py "${Server}:/tmp/localvista-deploy.py"
   Check-Exit
-  ssh -i $SshKey -o BatchMode=yes $Server "chmod 600 /tmp/localvista-fiscal-settings.json && python3 /tmp/localvista-deploy.py $sha"
+  $imageOption = if ($UsePrebuiltImage) { ' --prebuilt' } else { '' }
+  ssh -i $SshKey -o BatchMode=yes $Server "chmod 600 /tmp/localvista-fiscal-settings.json && python3 /tmp/localvista-deploy.py $sha$imageOption"
   Check-Exit
 } finally {
   if (Test-Path -LiteralPath $settings) { Remove-Item -LiteralPath $settings }

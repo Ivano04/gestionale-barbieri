@@ -63,8 +63,13 @@ def main():
     if not (backup / 'before.dump').stat().st_size: raise ValueError('Empty database backup')
     (backup / 'before.dump').chmod(0o600)
     compose = ['docker','compose','--env-file',str(environment_file),'-p','gestionale-parrucchiere','-f',str(release/'docker-compose.yml')]
-    print('Building committed release while previous app stays available.',flush=True)
-    run(compose + ['build','nextjs'])
+    if '--prebuilt' in sys.argv[2:]:
+        print('Verifying the prebuilt release image.',flush=True)
+        image_revision = subprocess.check_output(['docker','image','inspect','--format','{{index .Config.Labels \"org.opencontainers.image.revision\"}}','gestionale-parrucchiere:'+sha],text=True).strip()
+        if image_revision != sha: raise ValueError('Prebuilt image revision mismatch')
+    else:
+        print('Building committed release while previous app stays available.',flush=True)
+        run(compose + ['build','nextjs'])
     # The old container supplies the existing database credentials and pg module.
     run(['docker','cp',str(release/'scripts/deploy-test-db.cjs'),'gestionale-parrucchiere-nextjs-1:/app/.deploy-test-db.cjs'])
     migration_stage = '/app/.localvista-migrations'
