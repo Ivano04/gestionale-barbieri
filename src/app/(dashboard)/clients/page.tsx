@@ -1,4 +1,5 @@
 'use client';
+import { ClientCredit } from '@/components/commerce/ClientCredit';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Search, Plus, X, Pencil, Trash2, History } from 'lucide-react';
@@ -9,6 +10,7 @@ import { it } from 'date-fns/locale';
 import { toast } from 'sonner';
 
 export default function ClientsPage() {
+  const [creditClient, setCreditClient] = useState<string|null>(null);
   const [clients, setClients] = useState<Client[]>([]);
   const [search, setSearch] = useState('');
   const [salonId, setSalonId] = useState('');
@@ -122,6 +124,7 @@ export default function ClientsPage() {
         </div>
       </div>
 
+      {creditClient&&<ClientCredit clientId={creditClient} onClose={()=>setCreditClient(null)}/>}
       {/* Client Form Modal */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowForm(false)}>
@@ -235,6 +238,7 @@ export default function ClientsPage() {
                 <td className="p-3 text-gray-500 text-xs max-w-[200px] truncate">{c.notes || '—'}</td>
                 <td className="p-3">
                   <div className="flex gap-1">
+                    <button onClick={()=>setCreditClient(c.id)} className="text-blue-700 text-xs underline px-2">Credito e premi</button>
                     <button onClick={() => openEdit(c)} className="p-1.5 hover:bg-gray-100 rounded-lg" title="Modifica">
                       <Pencil size={14} />
                     </button>

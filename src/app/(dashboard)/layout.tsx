@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter, usePathname } from 'next/navigation';
-import { CalendarDays, Users, Settings, LogOut, Menu, X, LayoutDashboard, Scissors, UserCog, Receipt, ExternalLink } from 'lucide-react';
+import { CalendarDays, Users, Settings, LogOut, Menu, X, LayoutDashboard, Scissors, UserCog, Receipt, ExternalLink, Gift, Package } from 'lucide-react';
 import Link from 'next/link';
 
 const navItems = [
@@ -12,6 +12,8 @@ const navItems = [
   { href: '/staff', label: 'Staff', icon: UserCog },
   { href: '/cassa', label: 'Cassa', icon: Receipt },
   { href: '/clients', label: 'Clienti', icon: Users },
+  { href: '/benefits', label: 'Credito e promozioni', icon: Gift },
+  { href: '/products', label: 'Prodotti e magazzino', icon: Package },
   { href: '/settings', label: 'Impostazioni', icon: Settings },
 ];
 

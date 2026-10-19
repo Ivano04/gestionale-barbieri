@@ -15,23 +15,24 @@ export async function checkoutContext(id: string, salonId: string) {
   const [catalog, payments, sales, documents, quotes] = await Promise.all([
     db.from('services').select('id,name,price_cents').eq('salon_id', salonId).eq('is_active', true).order('name'),
     db.from('payments').select('id,status,amount_cents,created_at,provider').eq('salon_id', salonId).eq('appointment_id', id),
-    db.from('salon_sales').select('id,payment_method,amount_cents,state,quote_id,snapshot').eq('salon_id', salonId).eq('appointment_id', id),
-    db.from('fiscal_documents').select('id,processing_status,status,pdf_storage_path,operation,amount_cents').eq('salon_id', salonId).eq('appointment_id', id).order('created_at'),
+    db.from('salon_sales').select('id,payment_method,amount_cents,state,quote_id,snapshot,kind').eq('salon_id', salonId).eq('appointment_id', id),
+    db.from('fiscal_documents').select('id,processing_status,status,pdf_storage_path,operation,amount_cents,sale_id').eq('salon_id', salonId).eq('appointment_id', id).order('created_at'),
     db.from('appointment_quotes').select('*').eq('salon_id', salonId).eq('appointment_id', id).maybeSingle(),
   ]);
   if ([catalog, payments, sales, documents, quotes].some(r => r.error)) throw new Error('Dati non disponibili');
   const service = one(a.service), client = one(a.client), salon = one(a.salon);
+  const lineIds: string[] = service ? [service.id] : [];
   const lines: BasketLine[] = service ? [{ description: service.name, quantity: 1, unitPriceCents: service.price_cents ?? 0, discountCents: 0 }] : [];
   if (Array.isArray(a.added_services)) for (const extra of a.added_services) {
     const found = catalog.data?.find(s => s.id === extra.service_id);
-    if (found) lines.push({ description: found.name, quantity: 1, unitPriceCents: found.price_cents ?? 0, discountCents: 0 });
+    if (found) { lineIds.push(found.id); lines.push({ description: found.name, quantity: 1, unitPriceCents: found.price_cents ?? 0, discountCents: 0 }); }
   }
   const blockingPayment = payments.data?.some(p => ['pending','authorized','succeeded','refunded','partially_refunded'].includes(p.status));
   return { appointment: { id: a.id, updatedAt: a.updated_at, status: a.status, startTime: a.start_time, clientName: client ? `${client.first_name} ${client.last_name}`.trim() : 'Cliente occasionale', serviceName: service?.name ?? 'Servizio' },
     snapshotBase: { clientId: a.client_id, clientName: client ? `${client.first_name} ${client.last_name}`.trim() : 'Cliente occasionale', salonName: salon?.name ?? 'Salone', salonAddress: salon?.address ?? '', salonPhone: salon?.phone ?? '', appointmentStart: a.start_time },
-    lines, catalog: catalog.data ?? [], payments: payments.data ?? [], sale: sales.data?.[0] ?? null,
+    lines, lineIds, catalog: catalog.data ?? [], payments: payments.data ?? [], sale: sales.data?.find(s => s.kind === 'appointment') ?? null,
     documents: (documents.data ?? []).map(({ pdf_storage_path, ...doc }) => ({ ...doc, pdf_available: !!pdf_storage_path })), quote: quotes.data,
-    canCollect: ['confirmed','completed'].includes(a.status) && !blockingPayment && !sales.data?.length && !documents.data?.some(d => d.operation === 'receipt'),
+    canCollect: ['confirmed','completed'].includes(a.status) && !blockingPayment && !sales.data?.some(s => s.kind === 'appointment') && !documents.data?.some(d => d.operation === 'receipt' && !d.sale_id),
     canQuote: ['confirmed','completed'].includes(a.status) };
 }
 export function snapshot(context: NonNullable<Awaited<ReturnType<typeof checkoutContext>>>, lines: unknown) {

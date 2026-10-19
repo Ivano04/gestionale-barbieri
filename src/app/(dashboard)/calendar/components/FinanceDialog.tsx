@@ -1,4 +1,5 @@
 'use client';
+import { CommerceCheckout } from '@/components/commerce/CommerceCheckout';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { X, Plus, Trash2, RefreshCw, Download } from 'lucide-react';
 import { euroInput, parseBasket, type BasketLine } from '@/services/checkout/basket';
@@ -7,7 +8,7 @@ type Row = { description: string; quantity: string; price: string; discount: str
 const money = (cents: number) => new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(cents/100);
 const rowsFrom = (lines: BasketLine[]): Row[] => lines.map(l=>({description:l.description,quantity:String(l.quantity),price:(l.unitPriceCents/100).toFixed(2),discount:(l.discountCents/100).toFixed(2)}));
 const fiscalState: Record<string,string> = { pending:'Da emettere',processing:'In elaborazione',completed:'Emesso',retry:'Nuovo tentativo previsto',uncertain:'Da verificare',failed:'Errore emissione' };
-export function FinanceDialog({ appointmentId, initialMode, onClose }: { appointmentId: string; initialMode:'checkout'|'quote'; onClose:()=>void }) {
+function LegacyFinanceDialog({ appointmentId, initialMode, onClose }: { appointmentId: string; initialMode:'checkout'|'quote'; onClose:()=>void }) {
  const [mode,setMode]=useState(initialMode),[data,setData]=useState<CheckoutData|null>(null),[rows,setRows]=useState<Row[]>([]);
  const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const [method,setMethod]=useState<'cash'|'card'>('cash'),[review,setReview]=useState(false),[confirmed,setConfirmed]=useState(false),[recorded,setRecorded]=useState(false);
@@ -32,6 +33,7 @@ export function FinanceDialog({ appointmentId, initialMode, onClose }: { appoint
   const r=await fetch(`/api/appointments/${appointmentId}/checkout`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,requestId:request.current.id})});const result=await r.json();if(!r.ok)throw new Error(result.error);setRecorded(true);setReview(false);setNotice('Incasso registrato. Il documento TEST e in elaborazione: puoi chiudere questa finestra.');
   try{const value=await load();setData(value);setQuote(value.quote);}catch{setNotice('Incasso registrato. Aggiorna i dati per controllare il documento.');}
  }catch(e){setError(e instanceof Error?e.message:'Esito non disponibile. Riprova con gli stessi dati.');}finally{setBusy(false);}}
+ if(mode==='checkout'&&useQuote&&quote)return <CommerceCheckout appointmentId={appointmentId} quoteId={quote.id} onClose={onClose}/>;
  return <div className="fixed inset-0 z-[70] bg-black/50 flex justify-center items-center p-2 md:p-6" onClick={e=>e.stopPropagation()}><section onKeyDown={e=>{if(e.key==='Escape'&&!busy)onClose();if(e.key==='Tab'){const items=Array.from(e.currentTarget.querySelectorAll<HTMLElement>('button:not([disabled]),a[href],input:not([disabled]),select:not([disabled])'));const first=items[0],last=items[items.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}}} role="dialog" aria-modal="true" aria-labelledby="finance-title" className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto">
   <header className="sticky top-0 z-10 bg-white border-b p-5 flex items-center justify-between"><div><h2 id="finance-title" className="text-xl font-bold">{mode==='quote'?'Preventivo':'Cassa appuntamento'}</h2><p className="text-sm text-gray-500">{data?.appointment.clientName}</p></div><button autoFocus aria-label="Chiudi" disabled={busy} onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg"><X size={22}/></button></header>
   <div className="p-5 space-y-5">
@@ -72,3 +74,5 @@ export function FinanceDialog({ appointmentId, initialMode, onClose }: { appoint
   </div>
  </section></div>;
 }
+
+export function FinanceDialog(props:{appointmentId:string;initialMode:"checkout"|"quote";onClose:()=>void}){return props.initialMode==="checkout"?<CommerceCheckout appointmentId={props.appointmentId} onClose={props.onClose}/>:<LegacyFinanceDialog {...props}/>;}

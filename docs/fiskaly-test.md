@@ -364,3 +364,64 @@ Verifiche: `node scripts/checkout-db-verify.mjs`, test basket/API/PDF e suite
 esistente. Emissione isolata con piu voci, quantita e sconto su fiskaly TEST:
 record 01a15103-0dff-7380-9599-30bd41cbe6a8 COMPLETED/FINISHED. Questa prova non
 registra un incasso nel gestionale e non invia mail.
+
+
+## Credito nominativo, promozioni e magazzino (migrazione 020)
+
+Il menu Credito e promozioni e il pulsante Credito e premi nella scheda cliente
+aprono saldo, ultime 100 movimentazioni e premi assegnati. Ricariche e utilizzi
+sono denaro prepagato; le promozioni riducono il prezzo del servizio e non creano
+credito. Solo owner/admin assegnano o revocano premi e configurano le regole;
+owner/admin/receptionist registrano incassi. Tutte le scritture passano dalle
+API autenticate e da RPC revocate ad anon/authenticated.
+
+Il programma fedelta e inizialmente disattivato. Una regola configurabile conta
+visite completate e terminate, successive alla propria attivazione, eventualmente
+per un servizio specifico. Ogni soglia raggiunta genera un premio unico, usabile
+su una visita successiva. Cambio di stato e richieste simultanee non duplicano i
+premi. Visite annullate non qualificano un premio ancora inutilizzato. Sostituire
+la regola avvia un nuovo conteggio. Premi manuali hanno percentuale (1-90%) oppure
+importo fisso, servizio facoltativo e scadenza facoltativa; non sono cumulabili con
+altri sconti. L'importo fisso e limitato al prezzo della voce meno un centesimo:
+la gestione fiscale di omaggi al 100% resta fuori da questa versione.
+Non viene implementato un incentivo alle recensioni Google: Google vieta premi
+in cambio di recensioni (https://support.google.com/contributionpolicy/answer/7400114).
+
+Prodotti e magazzino sono predisposti ma la vendita e disabilitata per default.
+Un amministratore puo abilitarla, creare prodotti, aggiornare prezzi e registrare
+carichi/rettifiche con motivo. La conferma della vendita scala le quantita;
+preventivi e carrelli aperti non modificano il magazzino. Scorte e credito vengono
+verificati e movimentati atomicamente con la vendita, il premio e la coda fiscale.
+Le operazioni finanziarie sono serializzate per salone con advisory lock.
+Gli appuntamenti gia pagati ammettono vendite aggiuntive di soli prodotti, senza
+ricaricare il servizio. La vendita di soli prodotti e la ricarica funzionano
+anche senza appuntamento. Il preventivo salvato resta convertibile, anche con
+credito; per cambiare le voci o applicare una promozione si prepara prima un nuovo
+preventivo. Il widget online continua a usare Nexi come prima.
+
+Politica fiscale limitata al TEST: buono monouso nominativo con IVA 22% alla
+ricarica. Il credito copre solo carrelli con IVA 22%; altri prodotti supportano
+4/5/10/22% senza credito. La redemption segue la guida SIGN IT lite
+https://support.fiskaly.com/hc/en-001/articles/22282230118556
+con distribuzione del credito sulle righe. Copertura integrale: workaround
+fiskaly di un centesimo sulla riga e sconto di pagamento corrispondente; il totale
+incassato resta zero. Non e una configurazione fiscale LIVE: la classificazione
+del buono e il trattamento definitivo vanno validati con il commercialista.
+
+Il registro vendite distingue valore della vendita, credito utilizzato e nuovo
+incasso. I riepiloghi escludono gli storni e non contano il credito usato come
+nuovo denaro ricevuto. L'annullo integrale TEST e disponibile nella stessa
+giornata, solo dopo l'emissione, con conferma del rimborso manuale e restituzione
+facoltativa dei prodotti al magazzino. Ripristina il credito consumato; annullare
+una ricarica richiede saldo sufficiente. Il premio usato resta nello storico e
+puo essere riassegnato esplicitamente. L'annullo fiscale segue la coda persistente:
+un suo errore non ripete i movimenti. Resi parziali o di giornate successive
+richiedono un flusso fiscale ulteriore. Nessun comando viene inviato al POS.
+
+Le richieste con esito incerto restano in sessionStorage con UUID stabile e una
+azione di ripresa; i problemi di rete non vengono trattati come rifiuti definitivi.
+Verifiche: node scripts/commerce-db-verify.mjs (database effimero), test Vitest
+commerce, TypeScript/lint, prove browser desktop/mobile. Prove isolate fiskaly
+COMPLETED/FINISHED: ricarica 01a1517c-b7f8-7948-9590-5275bfd39788,
+credito completo 01a1517b-d749-73d6-9421-78fa2e1b60b9,
+credito+POS 01a1517c-b356-7dd2-8491-88ced0ef0dac.
