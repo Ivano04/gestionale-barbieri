@@ -1,4 +1,6 @@
 'use client';
+import { financeDescription, matchesFinanceFilter, paymentAppearance, type FinanceFilter } from '@/lib/calendar-finance';
+import { FinancialStatus, BookingSource } from './FinancialStatus';
 import { useState } from 'react';
 import { format, startOfWeek, addDays, parseISO, isSameDay } from 'date-fns';
 import { it } from 'date-fns/locale';
@@ -11,6 +13,7 @@ interface Props {
   date: Date;
   stylists: Pick<User, 'id' | 'full_name' | 'working_hours'>[];
   appointments: Appointment[];
+  financeFilter?: FinanceFilter;
   timeBlocks: TimeBlock[];
   onSlotClick: (stylistId: string, time: string) => void;
   onAppointmentClick: (appointment: Appointment) => void;
@@ -20,12 +23,8 @@ interface Props {
 
 const STYLIST_COLORS = ['#f472b6', '#60a5fa', '#34d399', '#a78bfa', '#fbbf24'];
 
-const sourceColors: Record<string, string> = {
-  walk_in: '#059669', phone: '#2563eb', whatsapp: '#0d9488', widget: '#7c3aed',
-  treatwell: '#ea580c', google: '#dc2626', manual: '#6b7280',
-};
 
-export function WeekView({ date, stylists, appointments, timeBlocks, onSlotClick, onAppointmentClick, onAppointmentMove, onDeleteBlock }: Props) {
+export function WeekView({ date, stylists, appointments, financeFilter = 'all', timeBlocks, onSlotClick, onAppointmentClick, onAppointmentMove, onDeleteBlock }: Props) {
   const weekStart = startOfWeek(date, { weekStartsOn: 1 });
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const today = new Date();
@@ -146,26 +145,31 @@ export function WeekView({ date, stylists, appointments, timeBlocks, onSlotClick
                   <div className="text-[10px] text-gray-400 text-center py-4">Riposo</div>
                 )}
                 {!dayOff && dayApps.map(app => {
-                  const sc = sourceColors[app.source] || '#6b7280';
+                  if (!matchesFinanceFilter(app.finance, financeFilter)) return null;
+                  const cfg = paymentAppearance[app.finance?.payment ?? 'unknown'];
                   return (
-                    <div key={app.id}
+                    <div key={app.id} data-appointment-id={app.id} role="button" tabIndex={0}
+                      title={financeDescription(app.finance)}
+                      aria-label={`${app.client?.first_name ?? 'Cliente'}, ${format(parseISO(app.start_time), 'HH:mm')}, ${financeDescription(app.finance)}`}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onAppointmentClick(app); } }}
                       draggable
                       onDragStart={() => setDragApp(app.id)}
                       onDragEnd={() => { setDragApp(null); setDragOverCell(null); }}
                       onClick={(e) => { e.stopPropagation(); onAppointmentClick(app); }}
                       className={`rounded-lg px-2 py-1.5 mb-1 cursor-pointer hover:shadow-md transition-all duration-150 border-l-[3px] bg-white shadow-sm ${dragApp === app.id ? 'opacity-50 ring-2 ring-blue-400' : ''}`}
-                      style={{ borderLeftColor: sc }}>
+                      style={{ borderLeftColor: cfg.border, backgroundColor: cfg.bg }}>
                       <div className="flex items-center justify-between gap-1">
-                        <span className="font-semibold text-[11px] truncate">
+                        <span className="font-semibold text-[11px] truncate flex-1 min-w-0">
                           {app.client?.first_name}
                         </span>
-                        <span className="text-[10px] font-medium text-gray-500 bg-gray-100 px-1 rounded">
+                        <FinancialStatus finance={app.finance} />
+                        <span className="text-[10px] font-medium text-slate-600 px-1 rounded">
                           {format(parseISO(app.start_time), 'HH:mm')}
                         </span>
                       </div>
-                      <div className="text-[10px] text-gray-500 truncate mt-0.5">{app.service?.name}</div>
+                      <div className="flex items-center gap-1 text-[10px] text-slate-600 mt-0.5"><span className="truncate flex-1">{app.service?.name}</span><BookingSource source={app.source} /></div>
                       {app.service?.price_cents && (
-                        <div className="text-[10px] font-medium text-green-600">€{(app.service.price_cents / 100).toFixed(0)}</div>
+                        <div className="text-[10px] font-medium text-slate-700">€{(app.service.price_cents / 100).toFixed(0)}</div>
                       )}
                       {/* Buffer indicator */}
                       {app.buffer_end_time && app.buffer_end_time !== app.end_time && (

@@ -1,4 +1,6 @@
 'use client';
+import { financeDescription, matchesFinanceFilter, paymentAppearance, type FinanceFilter } from '@/lib/calendar-finance';
+import { FinancialStatus, BookingSource } from './FinancialStatus';
 import { useState, useRef, useCallback } from 'react';
 import { format, setHours, setMinutes, parseISO, addMinutes, differenceInMinutes } from 'date-fns';
 import type { Appointment, User, TimeBlock } from '@/lib/types';
@@ -9,6 +11,7 @@ interface Props {
   date: Date;
   stylists: Pick<User, 'id' | 'full_name' | 'working_hours'>[];
   appointments: Appointment[];
+  financeFilter?: FinanceFilter;
   timeBlocks: TimeBlock[];
   salonShifts: WorkingHoursShift[];
   salonHours: { open: string; close: string };
@@ -50,17 +53,8 @@ function timeToMinutes(t: string): number {
   return h * 60 + m;
 }
 
-const sourceConfig: Record<string, { bg: string; border: string }> = {
-  walk_in:   { bg: '#ecfdf5', border: '#059669' },
-  phone:     { bg: '#eff6ff', border: '#2563eb' },
-  whatsapp:  { bg: '#f0fdfa', border: '#0d9488' },
-  widget:    { bg: '#f5f3ff', border: '#7c3aed' },
-  treatwell: { bg: '#fff7ed', border: '#ea580c' },
-  google:    { bg: '#fef2f2', border: '#dc2626' },
-  manual:    { bg: '#f9fafb', border: '#6b7280' },
-};
 
-export function DayView({ date, stylists, appointments, timeBlocks, salonShifts, salonHours, onSlotClick, onAppointmentClick, onAppointmentMove, onAppointmentResize, onDeleteBlock, onSwapRequest }: Props) {
+export function DayView({ date, stylists, appointments, financeFilter = 'all', timeBlocks, salonShifts, salonHours, onSlotClick, onAppointmentClick, onAppointmentMove, onAppointmentResize, onDeleteBlock, onSwapRequest }: Props) {
   const today = isToday(date);
   const [dragState, setDragState] = useState<{
     appointmentId: string;
@@ -352,10 +346,10 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
 
           // Renderizza le card appuntamento (usato sia per colonne normali che off-duty)
           function renderAppointmentCards() {
-            return stApps.map(app => {
+            return stApps.filter(app => matchesFinanceFilter(app.finance, financeFilter)).map(app => {
               const style = getAppointmentStyle(app);
               if (!style) return null;
-              const cfg = sourceConfig[app.source] || sourceConfig.manual;
+              const cfg = paymentAppearance[app.finance?.payment ?? 'unknown'];
               const isDragging = dragState?.appointmentId === app.id;
               const isConflicting = conflictAppointments.has(app.id);
               const hasBuffer = app.buffer_end_time && app.buffer_end_time !== app.end_time;
@@ -367,8 +361,11 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
               const cardHeight = parseFloat(style?.height as string) || MIN_HEIGHT;
               const isResizing = isDragging && dragState.mode === 'resize';
               return (
-                <div key={app.id} data-appointment-id={app.id}
-                  className={`absolute rounded-lg px-1.5 py-0.5 cursor-pointer z-10 border-l-[3px] text-xs overflow-hidden flex flex-col
+                <div key={app.id} data-appointment-id={app.id} role="button" tabIndex={0}
+                  title={financeDescription(app.finance)}
+                  aria-label={`${app.client?.first_name ?? 'Cliente'} ${app.client?.last_name ?? ''}, ${format(parseISO(app.start_time), 'HH:mm')}, ${financeDescription(app.finance)}`}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onAppointmentClick(app); } }}
+                  className={`absolute rounded-lg px-1.5 py-0.5 cursor-pointer z-10 border-l-[3px] text-xs overflow-hidden flex flex-col focus-visible:outline-2 focus-visible:outline-blue-600
                     ${isDragging ? 'opacity-70 shadow-xl z-30 ring-2 ring-blue-400 scale-[1.02]' : 'hover:shadow-md transition-shadow'}
                     ${isConflicting ? 'ring-2 ring-red-400 border-red-500' : ''}`}
                   style={{
@@ -390,18 +387,20 @@ export function DayView({ date, stylists, appointments, timeBlocks, salonShifts,
                   }}
                   onPointerDown={(e) => handlePointerDownCard(e, app, 'move')}>
                   <div className="flex items-center justify-between gap-1 leading-tight">
-                    <span className="font-medium truncate text-[10px]">
+                    <span className="font-medium truncate flex-1 min-w-0 text-[10px]">
                       {app.client?.first_name} {app.client?.last_name || ''}
                     </span>
-                    <span className="text-[9px] text-gray-400 flex-shrink-0">
+                    <FinancialStatus finance={app.finance} />
+                    <span className="text-[9px] text-slate-600 flex-shrink-0">
                       {format(parseISO(app.start_time), 'HH:mm')}
                     </span>
                   </div>
-                  <div className="text-gray-500 truncate text-[9px] leading-tight">{app.service?.name}</div>
+                  <div className="flex items-center gap-1 text-slate-600 text-[9px] leading-tight"><span className="truncate flex-1">{app.service?.name}</span><BookingSource source={app.source} /></div>
                   {app.service?.price_cents != null && cardHeight >= 38 && (
-                    <div className="text-[9px] font-medium text-green-600 leading-tight">€{(app.service.price_cents / 100).toFixed(0)}</div>
+                    <div className="text-[9px] font-medium text-slate-700 leading-tight">€{(app.service.price_cents / 100).toFixed(0)}</div>
                   )}
 
+                  {cardHeight >= 64 && <div className="text-[9px] leading-tight truncate mt-0.5" style={{ color: cfg.text }}>{cfg.label}</div>}
                   {hasBuffer && (
                     <div className="absolute left-0 right-0 bottom-0 h-1.5 bg-gray-300/50 rounded-b-md border-t border-dashed border-gray-400"
                       title="Tempo buffer (pulizia)" />

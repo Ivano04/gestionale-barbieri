@@ -1,8 +1,8 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Appointment, Service, Client, User, TimeBlock } from '@/lib/types';
-import { format } from 'date-fns';
+import { format, startOfWeek, addDays } from 'date-fns';
 import { toast } from 'sonner';
 import { normalizeShifts, shiftBounds, type WorkingHoursShift } from '@/lib/working-hours';
 
@@ -20,25 +20,30 @@ export interface CalendarData {
   error: string | null;
 }
 
-export function useCalendarData(salonId: string, date: Date | null) {
+export function useCalendarData(salonId: string, date: Date | null, view: 'day' | 'week' = 'day') {
   const [data, setData] = useState<CalendarData>({
     appointments: [], services: [], clients: [], stylists: [],
     timeBlocks: [], salonShifts: [{ open: '09:00', close: '19:00' }], salonHours: { open: '09:00', close: '19:00' },
     loading: false, error: null,
   });
 
-  const supabase = createClient();
+  const [supabase] = useState(createClient);
+  const requestId = useRef(0);
+  const invalidateRequests = useCallback(() => { requestId.current++; }, []);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (silent = false) => {
     if (!salonId || !date) return;
-    setData(prev => ({ ...prev, loading: true, error: null }));
+    const currentRequest = ++requestId.current;
+    if (!silent) setData(prev => ({ ...prev, loading: true, error: null }));
 
     try {
-      const dateStr = format(date, 'yyyy-MM-dd');
+      const firstDay = view === 'week' ? startOfWeek(date, { weekStartsOn: 1 }) : date;
+      const dateStr = format(firstDay, 'yyyy-MM-dd');
+      const endDate = format(view === 'week' ? addDays(firstDay, 6) : firstDay, 'yyyy-MM-dd');
       const cacheBuster = Date.now(); // Bypassa la cache del browser e di Next.js
 
       const [appsRes, svcRes] = await Promise.all([
-        fetch(`/api/appointments?salon_id=${salonId}&date=${dateStr}&_t=${cacheBuster}`).then(r => {
+        fetch(`/api/appointments?salon_id=${salonId}&date=${dateStr}&end_date=${endDate}&_t=${cacheBuster}`).then(r => {
           if (!r.ok) throw new Error(`Appointments: ${r.status}`);
           return r.json();
         }),
@@ -61,7 +66,7 @@ export function useCalendarData(salonId: string, date: Date | null) {
       // Fetch time blocks (pass date to include today's blocks even if past)
       let timeBlocks: TimeBlock[] = [];
       try {
-        const tbRes = await fetch(`/api/time-blocks?salon_id=${salonId}&date=${dateStr}&_t=${cacheBuster}`);
+        const tbRes = await fetch(`/api/time-blocks?salon_id=${salonId}&date=${dateStr}&end_date=${endDate}&_t=${cacheBuster}`);
         if (tbRes.ok) timeBlocks = await tbRes.json();
       } catch { /* time blocks are non-critical */ }
 
@@ -90,6 +95,7 @@ export function useCalendarData(salonId: string, date: Date | null) {
         }
       }
 
+      if (currentRequest !== requestId.current) return;
       setData({
         appointments: Array.isArray(appsRes) ? appsRes : [],
         services: Array.isArray(svcRes) ? svcRes : [],
@@ -102,35 +108,37 @@ export function useCalendarData(salonId: string, date: Date | null) {
         error: null,
       });
     } catch (err: any) {
+      if (currentRequest !== requestId.current) return;
       const msg = err.message || 'Errore caricamento dati';
       setData(prev => ({ ...prev, loading: false, error: msg }));
-      toast.error(msg);
+      if (!silent) toast.error(msg);
     }
-  }, [salonId, date, supabase]);
+  }, [salonId, date, view, supabase]);
 
   // Load on mount and when dependencies change
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { void loadData(); return invalidateRequests; }, [loadData, invalidateRequests]);
 
-  // Supabase Realtime: aggiornamento live quando il DB cambia
+  // Realtime where enabled, plus a quiet fallback for asynchronous fiscal jobs.
   useEffect(() => {
     if (!salonId) return;
-    const channel = supabase
-      .channel('calendar-live')
-      .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'appointments' },
-        () => { loadData(); }
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [salonId, supabase]);
+    let debounce: ReturnType<typeof setTimeout>;
+    const refreshSoon = () => { clearTimeout(debounce); debounce = setTimeout(() => { void loadData(true); }, 300); };
+    let channel = supabase.channel(`calendar-live-${salonId}`);
+    for (const table of ['appointments', 'payments', 'salon_sales', 'fiscal_documents', 'refund_jobs', 'sale_reversals']) {
+      channel = channel.on('postgres_changes', { event: '*', schema: 'public', table, filter: `salon_id=eq.${salonId}` }, refreshSoon);
+    }
+    channel.subscribe();
+    const timer = setInterval(() => { if (document.visibilityState === 'visible') void loadData(true); }, 30000);
+    return () => { clearTimeout(debounce); clearInterval(timer); void supabase.removeChannel(channel); };
+  }, [salonId, supabase, loadData]);
 
   // Refresh on window focus OR page becoming visible
   // (Next.js Router Cache keeps pages alive in background —
   //  without this, navigating back shows stale data)
   useEffect(() => {
-    const onFocus = () => loadData();
+    const onFocus = () => { void loadData(true); };
     const onVisible = () => {
-      if (document.visibilityState === 'visible') loadData();
+      if (document.visibilityState === 'visible') void loadData(true);
     };
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onVisible);

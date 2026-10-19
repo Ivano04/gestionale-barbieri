@@ -1,5 +1,5 @@
 'use client';
-import { format, addDays, subDays, addWeeks, subWeeks } from 'date-fns';
+import { startOfWeek, format, addDays, subDays, addWeeks, subWeeks } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Plus, Lock } from 'lucide-react';
 
@@ -22,12 +22,12 @@ export function CalendarHeader({ date, view, onDateChange, onViewChange, onNewAp
         <button onClick={prev} className="p-1 hover:bg-gray-100 rounded"><ChevronLeft size={20} /></button>
         <h2 className="text-lg font-semibold min-w-[200px] text-center" suppressHydrationWarning>
           {view === 'day' && format(date, 'EEEE d MMMM yyyy', { locale: it })}
-          {view === 'week' && `${format(date, 'd MMM', { locale: it })} - ${format(addDays(date, 6), 'd MMM yyyy', { locale: it })}`}
+          {view === 'week' && `${format(startOfWeek(date, { weekStartsOn: 1 }), 'd MMM', { locale: it })} - ${format(addDays(startOfWeek(date, { weekStartsOn: 1 }), 6), 'd MMM yyyy', { locale: it })}`}
         </h2>
         <button onClick={next} className="p-1 hover:bg-gray-100 rounded"><ChevronRight size={20} /></button>
         <button onClick={() => onDateChange(new Date())} className="text-sm text-blue-600 hover:underline ml-2">Oggi</button>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <div className="flex bg-gray-100 rounded-lg p-1">
           {(['day', 'week'] as const).map(v => (
             <button key={v} onClick={() => onViewChange(v)}

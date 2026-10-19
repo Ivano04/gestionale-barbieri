@@ -1,4 +1,6 @@
 'use client';
+import { FinancialStatus } from './FinancialStatus';
+import type { CalendarFinance } from '@/lib/calendar-finance';
 import { FinanceMenu } from './FinanceMenu';
 import { FinanceDialog } from './FinanceDialog';
 import { useState, useEffect } from 'react';
@@ -12,6 +14,8 @@ import { toast } from 'sonner';
 
 interface Props {
   appointment: Appointment | null;
+  finance?: CalendarFinance;
+  onFinanceChange?: () => void;
   services: Service[];
   categories: ServiceCategory[];
   clients: Client[];
@@ -23,7 +27,7 @@ interface Props {
   onAddService?: (appointmentId: string, serviceId: string) => Promise<any>;
 }
 
-export function AppointmentModal({ appointment, services, categories, clients, stylists, salonId, onClose, onSave, onDelete, onAddService }: Props) {
+export function AppointmentModal({ appointment, finance, onFinanceChange, services, categories, clients, stylists, salonId, onClose, onSave, onDelete, onAddService }: Props) {
   const [financeMode, setFinanceMode] = useState<'checkout' | 'quote' | null>(null);
   const [form, setForm] = useState<Partial<Appointment>>({});
   const [clientMode, setClientMode] = useState<'existing' | 'new'>('existing');
@@ -169,6 +173,7 @@ export function AppointmentModal({ appointment, services, categories, clients, s
 
         <div className="space-y-4 max-h-[80vh] overflow-y-auto">
 
+          {!isNew && <div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><FinancialStatus finance={finance ?? appointment.finance} expanded /></div>}
           {/* 1. Cliente */}
           <div>
             <label className="text-sm font-medium text-gray-700">Cliente</label>
@@ -487,7 +492,7 @@ export function AppointmentModal({ appointment, services, categories, clients, s
             )}
           </div>
 
-          {financeMode && appointment.id && <FinanceDialog key={appointment.id + financeMode} appointmentId={appointment.id} initialMode={financeMode} onClose={() => setFinanceMode(null)} />}
+          {financeMode && appointment.id && <FinanceDialog key={appointment.id + financeMode} appointmentId={appointment.id} initialMode={financeMode} onClose={() => { setFinanceMode(null); onFinanceChange?.(); }} />}
           {/* Actions */}
           <div className="flex items-center gap-2 justify-end pt-2 border-t">
             {!isNew && <FinanceMenu disabled={saving || ['client_id','service_id','stylist_id','start_time','end_time','status','source','notes'].some(key => (form[key as keyof Appointment] ?? '') !== (appointment[key as keyof Appointment] ?? ''))} onSelect={setFinanceMode} />}

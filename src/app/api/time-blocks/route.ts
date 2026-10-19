@@ -1,3 +1,4 @@
+import { calendarRange } from '@/lib/calendar-range';
 import { createServerSupabase } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendN8nEvent } from '@/lib/sync-webhook';
@@ -17,9 +18,10 @@ export async function GET(request: Request) {
 
   if (date) {
     // Return all blocks overlapping with this date (including past ones for today)
-    const dayStart = new Date(`${date}T00:00:00`);
-    const dayEnd = new Date(`${date}T23:59:59`);
-    query = query.lt('start_time', dayEnd.toISOString()).gt('end_time', dayStart.toISOString());
+    let range;
+    try { range = calendarRange(date, searchParams.get('end_date') ?? date); }
+    catch { return Response.json({ error: 'Periodo non valido' }, { status: 400 }); }
+    query = query.lt('start_time', range.end).gt('end_time', range.start);
   } else {
     // No date specified — return only future blocks
     query = query.gte('end_time', new Date().toISOString());

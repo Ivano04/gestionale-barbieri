@@ -1,6 +1,8 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { FinanceLegend } from './components/FinanceLegend';
+import { matchesFinanceFilter, type FinanceFilter } from '@/lib/calendar-finance';
 import { CalendarHeader } from './components/CalendarHeader';
 import { DayView } from './components/DayView';
 import { WeekView } from './components/WeekView';
@@ -28,6 +30,7 @@ export default function CalendarPage() {
     window.history.replaceState(null, '', `/calendar?date=${ds}`);
   }, []);
 
+  const [financeFilter, setFinanceFilter] = useState<FinanceFilter>('all');
   const [view, setView] = useState<'day' | 'week'>('day');
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [showBlockModal, setShowBlockModal] = useState(false);
@@ -47,7 +50,7 @@ export default function CalendarPage() {
     });
   }, []);
 
-  const { appointments, services, clients, stylists, timeBlocks, salonShifts, salonHours, loading, refresh } = useCalendarData(salonId, date);
+  const { appointments, services, clients, stylists, timeBlocks, salonShifts, salonHours, loading, refresh } = useCalendarData(salonId, date, view);
 
   if (!date) return <div className="p-8 text-center text-gray-400">Caricamento calendario...</div>;
 
@@ -186,10 +189,11 @@ export default function CalendarPage() {
     <div>
       {loading && <div className="h-1 bg-blue-100 w-full overflow-hidden"><div className="h-full bg-blue-500 animate-pulse" style={{ width: '60%' }} /></div>}
       <CalendarHeader date={date} view={view} onDateChange={handleDateChange} onViewChange={setView} onNewAppointment={handleNewAppointment} onNewBlock={() => setShowBlockModal(true)} />
+      <FinanceLegend filter={financeFilter} onChange={setFinanceFilter} total={appointments.length} visible={appointments.filter(a => matchesFinanceFilter(a.finance, financeFilter)).length} />
       <div className="mx-0 md:mx-4 mt-0 md:mt-4">
         {view === 'day' && (
           <DayView
-            date={date} stylists={stylists} appointments={appointments} timeBlocks={timeBlocks} salonShifts={salonShifts} salonHours={salonHours}
+            date={date} stylists={stylists} appointments={appointments} financeFilter={financeFilter} timeBlocks={timeBlocks} salonShifts={salonShifts} salonHours={salonHours}
             onSlotClick={(stylist_id, start_time) => setSelectedAppointment({ stylist_id, start_time } as Appointment)}
             onAppointmentClick={setSelectedAppointment}
             onAppointmentMove={handleAppointmentMove}
@@ -200,7 +204,7 @@ export default function CalendarPage() {
         )}
         {view === 'week' && (
           <WeekView
-            date={date} stylists={stylists} appointments={appointments} timeBlocks={timeBlocks}
+            date={date} stylists={stylists} appointments={appointments} financeFilter={financeFilter} timeBlocks={timeBlocks}
             onSlotClick={(stylist_id, start_time) => setSelectedAppointment({ stylist_id, start_time } as Appointment)}
             onAppointmentClick={setSelectedAppointment}
             onAppointmentMove={handleAppointmentMove}
@@ -211,6 +215,8 @@ export default function CalendarPage() {
       {selectedAppointment && (
         <AppointmentModal
           appointment={selectedAppointment}
+          finance={appointments.find(a => a.id === selectedAppointment.id)?.finance}
+          onFinanceChange={() => { void refresh(true); }}
           services={services} categories={categories} clients={clients} stylists={stylists} salonId={salonId}
           onClose={() => setSelectedAppointment(null)}
           onSave={handleSave} onDelete={handleDelete}

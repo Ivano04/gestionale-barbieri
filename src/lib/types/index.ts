@@ -1,3 +1,4 @@
+import type { CalendarFinance } from '@/lib/calendar-finance';
 export type { WorkingHoursShift, WorkingHoursDay, WorkingHours } from '@/lib/working-hours';
 
 export type UserRole = 'owner' | 'admin' | 'stylist' | 'receptionist';
@@ -96,6 +97,7 @@ export interface AddedService {
 }
 
 export interface Appointment {
+  finance?: CalendarFinance;
   id: string;
   salon_id: string;
   client_id: string | null;

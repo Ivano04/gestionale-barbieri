@@ -1,7 +1,8 @@
+import { attachCalendarFinance } from '@/services/calendar/financial-repo';
+import { calendarRange } from '@/lib/calendar-range';
 import { createServerSupabase } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { addMinutes } from 'date-fns';
-import { getRomeOffset } from '@/lib/date-utils';
 import { sendN8nEvent } from '@/lib/sync-webhook';
 import { fetchServiceDuration } from '@/services/booking-engine/queries';
 import { pushToGHL } from '@/services/ghl-sync/sync';
@@ -28,16 +29,16 @@ export async function GET(request: Request) {
   }
 
   const supabase = await createServerSupabase();
-  const tzOffset = getRomeOffset(date);
-  const dayStart = new Date(`${date}T00:00:00${tzOffset}`);
-  const dayEnd = new Date(`${date}T23:59:59${tzOffset}`);
+  let range;
+  try { range = calendarRange(date, searchParams.get('end_date') ?? date); }
+  catch { return Response.json({ error: 'Periodo non valido (massimo sette giorni)' }, { status: 400 }); }
 
   let query = supabase
     .from('appointments')
     .select('*, client:clients(*), stylist:users(*), service:services(*)')
     .eq('salon_id', salon_id)
-    .gte('start_time', dayStart.toISOString())
-    .lte('start_time', dayEnd.toISOString())
+    .gte('start_time', range.start)
+    .lt('start_time', range.end)
     .neq('status', 'cancelled')
     .order('start_time');
 
@@ -62,7 +63,8 @@ export async function GET(request: Request) {
     pollGHL(salon_id).catch(() => {});
   }
 
-  return Response.json(data);
+  const enriched = await attachCalendarFinance(supabase, salon_id, data ?? []);
+  return Response.json(enriched, { headers: { 'Cache-Control': 'private, no-store' } });
 }
 
 export async function POST(request: Request) {
