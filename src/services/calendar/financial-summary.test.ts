@@ -34,3 +34,6 @@ describe('calendar financial truth', () => {
     expect(matchesFinanceFilter(undefined, 'verify')).toBe(true);
   });
 });
+
+it('accepts an empty one-to-one reversal embed from PostgREST', () => expect(financialSummary('manual', [], [sale({ reversals: null })], [], []).payment).toBe('salon'));
+it('accepts a one-to-one reversal object from PostgREST', () => expect(financialSummary('manual', [], [sale({ reversals: { sale_id: 's' } })], [], []).payment).toBe('refunded'));

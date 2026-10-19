@@ -1,7 +1,8 @@
 import type { CalendarFinance } from '@/lib/calendar-finance';
 import { unknownFinance } from '@/lib/calendar-finance';
 export type PaymentRow = { status: string; amount_cents: number };
-export type SaleRow = { kind: string; state: string; amount_cents: number; credit_cents: number; tender_cents: number; payment_method: string; reversals: { sale_id: string }[] };
+export type SaleRow = { kind: string; state: string; amount_cents: number; credit_cents: number; tender_cents: number; payment_method: string; reversals: { sale_id: string }[] | { sale_id: string } | null };
+const isReversed = (sale: SaleRow) => Array.isArray(sale.reversals) ? sale.reversals.length > 0 : !!sale.reversals;
 export type DocumentRow = { operation: string; status: string; processing_status: string };
 export function financialSummary(source: string, payments: PaymentRow[] | null, sales: SaleRow[] | null, documents: DocumentRow[] | null, refunds: { state: string }[] | null): CalendarFinance {
   const result = { ...unknownFinance };
@@ -9,8 +10,8 @@ export function financialSummary(source: string, payments: PaymentRow[] | null, 
     const baseSales = sales.filter(s => s.kind === 'appointment');
     const succeeded = payments.filter(p => p.status === 'succeeded');
     const returned = payments.filter(p => p.status === 'refunded');
-    const activeSales = baseSales.filter(s => !s.reversals.length);
-    const reversedSales = baseSales.filter(s => s.reversals.length);
+    const activeSales = baseSales.filter(s => !isReversed(s));
+    const reversedSales = baseSales.filter(s => isReversed(s));
     const partial = payments.some(p => p.status === 'partially_refunded');
     if (partial || ((returned.length || reversedSales.length) && (succeeded.length || activeSales.length))) {
       result.payment = 'partial_refund'; result.paymentDetail = 'Rimborso parziale registrato; consulta la cassa per i dettagli';
@@ -34,7 +35,7 @@ export function financialSummary(source: string, payments: PaymentRow[] | null, 
     }
     if (succeeded.length + activeSales.length > 1) result.notice = 'Più incassi associati: verificare in cassa';
     if (sales.some(s => s.state === 'review_required')) result.notice = 'Incasso da verificare in cassa';
-    if (sales.some(s => s.kind === 'extra' && s.reversals.length)) result.notice = 'Rimborso di una vendita extra registrato';
+    if (sales.some(s => s.kind === 'extra' && isReversed(s))) result.notice = 'Rimborso di una vendita extra registrato';
   }
   // Fiscal status never changes a confirmed payment. PDFs and emails are independent of issuance.
   if (documents) {
