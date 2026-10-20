@@ -14,8 +14,8 @@ ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
 ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
 RUN npm run build
 
-# Rimuovere le dipendenze di sviluppo solo dopo la build, in sequenza.
-FROM builder AS production-deps
+# Dipendenze runtime indipendenti dal codice: riutilizzabili tra i rilasci.
+FROM deps AS production-deps
 RUN npm prune --omit=dev --legacy-peer-deps --no-audit --no-fund
 
 # Stage 3: immagine finale leggera
@@ -31,7 +31,9 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 
-RUN chown -R nextjs:nodejs /app
+# Solo la cache e gli artefatti Next richiedono scrittura a runtime.
+# Non ricopiare tutte le dipendenze in un secondo strato per cambiarne il proprietario.
+RUN mkdir -p /app/.next/cache && chown -R nextjs:nodejs /app/.next
 
 USER nextjs
 

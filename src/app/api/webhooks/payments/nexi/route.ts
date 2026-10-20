@@ -37,7 +37,7 @@ export async function POST(request: Request) {
     // (mantiene i controlli conflitti e la sync verso Treatwell).
     const base = process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
     await confirmBookingFromPayment({
-      idempotentBooking: process.env.FISKALY_TEST_ENABLED === 'true',
+      idempotentBooking: true,
       repo,
       event,
       createAppointment: async (booking: BookingPayload) => {

@@ -1,18 +1,21 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { ServiceOverride } from '@/lib/types';
 import { normalizeShifts, type WorkingHoursShift } from '@/lib/working-hours';
-import { computeBusyPeriods } from './overlap';
+import { appointmentBusyPeriods } from './overlap';
+import { clientServiceDuration } from '@/lib/booking-services';
 import { activeHoldsToBlocks, HOLD_TTL_MS } from '@/services/payments/holds';
 
 export async function fetchSalonHours(salonId: string, dayName: string): Promise<WorkingHoursShift[] | null> {
   const supabase = createAdminClient();
-  const { data: salon } = await supabase
+  const { data: salon, error } = await supabase
     .from('salons')
     .select('working_hours, open_time, close_time')
     .eq('id', salonId)
     .single();
 
-  let wh = (salon?.working_hours || {}) as Record<string, any>;
+  if (error) throw new Error('Impossibile leggere gli orari del salone');
+  if (!salon) return null;
+  let wh = (salon.working_hours || {}) as Record<string, any>;
   if (typeof wh === 'string') try { wh = JSON.parse(wh); } catch {}
 
   const dayValue = wh?.[dayName];
@@ -36,10 +39,10 @@ export async function fetchServiceDuration(serviceId: string) {
   const supabase = createAdminClient();
   const { data: service } = await supabase
     .from('services')
-    .select('duration_minutes')
+    .select('duration_minutes,duration_application,duration_processing,duration_finishing')
     .eq('id', serviceId)
     .single();
-  return service?.duration_minutes || null;
+  return service ? clientServiceDuration(service) : null;
 }
 
 /** Fetch stylist-specific overrides for a service */
@@ -57,62 +60,21 @@ export async function fetchServiceOverride(
   return data;
 }
 
-export async function fetchStylists(salonId: string, stylistId?: string, serviceId?: string) {
+export async function fetchStylists(salonId: string, stylistId?: string, serviceId?: string | string[]) {
   const supabase = createAdminClient();
-
-  if (serviceId) {
-    // Get all stylists
-    const { data: allStylists } = await supabase
-      .from('users')
-      .select('id, full_name, working_hours, is_active')
-      .eq('salon_id', salonId)
-      .eq('role', 'stylist');
-
-    // Filter out inactive stylists
-    const activeStylists = (allStylists || []).filter(s => s.is_active !== false);
-    if (!activeStylists.length) return [];
-
-    // Get stylists assigned to THIS service
-    const { data: serviceAssignments } = await supabase
-      .from('stylist_services')
-      .select('stylist_id')
-      .eq('service_id', serviceId);
-
-    const assignedToService = new Set((serviceAssignments || []).map(a => a.stylist_id));
-
-    // Get ALL stylists who have ANY assignment (these are in manual mode)
-    const { data: allAssigned } = await supabase
-      .from('stylist_services')
-      .select('stylist_id');
-
-    const hasAnyAssignment = new Set((allAssigned || []).map(a => a.stylist_id));
-
-    if (hasAnyAssignment.size > 0) {
-      // Filtering is active: eligible = assigned to this service OR in "all services" mode
-      const eligible = activeStylists.filter(s =>
-        assignedToService.has(s.id) || !hasAnyAssignment.has(s.id)
-      );
-
-      if (stylistId) return eligible.filter(s => s.id === stylistId);
-      return eligible;
-    }
-
-    // No assignments at all — all stylists can do this service
-    if (stylistId) return activeStylists.filter(s => s.id === stylistId);
-    return activeStylists;
-  }
-
-  // No service filter — return all active stylists
-  let query = supabase
-    .from('users')
-    .select('id, full_name, working_hours')
-    .eq('salon_id', salonId)
-    .eq('role', 'stylist')
-    .eq('is_active', true);
-
-  if (stylistId) query = query.eq('id', stylistId);
-  const { data: stylists } = await query;
-  return stylists || [];
+  const { data, error } = await supabase.from('users').select('id,full_name,working_hours,is_active')
+    .eq('salon_id', salonId).eq('role', 'stylist').or('is_active.eq.true,is_active.is.null');
+  if (error) throw new Error('Impossibile leggere gli operatori');
+  const stylists = (data ?? []).filter(s => !stylistId || s.id === stylistId);
+  if (!stylists.length || !serviceId) return stylists;
+  const ids = Array.isArray(serviceId) ? serviceId : [serviceId];
+  const { data: assignments, error: assignmentError } = await supabase.from('stylist_services')
+    .select('stylist_id,service_id').in('stylist_id', stylists.map(s => s.id));
+  if (assignmentError || (assignments?.length ?? 0) >= 1000) throw new Error('Impossibile verificare i servizi degli operatori');
+  return stylists.filter(s => {
+    const assigned = (assignments ?? []).filter(a => a.stylist_id === s.id);
+    return !assigned.length || ids.every(id => assigned.some(a => a.service_id === id));
+  });
 }
 
 export async function fetchOccupiedSlots(
@@ -125,8 +87,8 @@ export async function fetchOccupiedSlots(
   // Use overlap queries: fetch any block/appointment that overlaps the day,
   // not just those starting within the day. A block from 23:00 yesterday to
   // 02:00 today must still block today's 01:00 slot.
-  let appointmentsQuery = supabase.from('appointments').select('stylist_id, start_time, end_time, buffer_end_time, service_id')
-    .eq('salon_id', salonId).lt('start_time', dayEnd.toISOString()).gt('end_time', dayStart.toISOString()).neq('status', 'cancelled');
+  let appointmentsQuery = supabase.from('appointments').select('stylist_id, start_time, end_time, buffer_end_time, service_id, added_services, booked_services')
+    .eq('salon_id', salonId).lt('start_time', dayEnd.toISOString()).or(`end_time.gt.${dayStart.toISOString()},buffer_end_time.gt.${dayStart.toISOString()}`).neq('status', 'cancelled');
   if (excludeAppointmentId) appointmentsQuery = appointmentsQuery.neq('id', excludeAppointmentId);
   const [appsRes, blocksRes] = await Promise.all([
     appointmentsQuery,
@@ -138,7 +100,7 @@ export async function fetchOccupiedSlots(
       .gt('end_time', dayStart.toISOString()),
   ]);
 
-  if (appsRes.error || blocksRes.error) throw new Error('Calendar availability unavailable');
+  if (appsRes.error || blocksRes.error || (appsRes.data?.length ?? 0) >= 1000 || (blocksRes.data?.length ?? 0) >= 1000) throw new Error('Calendar availability unavailable');
 
   // Fetch service phases for appointments that have a service
   const serviceIds = [...new Set((appsRes.data || []).map((a: any) => a.service_id).filter(Boolean))];
@@ -147,29 +109,19 @@ export async function fetchOccupiedSlots(
     : { data: [] };
   const serviceMap = new Map((services || []).map((s: any) => [s.id, s]));
 
-  // Blocchi slot temporanei: pagamenti pending recenti riservano lo slot.
-  // Protetto: se la tabella payments non esiste ancora, si degrada a "nessun blocco".
-  let holdBlocks: { stylist_id: string | null; start_time: Date; end_time: Date }[] = [];
-  try {
-    const cutoff = new Date(Date.now() - HOLD_TTL_MS).toISOString();
-    const { data: holds } = await supabase
-      .from('payments')
-      .select('status, created_at, metadata')
-      .eq('salon_id', salonId)
-      .eq('status', 'pending')
-      .gte('created_at', cutoff);
-    holdBlocks = activeHoldsToBlocks(holds || [], new Date());
-  } catch {
-    holdBlocks = [];
-  }
+  // A paid booking remains reserved while the payment webhook retries confirmation.
+  const cutoff = new Date(Date.now() - HOLD_TTL_MS).toISOString();
+  const { data: holds, error: holdsError } = await supabase.from('payments')
+    .select('status,created_at,metadata,appointment_id').eq('salon_id', salonId)
+    .or(`and(status.eq.pending,created_at.gte.${cutoff}),and(status.eq.succeeded,appointment_id.is.null)`);
+  if (holdsError || (holds?.length ?? 0) >= 1000) throw new Error('Impossibile verificare le prenotazioni in pagamento');
+  const holdBlocks = activeHoldsToBlocks(holds ?? [], new Date());
 
   const mapBlock = (b: any) => {
     const startTime = new Date(b.start_time);
     const endTime = b.buffer_end_time ? new Date(b.buffer_end_time) : new Date(b.end_time);
     const svc = serviceMap.get(b.service_id);
-    const busyPeriods = svc
-      ? computeBusyPeriods(startTime, endTime, svc.duration_application, svc.duration_processing, svc.duration_finishing)
-      : undefined;
+    const busyPeriods = appointmentBusyPeriods(b, svc);
     return {
       stylist_id: b.stylist_id ?? null,
       start_time: startTime,

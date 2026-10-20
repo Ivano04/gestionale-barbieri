@@ -1,4 +1,5 @@
 'use client';
+import { appointmentServiceName } from '@/lib/booking-services';
 import { financeDescription, matchesFinanceFilter, paymentAppearance, type FinanceFilter } from '@/lib/calendar-finance';
 import { FinancialStatus, BookingSource } from './FinancialStatus';
 import { useState } from 'react';
@@ -167,7 +168,7 @@ export function WeekView({ date, stylists, appointments, financeFilter = 'all', 
                           {format(parseISO(app.start_time), 'HH:mm')}
                         </span>
                       </div>
-                      <div className="flex items-center gap-1 text-[10px] text-slate-600 mt-0.5"><span className="truncate flex-1">{app.service?.name}</span><BookingSource source={app.source} /></div>
+                      <div className="flex items-center gap-1 text-[10px] text-slate-600 mt-0.5"><span className="truncate flex-1">{appointmentServiceName(app)}</span><BookingSource source={app.source} /></div>
                       {app.service?.price_cents && (
                         <div className="text-[10px] font-medium text-slate-700">€{(app.service.price_cents / 100).toFixed(0)}</div>
                       )}

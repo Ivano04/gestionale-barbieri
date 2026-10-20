@@ -7,6 +7,7 @@ export const HOLD_TTL_MS = 15 * 60 * 1000; // 15 minuti
 
 export interface HoldRow {
   status: string;
+  appointment_id?: string | null;
   created_at: string;
   metadata: any;
 }
@@ -23,8 +24,8 @@ export function activeHoldsToBlocks(rows: HoldRow[], now: Date, ttlMs: number = 
   const cutoff = now.getTime() - ttlMs;
   const blocks: HoldBlock[] = [];
   for (const r of rows) {
-    if (r.status !== 'pending') continue;
-    if (new Date(r.created_at).getTime() < cutoff) continue;
+    const paidAwaitingConfirmation = r.status === 'succeeded' && r.appointment_id === null;
+    if (!paidAwaitingConfirmation && (r.status !== 'pending' || new Date(r.created_at).getTime() < cutoff)) continue;
     const slot = r.metadata?.slot;
     if (!slot?.start_time || !slot?.end_time) continue;
     blocks.push({

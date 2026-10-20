@@ -1,8 +1,9 @@
+import { fetchStylists } from '@/services/booking-engine/queries';
 import { createServerSupabase } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { resolveAppointmentTiming } from '@/services/appointments/timing';
 import { sendN8nEvent } from '@/lib/sync-webhook';
-import { computeBusyPeriods } from '@/services/booking-engine/overlap';
+import { appointmentBusyPeriods } from '@/services/booking-engine/overlap';
 import { updateGHLAppointment } from '@/services/ghl-sync/sync';
 import { pushUpdateToTreatwell } from '@/services/treatwell-sync/sync';
 import { cancelAndMaybeRefund } from '@/services/cancellation/service';
@@ -18,7 +19,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const { data: existing } = await supabase
     .from('appointments')
-    .select('stylist_id, service_id, salon_id, start_time, end_time, buffer_end_time')
+    .select('stylist_id, service_id, salon_id, start_time, end_time, buffer_end_time, added_services, booked_services')
     .eq('id', id)
     .single();
 
@@ -28,6 +29,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const newStylistId = body.stylist_id ?? existing.stylist_id;
   const serviceId = body.service_id ?? existing.service_id;
+  if (existing.booked_services?.length && serviceId !== existing.service_id) return Response.json({ error: 'I servizi già pagati sono conservati nella prenotazione. Per una variazione economica usa la cassa.' }, { status: 409 });
   let serviceTiming;
   if (serviceId !== existing.service_id) {
     const { data: service } = await supabase.from('services').select('duration_minutes, buffer_time_minutes')
@@ -38,30 +40,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   let timing;
   try { timing = resolveAppointmentTiming(existing, body, serviceTiming); }
   catch (error) { return Response.json({ error: error instanceof Error ? error.message : 'Orari non validi' }, { status: 400 }); }
+  if (existing.booked_services?.length) {
+    const purchasedDuration = existing.booked_services.reduce((n: number, s: { duration_minutes: number }) => n+s.duration_minutes, 0);
+    if (new Date(timing.end_time).getTime()-new Date(timing.start_time).getTime() < purchasedDuration*60000) return Response.json({ error: 'La durata deve contenere tutti i servizi prenotati' }, { status: 400 });
+  }
   const newStartTime = timing.start_time;
   const newEndTime = timing.end_time;
   const newBufferEndTime = timing.buffer_end_time;
 
-  // Se lo stylist cambia, verifica che possa fare questo servizio
   if (body.stylist_id && serviceId) {
-    const { data: assignments } = await supabase
-      .from('stylist_services')
-      .select('stylist_id');
-    const hasAnyAssignments = (assignments || []).length > 0;
-    if (hasAnyAssignments) {
-      const assigned = (assignments || []).filter(a => a.stylist_id === body.stylist_id);
-      const isAssignedToService = assigned.length > 0; // ha ALMENO un'assegnazione
-      const { data: specificAssignment } = await supabase
-        .from('stylist_services')
-        .select('stylist_id')
-        .eq('stylist_id', body.stylist_id)
-        .eq('service_id', serviceId)
-        .limit(1);
-      const canDoService = (specificAssignment || []).length > 0 || !isAssignedToService;
-      if (!canDoService) {
-        return Response.json({ error: 'Questo operatore non può svolgere il servizio selezionato' }, { status: 400 });
-      }
-    }
+    const ids = [...new Set<string>([serviceId, ...(existing.added_services ?? []).map((s: { service_id: string }) => s.service_id)])];
+    const eligible = await fetchStylists(existing.salon_id, newStylistId, ids);
+    if (!eligible.length) return Response.json({ error: 'Questo operatore non può svolgere tutti i servizi selezionati' }, { status: 400 });
   }
 
   if (new Date(newStartTime) < new Date()) {
@@ -90,11 +80,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (newStylistId) {
     const { data: conflicts } = await supabase
       .from('appointments')
-      .select('id, start_time, end_time, service_id, client:clients(first_name)')
+      .select('id, start_time, end_time, buffer_end_time, service_id, added_services, booked_services, client:clients(first_name)')
       .eq('stylist_id', newStylistId)
       .eq('salon_id', existing.salon_id)
       .lt('start_time', newBufferEndTime || newEndTime)
-      .gt('end_time', newStartTime)
+      .or(`end_time.gt.${newStartTime},buffer_end_time.gt.${newStartTime}`)
       .neq('status', 'cancelled')
       .neq('id', id);
 
@@ -110,9 +100,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
       for (const c of conflicts) {
         const svc = (svcMap as Map<string, any>).get(c.service_id as string);
-        const busyPeriods = svc
-          ? computeBusyPeriods(new Date(c.start_time), new Date(c.end_time), svc.duration_application, svc.duration_processing, svc.duration_finishing)
-          : [{ start: new Date(c.start_time), end: new Date(c.end_time) }];
+        const busyPeriods = appointmentBusyPeriods(c, svc);
 
         const overlaps = busyPeriods.some(bp => newStart < bp.end && newEnd > bp.start);
         if (overlaps) {

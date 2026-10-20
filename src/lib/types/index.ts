@@ -114,6 +114,7 @@ export interface Appointment {
   buffer_end_time: string | null;
   /** Services added mid-appointment (in-chair upselling) */
   added_services: AddedService[];
+  booked_services?: import('@/lib/booking-services').BookedService[];
   created_at: string;
   updated_at: string;
   // Joined relations

@@ -1,3 +1,4 @@
+import { appointmentServiceName } from '@/lib/booking-services';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendN8nEvent } from '@/lib/sync-webhook';
 import { deleteFromTreatwell } from '@/services/treatwell-sync/sync';
@@ -33,7 +34,7 @@ export async function cancelAndMaybeRefund(appointmentId: string, initiatedBy: C
 
   const { data: appt } = await admin
     .from('appointments')
-    .select('id, start_time, client_cancellation_deadline_at, status, salon_id, treatwell_appointment_id, ghl_appointment_id, client:clients(first_name,email), service:services(name), salon:salons(name)')
+    .select('id, booked_services, added_services, start_time, client_cancellation_deadline_at, status, salon_id, treatwell_appointment_id, ghl_appointment_id, client:clients(first_name,email), service:services(name), salon:salons(name)')
     .eq('id', appointmentId)
     .maybeSingle();
 
@@ -111,7 +112,7 @@ export async function cancelAndMaybeRefund(appointmentId: string, initiatedBy: C
     if (cfg.apiKey && clientEmail) {
       const email = cancellationEmail({
         clientName: (appt as any).client?.first_name || 'Cliente',
-        serviceName: (appt as any).service?.name || 'Servizio',
+        serviceName: appointmentServiceName(appt as any),
         dateText: fmtDate(appt.start_time),
         timeText: fmtTime(appt.start_time),
         salonName: (appt as any).salon?.name || 'Il salone',

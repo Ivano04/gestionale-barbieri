@@ -1,21 +1,23 @@
+import { appointmentServiceName } from '@/lib/booking-services';
+import type { AddedService } from '@/lib/types';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getAvailableSlots } from '@/services/booking-engine';
 import { cancellationWindowHours } from '@/services/cancellation/logic';
 import { canReschedule, romeSlot } from './logic';
 export async function loadReschedulableAppointment(id: string) {
   const db = createAdminClient();
-  const { data, error } = await db.from('appointments').select('id,salon_id,service_id,stylist_id,status,start_time,end_time,buffer_end_time,client_cancellation_deadline_at,service:services(name),salon:salons(name),stylist:users(full_name)').eq('id', id).maybeSingle();
+  const { data, error } = await db.from('appointments').select('id,salon_id,added_services,booked_services,service_id,stylist_id,status,start_time,end_time,buffer_end_time,client_cancellation_deadline_at,service:services(name),salon:salons(name),stylist:users(full_name)').eq('id', id).maybeSingle();
   if (error) throw new Error('Impossibile leggere la prenotazione');
   if (!data) return null;
   const single = <T>(value: T | T[] | null) => Array.isArray(value) ? value[0] : value ?? undefined;
-  return { ...data, service: single(data.service), salon: single(data.salon), stylist: single(data.stylist) };
+  return { ...data, service: { name: appointmentServiceName({ ...data, service: single(data.service) }) }, salon: single(data.salon), stylist: single(data.stylist) };
 }
 export type RescheduleAppointment = NonNullable<Awaited<ReturnType<typeof loadReschedulableAppointment>>>;
 export async function rescheduleSlots(a: RescheduleAppointment, date: string) {
   if (!canReschedule(a.status, a.start_time) || !a.service_id || !a.stylist_id) return [];
   const duration = Math.ceil((new Date(a.buffer_end_time ?? a.end_time).getTime() - new Date(a.start_time).getTime()) / 60000);
   if (!Number.isFinite(duration) || duration <= 0) return [];
-  const slots = await getAvailableSlots({ salon_id: a.salon_id, service_id: a.service_id, stylist_id: a.stylist_id, date,
+  const slots = await getAvailableSlots({ salon_id: a.salon_id, service_id: a.service_id, service_ids: [...new Set([a.service_id, ...(a.added_services as AddedService[] ?? []).map(s => s.service_id)])], stylist_id: a.stylist_id, date,
     exclude_appointment_id: a.id, duration_minutes: duration });
   const unique = [...new Map(slots.map(slot => [slot.time, slot])).values()];
   return unique.filter(s => new Date(romeSlot(date, s.time)).getTime() > Date.now() && romeSlot(date, s.time) !== new Date(a.start_time).toISOString());

@@ -1,4 +1,5 @@
 'use client';
+import { clientServiceDuration } from '@/lib/booking-services';
 import { FinancialStatus } from './FinancialStatus';
 import type { CalendarFinance } from '@/lib/calendar-finance';
 import { FinanceMenu } from './FinanceMenu';
@@ -49,6 +50,7 @@ export function AppointmentModal({ appointment, finance, onFinanceChange, servic
   const [clientSearch, setClientSearch] = useState('');
   const [showClientList, setShowClientList] = useState(false);
   const isNew = !appointment?.id;
+  const selectedServiceIds = [...new Set([form.service_id, ...(appointment?.added_services ?? []).map(s => s.service_id)].filter(Boolean))].join(',');
 
   // Servizi filtrati per ricerca
   const filteredServices = serviceSearch
@@ -80,13 +82,13 @@ export function AppointmentModal({ appointment, finance, onFinanceChange, servic
     const controller = new AbortController();
     setSlotsLoading(true);
     setSlotsError('');
-    fetch(`/api/slots?salon_id=${salonId}&service_id=${form.service_id}&stylist_id=${form.stylist_id}&date=${slotDate}`, { signal: controller.signal })
+    fetch(`/api/slots?salon_id=${salonId}&service_id=${form.service_id}&stylist_id=${form.stylist_id}&date=${slotDate}${appointment?.id ? `&appointment_id=${appointment.id}` : ''}`, { signal: controller.signal })
       .then(async r => { if (!r.ok) throw new Error(); return r.json(); })
       .then(d => { if (!controller.signal.aborted) setSlots(Array.isArray(d) ? d : []); })
       .catch(() => { if (!controller.signal.aborted) { setSlots([]); setSlotsError('Impossibile caricare gli orari. Chiudi e riapri per riprovare.'); } })
       .finally(() => { if (!controller.signal.aborted) setSlotsLoading(false); });
     return () => controller.abort();
-  }, [timePickerOpen, salonId, form.service_id, form.stylist_id, slotDate]);
+  }, [timePickerOpen, salonId, form.service_id, form.stylist_id, slotDate, appointment?.id]);
 
   // Load filtered stylists when service changes
   useEffect(() => {
@@ -95,10 +97,10 @@ export function AppointmentModal({ appointment, finance, onFinanceChange, servic
       return;
     }
     const controller = new AbortController();
-    fetch(`/api/stylist-services?salon_id=${salonId}&service_id=${form.service_id}`, { signal: controller.signal })
+    fetch(`/api/stylist-services?salon_id=${salonId}&service_ids=${selectedServiceIds}`, { signal: controller.signal })
       .then(r => r.json())
       .then(ids => {
-        if (!Array.isArray(ids) || ids.length === 0) {
+        if (!Array.isArray(ids)) {
           setFilteredStylists(stylists);
         } else {
           setFilteredStylists(stylists.filter(s => ids.includes(s.id)));
@@ -106,7 +108,7 @@ export function AppointmentModal({ appointment, finance, onFinanceChange, servic
       })
       .catch(() => setFilteredStylists(stylists));
     return () => controller.abort();
-  }, [salonId, form.service_id, stylists]);
+  }, [salonId, form.service_id, selectedServiceIds, stylists]);
 
   // Reset stylist if no longer valid for selected service
   useEffect(() => {
@@ -256,11 +258,11 @@ export function AppointmentModal({ appointment, finance, onFinanceChange, servic
           <div>
             <label className="text-sm font-medium text-gray-700">Servizio</label>
             {/* Bottone/tendina richiudibile */}
-            <button type="button"
+            <button type="button" disabled={!!appointment.booked_services?.length}
               onClick={() => { setShowServiceList(!showServiceList); setServiceSearch(''); }}
               className={`w-full mt-1 px-3 py-2 border rounded-lg text-sm text-left flex items-center justify-between hover:bg-gray-50 ${errors.service ? 'border-red-400' : ''}`}>
               <span className={form.service_id ? 'text-gray-900' : 'text-gray-400'}>
-                {form.service_id ? services.find(s => s.id === form.service_id)?.name || 'Servizio' : 'Seleziona servizio...'}
+                {form.service_id ? appointment.booked_services?.[0]?.name || services.find(s => s.id === form.service_id)?.name || 'Servizio' : 'Seleziona servizio...'}
               </span>
               <ChevronDown size={14} className={`text-gray-400 transition-transform ${showServiceList ? 'rotate-180' : ''}`} />
             </button>
@@ -313,10 +315,11 @@ export function AppointmentModal({ appointment, finance, onFinanceChange, servic
             {form.service_id && (() => {
               const svc = services.find(s => s.id === form.service_id);
               if (!svc) return null;
-              const buf = svc.buffer_time_minutes ?? 0;
+              const storedDuration = !isNew && form.service_id === appointment.service_id ? (new Date(appointment.end_time).getTime()-new Date(appointment.start_time).getTime())/60000 : null;
+              const buf = storedDuration !== null ? Math.max(0, (new Date(appointment.buffer_end_time ?? appointment.end_time).getTime()-new Date(appointment.end_time).getTime())/60000) : svc.buffer_time_minutes ?? 0;
               return (
                 <div className="mt-2 p-2 bg-gray-50 rounded-lg text-xs flex items-center justify-between">
-                  <span className="font-medium text-gray-700">Durata: {svc.duration_minutes} min</span>
+                  <span className="font-medium text-gray-700">Durata: {storedDuration ?? clientServiceDuration(svc)} min</span>
                   {buf > 0 && (
                     <span className="text-gray-400 flex items-center gap-1">
                       <Clock size={10} /> +{buf} min buffer
@@ -391,7 +394,7 @@ export function AppointmentModal({ appointment, finance, onFinanceChange, servic
               <div className="space-y-1 max-h-52 overflow-y-auto">
                 {slots.map((s, i) => {
                   const svc = services.find(svc => svc.id === form.service_id);
-                  const duration = svc?.duration_minutes || 0;
+                  const duration = !isNew && form.service_id === appointment.service_id ? (new Date(appointment.end_time).getTime()-new Date(appointment.start_time).getTime())/60000 : svc ? clientServiceDuration(svc) : 0;
                   const [h, m] = s.time.split(':').map(Number);
                   const endM = h * 60 + m + duration;
                   const endTime = `${String(Math.floor(endM / 60)).padStart(2, '0')}:${String(endM % 60).padStart(2, '0')}`;
@@ -423,7 +426,7 @@ export function AppointmentModal({ appointment, finance, onFinanceChange, servic
           {!isNew && addedServices.length > 0 && (
             <div className="p-3 bg-amber-50 rounded-lg">
               <h4 className="text-xs font-semibold text-amber-800 mb-2 flex items-center gap-1">
-                <Scissors size={12} /> Servizi aggiunti in poltrona
+                <Scissors size={12} /> Servizi aggiuntivi
               </h4>
               {addedServices.map((as, i) => (
                 <div key={i} className="flex items-center justify-between text-xs text-amber-700 py-0.5">

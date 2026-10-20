@@ -1,3 +1,4 @@
+import { appointmentServiceName } from '@/lib/booking-services';
 import { rescheduleLink } from '@/services/rescheduling/token';
 import { makeCancelToken } from '@/services/cancellation/token';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -30,7 +31,7 @@ async function runNotifications() {
 
     const { data: appts } = await supabase
       .from('appointments')
-      .select('id, start_time, end_time, status, salon_id, client:clients(first_name,email), service:services(name), salon:salons(name)')
+      .select('id, booked_services, added_services, start_time, end_time, status, salon_id, client:clients(first_name,email), service:services(name), salon:salons(name)')
       .gte('start_time', from)
       .lte('start_time', to)
       .neq('status', 'cancelled');
@@ -59,7 +60,7 @@ async function runNotifications() {
           appointmentStartTime: a.start_time,
           to: clientEmail,
           clientName: a.client?.first_name || 'Cliente',
-          serviceName: a.service?.name || 'Servizio',
+          serviceName: appointmentServiceName(a),
           dateText: fmtDate(a.start_time),
           timeText: fmtTime(a.start_time),
           salonName: a.salon?.name || 'Il salone',

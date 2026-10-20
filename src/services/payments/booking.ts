@@ -1,3 +1,4 @@
+import type { BookedService } from '@/lib/booking-services';
 import type { CreateCheckoutInput } from './service';
 
 // Dati minimi di una prenotazione da creare a pagamento avvenuto.
@@ -5,6 +6,7 @@ export interface BookingPayload {
   internal_payment_id?: string;
   salon_id: string;
   service_id: string;
+  service_ids?: string[];
   stylist_id: string;
   start_time: string;
   source?: string;
@@ -18,26 +20,32 @@ export interface BookingPayload {
 //  - salva slot (stylist + start + end) in rowMetadata.slot (per il blocco temporaneo)
 export function buildBookingCheckoutInput(args: {
   booking: BookingPayload;
-  service: { price_cents: number; duration_minutes: number; name?: string };
+  service?: { price_cents: number; duration_minutes: number; name?: string };
+  services?: BookedService[];
   providerName: 'stripe' | 'nexi';
   successUrl: string;
   cancelUrl: string;
   notifyUrl: string;
 }): CreateCheckoutInput {
   const { booking, service, providerName, successUrl, cancelUrl, notifyUrl } = args;
+  const services = args.services;
+  if (!services?.length && !service) throw new Error('Servizi mancanti');
+  const duration = services ? services.reduce((n,s) => n+s.duration_minutes+s.buffer_time_minutes, 0) : service!.duration_minutes;
+  const amount = services ? services.reduce((n,s) => n+s.price_cents, 0) : service!.price_cents;
   const start = new Date(booking.start_time);
-  const end = new Date(start.getTime() + service.duration_minutes * 60_000);
+  const end = new Date(start.getTime() + duration * 60_000);
 
   return {
     salonId: booking.salon_id,
-    amountCents: service.price_cents,
+    amountCents: amount,
     providerName,
     successUrl,
     cancelUrl,
     notifyUrl,
-    productName: service.name,
+    productName: services ? services.map(s => s.name).join(" + ") : service!.name,
     rowMetadata: {
       booking,
+      ...(services ? { booking_version: 2, booked_services: services } : {}),
       slot: {
         stylist_id: booking.stylist_id,
         start_time: start.toISOString(),

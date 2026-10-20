@@ -438,3 +438,14 @@ I prezzi e gli sconti del carrello sono verificabili prima della conferma. Le pr
 L'annullo integrale TEST riguarda l'intera vendita cumulativa. Annullare un singolo appuntamento segnala l'incasso condiviso come da verificare, senza rimborsare automaticamente gli altri servizi. Restano necessari flussi dedicati per resi parziali e il passaggio LIVE.
 
 Verifica transazionale isolata: `node scripts/grouped-checkout-db-verify.mjs`. Non chiama Nexi, fiskaly o Resend e rimuove il database temporaneo al termine.
+
+
+## Prenotazione di più servizi dal widget
+
+Il widget accetta da 1 a 10 servizi distinti in un unico appuntamento con lo stesso operatore, qualificato per tutti i servizi. Prezzi, durata e buffer vengono verificati sul server. Le fasi tutte a zero non sostituiscono più la durata principale del servizio. Il riepilogo mostra la durata dei servizi; la disponibilità riserva anche i buffer interni e richiede uno spazio continuo sufficiente.
+
+La migrazione `022_widget_service_bundles.sql` aggiunge `appointments.booked_services`, conservando i servizi successivi anche in `added_services` per compatibilità con il calendario. Un pagamento contiene uno snapshot di tutte le voci e produce un solo documento commerciale TEST, con una riga per servizio. La conferma usa lo snapshot salvato al checkout: cambi successivi al listino non modificano prezzo, nomi o durata acquistati. I vecchi pagamenti senza snapshot rimangono compatibili.
+
+Le prenotazioni simultanee sono serializzate tramite il lock del calendario. I pagamenti pending scadono dopo 15 minuti; i pagamenti riusciti senza appuntamento collegato continuano a riservare lo spazio durante il recupero della conferma via webhook. Lo spostamento conserva durata e buffer. Il widget continua a richiedere pagamento online dell'intero importo; credito cliente e promozioni restano nel flusso della cassa staff.
+
+Verifiche: `npx vitest run --exclude '**/.superpowers/**'`, `node scripts/widget-booking-db-verify.mjs` (database Docker temporaneo, senza richieste fiscali o pagamenti esterni). Il deploy applica la migrazione prima dell'avvio della nuova immagine.

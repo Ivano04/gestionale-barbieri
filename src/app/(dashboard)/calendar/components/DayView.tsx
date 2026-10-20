@@ -1,4 +1,5 @@
 'use client';
+import { appointmentServiceName } from '@/lib/booking-services';
 import { financeDescription, matchesFinanceFilter, paymentAppearance, type FinanceFilter } from '@/lib/calendar-finance';
 import { FinancialStatus, BookingSource } from './FinancialStatus';
 import { useState, useRef, useCallback } from 'react';
@@ -395,7 +396,7 @@ export function DayView({ date, stylists, appointments, financeFilter = 'all', t
                       {format(parseISO(app.start_time), 'HH:mm')}
                     </span>
                   </div>
-                  <div className="flex items-center gap-1 text-slate-600 text-[9px] leading-tight"><span className="truncate flex-1">{app.service?.name}</span><BookingSource source={app.source} /></div>
+                  <div className="flex items-center gap-1 text-slate-600 text-[9px] leading-tight"><span className="truncate flex-1">{appointmentServiceName(app)}</span><BookingSource source={app.source} /></div>
                   {app.service?.price_cents != null && cardHeight >= 38 && (
                     <div className="text-[9px] font-medium text-slate-700 leading-tight">€{(app.service.price_cents / 100).toFixed(0)}</div>
                   )}

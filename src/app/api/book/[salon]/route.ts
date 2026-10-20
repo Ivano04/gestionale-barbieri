@@ -13,5 +13,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ salo
     supabase.from('service_categories').select('id, name, color_hex').eq('salon_id', salon.id).order('sort_order'),
   ]);
 
-  return Response.json({ salon, services: svcRes.data || [], categories: catRes.data || [] });
+  if (svcRes.error || catRes.error) return Response.json({ error: 'Impossibile leggere il catalogo' }, { status: 503 });
+  return Response.json({ salon, services: svcRes.data || [], categories: catRes.data || [] }, { headers: { 'Cache-Control': 'no-store' } });
 }

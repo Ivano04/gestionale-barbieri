@@ -1,3 +1,4 @@
+import { bookingServiceIds } from '@/lib/booking-services';
 import { createServerSupabase } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 
@@ -27,7 +28,10 @@ export async function GET(request: Request) {
     return Response.json(data.map((r: { service_id: string }) => r.service_id));
   }
 
-  if (service_id) {
+  if (service_id || searchParams.has('service_ids')) {
+    let serviceIds: string[];
+    try { serviceIds = bookingServiceIds(searchParams.has('service_ids') ? searchParams.get('service_ids')!.split(',') : undefined, service_id ?? undefined); }
+    catch { return Response.json({ error: 'Servizi non validi' }, { status: 400 }); }
     // Get active stylists (NULL is_active = active, for stylists created before migration)
     const { data: allStylists } = await supabase
       .from('users')
@@ -41,10 +45,10 @@ export async function GET(request: Request) {
     // Stylists explicitly assigned to THIS service
     const { data: serviceAssignments } = await supabase
       .from('stylist_services')
-      .select('stylist_id')
-      .eq('service_id', service_id);
+      .select('stylist_id,service_id')
+      .in('service_id', serviceIds);
 
-    const assignedToService = new Set((serviceAssignments || []).map((a: any) => a.stylist_id));
+    const assignedToAll = (stylistId: string) => serviceIds.every(id => serviceAssignments?.some(a => a.stylist_id === stylistId && a.service_id === id));
 
     // All stylists who have ANY assignment (determines if filtering is active)
     const { data: allAssigned } = await supabase
@@ -56,7 +60,7 @@ export async function GET(request: Request) {
     if (hasAnyAssignment.size > 0) {
       // Filtering active: eligible = assigned to this service OR in "all services" mode
       const eligibleIds = allStylists
-        .filter(s => assignedToService.has(s.id) || !hasAnyAssignment.has(s.id))
+        .filter(s => assignedToAll(s.id) || !hasAnyAssignment.has(s.id))
         .map(s => s.id);
       return Response.json(eligibleIds);
     }

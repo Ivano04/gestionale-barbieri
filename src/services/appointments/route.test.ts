@@ -3,12 +3,13 @@ const state = vi.hoisted(() => ({ update: vi.fn(), event: vi.fn(), error: null a
 const existing={id:'appointment',client_id:'client',salon_id:'salon',stylist_id:'stylist',service_id:'service',start_time:'2035-01-16T09:00:00Z',end_time:'2035-01-16T09:45:00Z',buffer_end_time:'2035-01-16T09:55:00Z'};
 vi.mock('@/lib/supabase/server',()=>({createServerSupabase:async()=>({from:()=>{
  let updated:Record<string,unknown>|undefined;
- const q={select:()=>q,eq:()=>q,lt:()=>q,gt:()=>q,neq:()=>q,in:()=>q,limit:()=>q,
+ const q={select:()=>q,eq:()=>q,lt:()=>q,gt:()=>q,or:()=>q,neq:()=>q,in:()=>q,limit:()=>q,
  update:(value:Record<string,unknown>)=>{updated=value;state.update(value);return q;},
  single:async()=>({data:updated?{...existing,...updated}:existing,error:updated?state.error:null}),
  then:(resolve:(v:unknown)=>unknown)=>Promise.resolve({data:[],error:null}).then(resolve)};return q;
 }})}));
 vi.mock('@/lib/supabase/admin',()=>({createAdminClient:()=>({from:()=>{const q={select:()=>q,eq:()=>q,lt:()=>q,gt:()=>q,or:()=>q,is:()=>q,limit:async()=>({data:[]})};return q;}})}));
+vi.mock('@/services/booking-engine/queries',()=>({fetchStylists:vi.fn(async()=>[{id:'stylist'}])}));
 vi.mock('@/lib/sync-webhook',()=>({sendN8nEvent:state.event}));
 vi.mock('@/services/ghl-sync/sync',()=>({updateGHLAppointment:vi.fn()}));
 vi.mock('@/services/treatwell-sync/sync',()=>({pushUpdateToTreatwell:vi.fn()}));

@@ -1,17 +1,18 @@
+import { fetchBookingServices } from './catalog';
 import {
   fetchSalonHours,
   fetchServiceDuration,
-  fetchServiceOverride,
   fetchStylists,
   fetchOccupiedSlots,
 } from './queries';
-import { generateSlots, type Slot, type OccupiedBlock } from './overlap';
+import { generateSlots, type Slot } from './overlap';
 import { getRomeOffset } from '@/lib/date-utils';
 import { normalizeShifts, type WorkingHoursShift, shiftBounds } from '@/lib/working-hours';
 
 export interface GetAvailableSlotsParams {
   salon_id: string;
   service_id: string;
+  service_ids?: string[];
   stylist_id?: string;
   date: string;
   exclude_appointment_id?: string;
@@ -27,10 +28,11 @@ export async function getAvailableSlots(params: GetAvailableSlotsParams): Promis
   const hours = await fetchSalonHours(salon_id, today);
   if (!hours) return [];
 
-  const duration = params.duration_minutes ?? await fetchServiceDuration(service_id);
+  const selected = params.service_ids && !params.duration_minutes ? await fetchBookingServices(salon_id, params.service_ids) : null;
+  const duration = params.duration_minutes ?? (selected ? selected.reduce((n,s) => n+s.duration_minutes+s.buffer_time_minutes, 0) : await fetchServiceDuration(service_id));
   if (!duration) return [];
 
-  const stylists = await fetchStylists(salon_id, stylist_id, service_id);
+  const stylists = await fetchStylists(salon_id, stylist_id, params.service_ids ?? service_id);
   if (!stylists.length) return [];
 
   const bounds = shiftBounds(hours);
@@ -55,7 +57,9 @@ export async function getAvailableSlots(params: GetAvailableSlotsParams): Promis
     if (!stylistShifts) stylistShifts = hours;
     if (!stylistShifts) continue;
 
-    for (const shift of stylistShifts) {
+    for (const own of stylistShifts) for (const salonShift of hours) {
+      const shift = { open: own.open > salonShift.open ? own.open : salonShift.open, close: own.close < salonShift.close ? own.close : salonShift.close };
+      if (shift.open >= shift.close) continue;
       const sStart = new Date(`${date}T${shift.open}:00${tzOffset}`);
       const sEnd = new Date(`${date}T${shift.close}:00${tzOffset}`);
 
@@ -67,7 +71,7 @@ export async function getAvailableSlots(params: GetAvailableSlotsParams): Promis
     }
   }
 
-  return allSlots;
+  return [...new Map(allSlots.map(s => [`${s.stylist_id}:${s.time}`, s])).values()];
 }
 
 export { isSlotFree, generateSlots, computeBusyPeriods, type Slot, type OccupiedBlock } from './overlap';

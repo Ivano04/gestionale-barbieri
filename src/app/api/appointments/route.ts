@@ -1,3 +1,5 @@
+import { paidBookingServices } from '@/services/payments/paid-booking';
+import { appointmentServiceName, type BookedService } from '@/lib/booking-services';
 import { attachCalendarFinance } from '@/services/calendar/financial-repo';
 import { calendarRange } from '@/lib/calendar-range';
 import { createServerSupabase } from '@/lib/supabase/server';
@@ -11,7 +13,7 @@ import { pollTreatwell } from '@/services/treatwell-sync/poller';
 import { TreatwellClient } from '@/services/treatwell-sync/client';
 import { pollGHL } from '@/services/ghl-sync/poller';
 import { normalizeShifts, type WorkingHoursShift } from '@/lib/working-hours';
-import { computeBusyPeriods } from '@/services/booking-engine/overlap';
+import { appointmentBusyPeriods } from '@/services/booking-engine/overlap';
 import { emailConfigFromEnv, createEmailProvider } from '@/services/notifications';
 import { createSupabaseNotificationsRepo } from '@/services/notifications/repo';
 import { sendConfirmation } from '@/services/notifications/service';
@@ -68,7 +70,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const body = await request.json();
+  let body = await request.json();
+  let bookedServices: BookedService[] = [];
   // Creazione server-side fidata (staff autenticato o webhook col segreto interno):
   // usa il service role, che bypassa la RLS, coerentemente con le altre scritture server.
   const adminSupabase = createAdminClient();
@@ -79,7 +82,7 @@ export async function POST(request: Request) {
       return Response.json({ error: 'Internal payment creation requires server authentication' }, { status: 403 });
     }
     const { data: payment } = await supabase.from('payments')
-      .select('id,salon_id,status,metadata').eq('id', body.internal_payment_id).single();
+      .select('id,salon_id,status,metadata,amount_cents').eq('id', body.internal_payment_id).single();
     const saved = payment?.metadata?.booking;
     if (!payment || payment.status !== 'succeeded' || payment.salon_id !== body.salon_id ||
         !saved || saved.service_id !== body.service_id || saved.stylist_id !== body.stylist_id ||
@@ -89,11 +92,14 @@ export async function POST(request: Request) {
     const { data: existing } = await supabase.from('appointments').select('*')
       .eq('id', payment.id).eq('salon_id', payment.salon_id).maybeSingle();
     if (existing) return Response.json(existing);
+    try { bookedServices = paidBookingServices(payment.metadata, payment.amount_cents); }
+    catch { return Response.json({ error: 'Invalid paid booking snapshot' }, { status: 409 }); }
+    body = { ...saved, internal_payment_id: payment.id };
   }
-  const duration = await fetchServiceDuration(body.service_id);
+  const duration = bookedServices.length ? bookedServices.reduce((n,s) => n+s.duration_minutes, 0) : await fetchServiceDuration(body.service_id);
   if (!duration) return Response.json({ error: 'Servizio non trovato' }, { status: 404 });
 
-  const bufferMinutes = body.buffer_time_minutes ?? 0;
+  const bufferMinutes = bookedServices.length ? bookedServices.reduce((n,s) => n+s.buffer_time_minutes, 0) : body.buffer_time_minutes ?? 0;
   const startTime = new Date(body.start_time);
   const endTime = addMinutes(startTime, duration).toISOString();
   const bufferEndTime = addMinutes(startTime, duration + bufferMinutes).toISOString();
@@ -103,7 +109,7 @@ export async function POST(request: Request) {
   }
 
   // Salon hours check
-  const dateStr = body.start_time.split('T')[0];
+  const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' }).format(startTime);
   const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
   const dayName = dayNames[new Date(dateStr + 'T12:00:00').getDay()];
 
@@ -129,8 +135,9 @@ export async function POST(request: Request) {
       { open: salonHoursData.open_time || '09:00', close: salonHoursData.close_time || '19:00' },
     ];
 
-    const slotTime = body.start_time.split('T')[1]?.substring(0, 5) || '';
-    const endSlotTime = bufferEndTime.split('T')[1]?.substring(0, 5) || '';
+    const clock = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
+    const slotTime = clock.format(startTime);
+    const endSlotTime = clock.format(new Date(bufferEndTime));
 
     // Check if appointment fits within any shift
     const fits = shifts.some(s => slotTime >= s.open && endSlotTime <= s.close);
@@ -158,11 +165,11 @@ export async function POST(request: Request) {
   if (body.stylist_id) {
     const { data: conflicts } = await supabase
       .from('appointments')
-      .select('id, start_time, end_time, service_id, client:clients(first_name)')
+      .select('id, start_time, end_time, buffer_end_time, service_id, added_services, booked_services, client:clients(first_name)')
       .eq('stylist_id', body.stylist_id)
       .eq('salon_id', body.salon_id)
       .lt('start_time', bufferEndTime)
-      .gt('end_time', body.start_time)
+      .or(`end_time.gt.${body.start_time},buffer_end_time.gt.${body.start_time}`)
       .neq('status', 'cancelled');
 
     if (conflicts?.length) {
@@ -178,9 +185,7 @@ export async function POST(request: Request) {
 
       for (const c of conflicts) {
         const svc = (svcMap as Map<string, any>).get(c.service_id as string);
-        const busyPeriods = svc
-          ? computeBusyPeriods(new Date(c.start_time), new Date(c.end_time), svc.duration_application, svc.duration_processing, svc.duration_finishing)
-          : [{ start: new Date(c.start_time), end: new Date(c.end_time) }];
+        const busyPeriods = appointmentBusyPeriods(c, svc);
 
         // Controlla se il nuovo appuntamento si sovrappone a un periodo BUSY
         const overlaps = busyPeriods.some(bp => newStart < bp.end && newEnd > bp.start);
@@ -224,12 +229,19 @@ export async function POST(request: Request) {
       buffer_end_time: bufferEndTime,
       source: body.source || 'manual',
       notes: body.notes,
-      added_services: [],
+      booked_services: bookedServices,
+      added_services: bookedServices.slice(1).map(s => ({ service_id: s.service_id, name: s.name, duration_added: s.duration_minutes, added_at: new Date().toISOString() })),
     })
     .select('*')
     .single();
 
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  if (error) {
+    if (error.code === '23505' && body.internal_payment_id) {
+      const { data: existing } = await supabase.from('appointments').select('*').eq('id', body.internal_payment_id).eq('salon_id', body.salon_id).maybeSingle();
+      if (existing) return Response.json(existing);
+    }
+    return Response.json({ error: error.message }, { status: error.code === '23P01' ? 409 : 500 });
+  }
 
   const { data: fullAppt } = await supabase
   .from('appointments')
@@ -285,7 +297,7 @@ export async function POST(request: Request) {
           appointmentId: appointment.id,
           to: clientEmail,
           clientName: (fullAppt as any)?.client?.first_name || 'Cliente',
-          serviceName: (fullAppt as any)?.service?.name || 'Servizio',
+          serviceName: appointmentServiceName(fullAppt),
           dateText,
           timeText,
           salonName: salonRow?.name || 'Il salone',

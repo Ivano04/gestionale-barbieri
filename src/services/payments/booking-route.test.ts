@@ -1,0 +1,28 @@
+import { beforeEach, expect, it, vi } from 'vitest';
+import type { NextRequest } from 'next/server';
+const m=vi.hoisted(()=>({catalog:vi.fn(),slots:vi.fn(),checkout:vi.fn()}));
+vi.mock('@/lib/supabase/admin',()=>({createAdminClient:()=>({})}));
+vi.mock('@/services/booking-engine/catalog',()=>({fetchBookingServices:m.catalog}));
+vi.mock('@/services/booking-engine',()=>({getAvailableSlots:m.slots}));
+vi.mock('@/services/payments',()=>({paymentConfigFromEnv:()=>({provider:'nexi',nexiEnv:'test'}),createPaymentProvider:()=>({})}));
+vi.mock('@/services/payments/repo',()=>({createSupabasePaymentsRepo:()=>({})}));
+vi.mock('@/services/payments/service',()=>({createPaymentCheckout:m.checkout}));
+import {POST} from '@/app/api/payments/create/route';
+const a='11111111-1111-4111-8111-111111111111',b='22222222-2222-4222-8222-222222222222';
+const services=[{service_id:a,name:'Taglio',duration_minutes:30,buffer_time_minutes:5,price_cents:2800},{service_id:b,name:'Colore',duration_minutes:45,buffer_time_minutes:0,price_cents:4500}];
+const now = new Date(); const day=new Date(now.getTime()+7*86400000).toISOString().slice(0,10);
+const booking={salon_id:a,service_id:a,service_ids:[a,b],stylist_id:b,start_time:day+'T12:00:00+01:00',client:{first_name:'Test',last_name:'Cliente',phone:'+393331234567',email:'test@example.invalid'}};
+const call=(body:unknown)=>POST(Object.assign(new Request('https://test.local/api/payments/create',{method:'POST',body:JSON.stringify(body)}),{nextUrl:new URL('https://test.local/api/payments/create')}) as NextRequest);
+beforeEach(()=>{vi.clearAllMocks();vi.stubEnv('FISKALY_TEST_ENABLED','true');vi.stubEnv('FISKALY_ENV','test');vi.stubEnv('FISKALY_TEST_VAT_PERCENT','22');m.catalog.mockResolvedValue(services);
+ const time = new Intl.DateTimeFormat('it-IT',{timeZone:'Europe/Rome',hour:'2-digit',minute:'2-digit'}).format(new Date(booking.start_time));
+ m.slots.mockResolvedValue([{time,stylist_id:b,stylist_name:'Test'}]);m.checkout.mockResolvedValue({url:'https://payment.test',paymentId:a});});
+it('sends one server-priced payment and one receipt with every selected service',async()=>{
+ const response=await call({booking,expectedAmountCents:7300,expectedDurationMinutes:75});expect(response.status).toBe(200);
+ const input=m.checkout.mock.calls[0][0].input;expect(input.amountCents).toBe(7300);expect(input.rowMetadata.booked_services).toEqual(services);
+ expect(input.rowMetadata.fiscal_receipt.entries).toHaveLength(2);expect(m.slots.mock.calls[0][0].duration_minutes).toBe(80);
+});
+it('rechecks availability before creating any payment',async()=>{m.slots.mockResolvedValue([]);const response=await call({booking});expect(response.status).toBe(409);expect((await response.json()).code).toBe('SLOT_UNAVAILABLE');expect(m.checkout).not.toHaveBeenCalled();});
+it('reports a concurrent hold collision without returning a checkout URL',async()=>{m.checkout.mockRejectedValue(new Error('Slot no longer available'));const response=await call({booking});expect(response.status).toBe(409);expect(await response.json()).not.toHaveProperty('url');});
+it('requires the customer to review a changed catalog price or duration',async()=>{expect((await call({booking,expectedAmountCents:1})).status).toBe(409);expect((await call({booking,expectedDurationMinutes:30})).status).toBe(409);expect(m.checkout).not.toHaveBeenCalled();});
+it('rejects a missing/foreign service and duplicated selections',async()=>{m.catalog.mockRejectedValue(new Error('Servizio non disponibile'));expect((await call({booking})).status).toBe(400);expect((await call({booking:{...booking,service_ids:[a,a]}})).status).toBe(400);expect(m.checkout).not.toHaveBeenCalled();});
+it('fails closed if availability cannot be verified',async()=>{m.slots.mockRejectedValue(new Error('database error'));expect((await call({booking})).status).toBe(503);expect(m.checkout).not.toHaveBeenCalled();});

@@ -1,3 +1,4 @@
+import { appointmentServiceName, type BookedService } from '@/lib/booking-services';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { parseBasket, type BasketLine } from './basket';
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -8,7 +9,7 @@ export function databaseError(message?: string) {
 }
 export async function checkoutContext(id: string, salonId: string) {
   const db = createAdminClient();
-  const { data: a, error } = await db.from('appointments').select('id,salon_id,client_id,updated_at,start_time,status,added_services,service:services(id,name,price_cents),client:clients(first_name,last_name,email),salon:salons(name,address,phone)').eq('id', id).eq('salon_id', salonId).maybeSingle();
+  const { data: a, error } = await db.from('appointments').select('id,salon_id,client_id,updated_at,start_time,status,added_services,booked_services,service:services(id,name,price_cents),client:clients(first_name,last_name,email),salon:salons(name,address,phone)').eq('id', id).eq('salon_id', salonId).maybeSingle();
   if (error) throw new Error('Dati non disponibili');
   if (!a) return null;
   const { data: link, error: linkError } = await db.from('salon_sale_appointments').select('sale_id').eq('salon_id', salonId).eq('appointment_id', id).maybeSingle();
@@ -25,10 +26,13 @@ export async function checkoutContext(id: string, salonId: string) {
   ]);
   if ([catalog, payments, sales, documents, quotes].some(r => r.error)) throw new Error('Dati non disponibili');
   const service = one(a.service), client = one(a.client), salon = one(a.salon);
-  const lineIds: string[] = service ? [service.id] : [];
-  const lines: BasketLine[] = service ? [{ description: service.name, quantity: 1, unitPriceCents: service.price_cents ?? 0, discountCents: 0 }] : [];
+  const purchased = (a.booked_services ?? []) as BookedService[];
+  const primary = purchased[0];
+  const lineIds: string[] = primary ? [primary.service_id] : service ? [service.id] : [];
+  const lines: BasketLine[] = primary ? [{ description: primary.name, quantity: 1, unitPriceCents: primary.price_cents, discountCents: 0 }] : service ? [{ description: service.name, quantity: 1, unitPriceCents: service.price_cents ?? 0, discountCents: 0 }] : [];
   if (Array.isArray(a.added_services)) for (const extra of a.added_services) {
-    const found = catalog.data?.find(s => s.id === extra.service_id);
+    const paid = purchased.slice(1).find(s => s.service_id === extra.service_id);
+    const found = paid ? { id: paid.service_id, name: paid.name, price_cents: paid.price_cents } : catalog.data?.find(s => s.id === extra.service_id);
     if (found) { lineIds.push(found.id); lines.push({ description: found.name, quantity: 1, unitPriceCents: found.price_cents ?? 0, discountCents: 0 }); }
   }
   let groupedSale: { id: string; amountCents: number; appointmentIds: string[] } | null = null;
@@ -38,7 +42,7 @@ export async function checkoutContext(id: string, salonId: string) {
     if (members && members.length > 1) groupedSale = { id: link.sale_id, amountCents: sales.data?.find(s => s.id === link.sale_id)?.amount_cents ?? 0, appointmentIds: members.map(m => m.appointment_id) };
   }
   const blockingPayment = payments.data?.some(p => ['pending','authorized','succeeded','refunded','partially_refunded'].includes(p.status));
-  return { appointment: { id: a.id, updatedAt: a.updated_at, status: a.status, startTime: a.start_time, clientName: client ? `${client.first_name} ${client.last_name}`.trim() : 'Cliente occasionale', serviceName: service?.name ?? 'Servizio' },
+  return { appointment: { id: a.id, updatedAt: a.updated_at, status: a.status, startTime: a.start_time, clientName: client ? `${client.first_name} ${client.last_name}`.trim() : 'Cliente occasionale', serviceName: appointmentServiceName({ ...a, service }) },
     snapshotBase: { clientId: a.client_id, clientName: client ? `${client.first_name} ${client.last_name}`.trim() : 'Cliente occasionale', salonName: salon?.name ?? 'Salone', salonAddress: salon?.address ?? '', salonPhone: salon?.phone ?? '', appointmentStart: a.start_time },
     groupedSale, lines, lineIds, catalog: catalog.data ?? [], payments: payments.data ?? [], sale: sales.data?.find(s => s.kind === 'appointment') ?? null,
     documents: (documents.data ?? []).map(({ pdf_storage_path, ...doc }) => ({ ...doc, pdf_available: !!pdf_storage_path })), quote: quotes.data,

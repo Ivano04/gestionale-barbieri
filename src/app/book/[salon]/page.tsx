@@ -3,19 +3,11 @@ import { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { format, addDays, addWeeks, startOfWeek } from 'date-fns';
 import { it } from 'date-fns/locale';
-import { ArrowLeft, Check, Clock } from 'lucide-react';
+import { ArrowLeft, Check, Clock, Plus, X } from 'lucide-react';
 import type { Service } from '@/lib/types';
 import { countryCodes, formatPhone } from '@/lib/utils';
-import { buildSlotTime } from '@/lib/date-utils';
-
-/** Compute client-visible duration (excludes buffer, respects phases) */
-function getClientDuration(s: Service): number {
-  const hasPhases = s.duration_application != null || s.duration_processing != null || s.duration_finishing != null;
-  if (hasPhases) {
-    return (s.duration_application ?? 0) + (s.duration_processing ?? 0) + (s.duration_finishing ?? 0);
-  }
-  return s.duration_minutes;
-}
+import { getRomeOffset } from '@/lib/date-utils';
+import { clientServiceDuration as getClientDuration, MAX_BOOKING_SERVICES } from '@/lib/booking-services';
 
 export default function BookPage() {
   const params = useParams();
@@ -23,7 +15,14 @@ export default function BookPage() {
   const salon = params.salon as string;
 
   const [step, setStep] = useState<'service' | 'datetime' | 'details'>('service');
-  const [selectedService, setSelectedService] = useState<Service | null>(null);
+  const [selectedServices, setSelectedServices] = useState<Service[]>([]);
+  const selectedIds = selectedServices.map(s => s.id).join(',');
+  const totalPrice = selectedServices.reduce((n,s) => n+s.price_cents, 0);
+  const totalDuration = selectedServices.reduce((n,s) => n+getClientDuration(s), 0);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [slotsError, setSlotsError] = useState('');
+  const [slotsRetry, setSlotsRetry] = useState(0);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [weekOffset, setWeekOffset] = useState(0);
   const weekStart = addWeeks(startOfWeek(new Date(), { weekStartsOn: 1 }), weekOffset);
@@ -38,7 +37,6 @@ export default function BookPage() {
   const [services, setServices] = useState<Service[]>([]);
   const [salonData, setSalonData] = useState<{ id: string; name: string; address?: string; phone?: string } | null>(null);
   const [loading, setLoading] = useState(false);
-  const [done, setDone] = useState(false);
   const [error, setError] = useState('');
   const [anyStylist, setAnyStylist] = useState(false);
   const [stylistLoad, setStylistLoad] = useState<Record<string, number>>({});
@@ -49,40 +47,80 @@ export default function BookPage() {
   const preselectedService = searchParams.get('service');
 
   useEffect(() => {
-    fetch(`/api/book/${salon}`).then(r => r.json()).then(data => {
+    const controller = new AbortController();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset request state when the salon changes
+    setCatalogLoading(true);
+    fetch(`/api/book/${salon}`, { signal: controller.signal }).then(async r => { if (!r.ok) throw new Error(); return r.json(); }).then(data => {
       setSalonData(data.salon);
       setServices(data.services || []);
       setCategories(data.categories || []);
       if (preselectedService) {
-        const svc = (data.services || []).find((s: Service) =>
-          s.name.toLowerCase().replace(/\s+/g, '-') === preselectedService);
-        if (svc) { setSelectedService(svc); setStep('datetime'); }
+        const svc = (data.services || []).find((s: Service) => s.name.toLowerCase().replace(/\s+/g, '-') === preselectedService);
+        if (svc && getClientDuration(svc) > 0 && svc.price_cents > 0) setSelectedServices([svc]);
       }
-    });
-  }, [salon]);
+    }).catch(() => { if (!controller.signal.aborted) setError('Impossibile caricare i servizi. Ricarica la pagina.'); })
+      .finally(() => { if (!controller.signal.aborted) setCatalogLoading(false); });
+    return () => controller.abort();
+  }, [salon, preselectedService]);
 
   useEffect(() => {
-    if (selectedService && salonData?.id && step === 'datetime') {
-      const dateStr = format(selectedDate, 'yyyy-MM-dd');
-      fetch(`/api/slots?salon_id=${salonData.id}&service_id=${selectedService.id}&date=${dateStr}`)
-        .then(r => r.json())
-        .then(data => {
-          if (Array.isArray(data)) {
-            setSlots(data);
-            setStylistLoad({});
-          } else {
-            setSlots(data.slots || []);
-            setStylistLoad(data.stylistLoad || {});
-          }
-        });
-    }
-  }, [selectedService, selectedDate, step, salonData?.id]);
+    if (!selectedIds || !salonData?.id || step !== 'datetime') return;
+    const controller = new AbortController();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- invalidate times while a new availability request is pending
+    setSlots([]);
+    setSlotsLoading(true);
+    setSlotsError('');
+    setSelectedSlot(null);
+    setSelectedStylist(null);
+    const query = new URLSearchParams({ salon_id: salonData.id, service_ids: selectedIds, date: format(selectedDate, 'yyyy-MM-dd') });
+    fetch(`/api/slots?${query}`, { signal: controller.signal }).then(async r => {
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Impossibile caricare gli orari');
+      return data;
+    }).then(data => {
+      if (controller.signal.aborted) return;
+      setSlots(data.slots || []);
+      setStylistLoad(data.stylistLoad || {});
+    }).catch(e => { if (!controller.signal.aborted) setSlotsError(e.message); })
+      .finally(() => { if (!controller.signal.aborted) setSlotsLoading(false); });
+    return () => controller.abort();
+  }, [selectedIds, selectedDate, step, salonData?.id, slotsRetry]);
+
+  function toggleService(service: Service) {
+    setError('');
+    setSelectedSlot(null);
+    setSlots([]);
+    setSelectedServices(current => current.some(s => s.id === service.id)
+      ? current.filter(s => s.id !== service.id)
+      : current.length < MAX_BOOKING_SERVICES ? [...current, service] : current);
+  }
+  function serviceButton(service: Service) {
+    const selected = selectedServices.some(s => s.id === service.id);
+    const available = getClientDuration(service) > 0 && service.price_cents > 0;
+    return <button key={service.id} type="button" aria-pressed={selected}
+      disabled={!available || (!selected && selectedServices.length >= MAX_BOOKING_SERVICES)} onClick={() => toggleService(service)}
+      className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left transition-colors disabled:opacity-45 ${selected ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500' : 'border-gray-200 bg-white hover:border-blue-300'}`}>
+      <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${selected ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500'}`}>{selected ? <Check size={15} /> : <Plus size={15} />}</span>
+      <span className="min-w-0 flex-1"><span className="block font-medium text-sm">{service.name}</span>
+        <span className="block text-xs text-gray-500 mt-1">{available ? `${getClientDuration(service)} min` : 'Non prenotabile online'}</span></span>
+      <span className="font-semibold text-sm shrink-0">€{(service.price_cents/100).toFixed(2)}</span>
+    </button>;
+  }
+  const selectionSummary = <div className="rounded-xl bg-blue-50 border border-blue-100 p-4 mb-4">
+    <div className="font-semibold text-sm mb-2">{selectedServices.length === 1 ? 'Il tuo servizio' : `I tuoi ${selectedServices.length} servizi`}</div>
+    <ul className="space-y-2 max-h-40 overflow-y-auto">{selectedServices.map(s => <li key={s.id} className="flex items-center gap-2 text-sm">
+      <span className="flex-1">{s.name}<span className="text-xs text-gray-500 ml-2">{getClientDuration(s)} min</span></span>
+      <span>€{(s.price_cents/100).toFixed(2)}</span>
+      {step === 'service' && <button type="button" onClick={() => toggleService(s)} aria-label={`Rimuovi ${s.name}`} className="p-1 text-gray-500 hover:text-red-600"><X size={16}/></button>}
+    </li>)}</ul>
+    <div className="mt-3 border-t border-blue-200 pt-3 flex justify-between font-semibold text-sm"><span className="flex items-center gap-1"><Clock size={14}/> {totalDuration} min totali</span><span>€{(totalPrice/100).toFixed(2)}</span></div>
+  </div>;
 
   // Paga per confermare: NON crea subito l'appuntamento. Avvia il pagamento
   // (che riserva lo slot) e reindirizza alla pagina di cassa. L'appuntamento
   // viene creato solo a pagamento riuscito (webhook).
   async function handlePayAndBook() {
-    if (!salonData) return;
+    if (!salonData || !selectedSlot || !selectedServices.length || loading) return;
     if (!name || !surname || !phone || !email) {
       setError('Compila tutti i campi obbligatori (Nome, Cognome, Telefono, Email)');
       return;
@@ -92,9 +130,10 @@ export default function BookPage() {
     try {
       const booking = {
         salon_id: salonData.id,
-        service_id: selectedService!.id,
+        service_id: selectedServices[0].id,
+        service_ids: selectedServices.map(s => s.id),
         stylist_id: selectedSlot!.stylist_id,
-        start_time: buildSlotTime(format(selectedDate, 'yyyy-MM-dd'), selectedSlot!.time),
+        start_time: `${format(selectedDate, 'yyyy-MM-dd')}T${selectedSlot.time}:00${getRomeOffset(format(selectedDate, 'yyyy-MM-dd'))}`,
         source: 'widget',
         client: { first_name: name, last_name: surname, phone: formatPhone(phonePrefix + phone), email: email || null },
         notes: note,
@@ -102,11 +141,12 @@ export default function BookPage() {
       const res = await fetch('/api/payments/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ booking }),
+        body: JSON.stringify({ booking, expectedAmountCents: totalPrice, expectedDurationMinutes: totalDuration }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         setError(err.error || 'Errore avvio pagamento');
+        if (err.code === 'SLOT_UNAVAILABLE') { setSelectedSlot(null); setStep('datetime'); }
         setLoading(false);
         return;
       }
@@ -134,20 +174,6 @@ export default function BookPage() {
     }
   }
 
-  if (done) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50 p-4">
-        <div className="text-center max-w-sm">
-          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Check size={32} className="text-green-600" />
-          </div>
-          <h2 className="text-2xl font-bold mb-2">Prenotazione Confermata!</h2>
-          <p className="text-gray-600 mb-4">{selectedService?.name} &mdash; {format(selectedDate, 'EEEE d MMMM', { locale: it })} alle {selectedSlot?.time}</p>
-          <p className="text-sm text-gray-500">Riceverai una conferma via SMS</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 p-4">
@@ -166,115 +192,45 @@ export default function BookPage() {
           ))}
         </div>
 
-        {error && <div className="bg-red-50 text-red-700 p-3 rounded-lg mb-4 text-sm">{error}</div>}
+        {error && <div role="alert" className="bg-red-50 text-red-700 p-3 rounded-lg mb-4 text-sm">{error}</div>}
 
         {step === 'service' && (
           <div className="space-y-4">
-            {/* Servizi in evidenza */}
             <div className="bg-white rounded-xl shadow-sm p-4">
-              <h3 className="font-semibold mb-3">Più richiesti</h3>
-              {services.length === 0 && <p className="text-gray-400 text-center py-4">Nessun servizio disponibile</p>}
-              <div className="grid grid-cols-3 gap-2">
-                {['Taglio Uomo', 'Taglio donna', 'Piega', 'Piega Capelli Lunghi', 'Permanente'].map(name => {
-                  const s = services.find(sv => sv.name.toLowerCase() === name.toLowerCase());
-                  if (!s) return null;
-                  const clientDuration = getClientDuration(s);
-                  return (
-                    <button key={s.id} onClick={() => { setSelectedService(s); setStep('datetime'); }}
-                      className="p-3 rounded-xl border border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition-colors text-center">
-                      <div className="w-8 h-8 rounded-full mx-auto mb-1.5" style={{ backgroundColor: s.color_hex }} />
-                      <div className="font-medium text-xs leading-tight">{s.name}</div>
-                      <div className="text-[10px] text-gray-400">{clientDuration}min</div>
-                      <div className="text-xs font-semibold mt-0.5">&euro;{(s.price_cents / 100).toFixed(2)}</div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Tutti i servizi per categoria */}
-            <div className="bg-white rounded-xl shadow-sm p-4">
-              <h3 className="font-semibold mb-3">Tutti i servizi</h3>
+              <h2 className="font-semibold">Scegli i tuoi servizi</h2>
+              <p className="text-sm text-gray-500 mt-1 mb-4">Puoi aggiungere più servizi alla stessa prenotazione. Li eseguirà lo stesso collaboratore.</p>
+              {catalogLoading && <p className="text-sm text-gray-500 py-4">Caricamento servizi...</p>}
+              {!catalogLoading && !services.length && <p className="text-gray-500 py-4">Nessun servizio disponibile</p>}
+              {services.some(s => ['Taglio Uomo', 'Taglio donna', 'Piega', 'Piega Capelli Lunghi', 'Permanente'].includes(s.name)) && <>
+                <h3 className="font-medium text-sm mb-2">Più richiesti</h3>
+                <div className="space-y-2 mb-5">{services.filter(s => ['Taglio Uomo', 'Taglio donna', 'Piega', 'Piega Capelli Lunghi', 'Permanente'].includes(s.name)).map(serviceButton)}</div>
+              </>}
               {categories.map(cat => {
-                const catSvcs = services.filter(s => s.category_id === cat.id);
-                if (catSvcs.length === 0) return null;
-                const isOpen = expandedCat === cat.id;
-                return (
-                  <div key={cat.id} className="mb-1">
-                    <button onClick={() => setExpandedCat(isOpen ? null : cat.id)}
-                      className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 transition-colors">
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color_hex }} />
-                        <span className="font-medium text-sm">{cat.name}</span>
-                        <span className="text-xs text-gray-400">({catSvcs.length})</span>
-                      </div>
-                      <span className="text-xs text-gray-400">{isOpen ? '▲' : '▼'}</span>
-                    </button>
-                    {isOpen && (
-                      <div className="space-y-1 ml-4 mb-2">
-                        {catSvcs.map(s => (
-                          <button key={s.id} onClick={() => { setSelectedService(s); setStep('datetime'); }}
-                            className="w-full flex items-center justify-between p-2.5 rounded-lg border border-gray-100 hover:border-blue-300 hover:bg-blue-50 transition-colors text-left">
-                            <div className="flex items-center gap-2">
-                              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color_hex }} />
-                              <div>
-                                <div className="font-medium text-sm">{s.name}</div>
-                                <div className="text-xs text-gray-400">{getClientDuration(s)} min</div>
-                              </div>
-                            </div>
-                            <div className="font-semibold text-sm">&euro;{(s.price_cents / 100).toFixed(2)}</div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
+                const list = services.filter(s => s.category_id === cat.id);
+                if (!list.length) return null;
+                return <div key={cat.id} className="mb-2">
+                  <button type="button" aria-expanded={expandedCat === cat.id} onClick={() => setExpandedCat(expandedCat === cat.id ? null : cat.id)} className="w-full flex justify-between items-center py-3 text-left font-medium text-sm">
+                    <span>{cat.name} <span className="text-gray-400">({list.length})</span></span><span>{expandedCat === cat.id ? '−' : '+'}</span>
+                  </button>
+                  {expandedCat === cat.id && <div className="space-y-2">{list.map(serviceButton)}</div>}
+                </div>;
               })}
-              {/* Servizi senza categoria */}
-              {(() => {
-                const uncat = services.filter(s => !s.category_id);
-                if (uncat.length === 0) return null;
-                const isOpen = expandedCat === '__uncat__';
-                return (
-                  <div>
-                    <button onClick={() => setExpandedCat(isOpen ? null : '__uncat__')}
-                      className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 transition-colors">
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full bg-gray-400" />
-                        <span className="font-medium text-sm">Altro</span>
-                        <span className="text-xs text-gray-400">({uncat.length})</span>
-                      </div>
-                      <span className="text-xs text-gray-400">{isOpen ? '▲' : '▼'}</span>
-                    </button>
-                    {isOpen && (
-                      <div className="space-y-1 ml-4 mb-2">
-                        {uncat.map(s => (
-                          <button key={s.id} onClick={() => { setSelectedService(s); setStep('datetime'); }}
-                            className="w-full flex items-center justify-between p-2.5 rounded-lg border border-gray-100 hover:border-blue-300 hover:bg-blue-50 transition-colors text-left">
-                            <div className="flex items-center gap-2">
-                              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color_hex }} />
-                              <div>
-                                <div className="font-medium text-sm">{s.name}</div>
-                                <div className="text-xs text-gray-400">{getClientDuration(s)} min</div>
-                              </div>
-                            </div>
-                            <div className="font-semibold text-sm">&euro;{(s.price_cents / 100).toFixed(2)}</div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
+              <div className="space-y-2">{services.filter(s => (!s.category_id || !categories.some(c => c.id === s.category_id)) && !['Taglio Uomo', 'Taglio donna', 'Piega', 'Piega Capelli Lunghi', 'Permanente'].includes(s.name)).map(serviceButton)}</div>
+            </div>
+            <div className="sticky bottom-3 rounded-xl bg-white p-3 shadow-lg border border-gray-100">
+              {selectedServices.length > 0 ? selectionSummary : <p className="text-sm text-gray-500 p-2 mb-2">Seleziona almeno un servizio per continuare.</p>}
+              {selectedServices.length >= MAX_BOOKING_SERVICES && <p className="text-xs text-gray-500 mb-2">Massimo {MAX_BOOKING_SERVICES} servizi per prenotazione.</p>}
+              <button type="button" disabled={!selectedServices.length} onClick={() => { setError(''); setStep('datetime'); }} className="w-full rounded-lg bg-blue-600 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-40">Scegli data e orario</button>
             </div>
           </div>
         )}
 
-        {step === 'datetime' && selectedService && (
+        {step === 'datetime' && selectedServices.length > 0 && (
           <div className="bg-white rounded-xl shadow-sm p-4">
             <button onClick={() => setStep('service')} className="flex items-center gap-1 text-sm text-gray-500 mb-3 hover:text-gray-700">
-              <ArrowLeft size={14} /> {selectedService.name} &middot; {getClientDuration(selectedService)}min &middot; &euro;{(selectedService.price_cents / 100).toFixed(2)}
+              <ArrowLeft size={14} /> Modifica i servizi
             </button>
+            {selectionSummary}
             <div className="mb-4">
               <div className="flex items-center justify-between mb-2">
                 <button onClick={() => setWeekOffset(w => w - 1)}
@@ -334,11 +290,13 @@ export default function BookPage() {
               );
             })()}
 
-            {slots.length === 0 && (
+            {!slotsLoading && !slotsError && slots.length === 0 && (
               <div className="text-center py-4">
-                <p className="text-gray-400 text-sm">Nessuno slot disponibile</p>
+                <p className="text-gray-400 text-sm">Nessun orario disponibile per tutti i servizi selezionati</p>
               </div>
             )}
+            {slotsLoading && <p role="status" className="text-sm text-gray-500 py-4">Cerchiamo un orario per tutti i servizi...</p>}
+            {slotsError && <div role="alert" className="text-sm text-red-600 py-4">{slotsError} <button onClick={() => setSlotsRetry(n => n+1)} className="underline">Riprova</button></div>}
             <div className="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto">
               {(() => {
                 if (anyStylist) {
@@ -348,7 +306,7 @@ export default function BookPage() {
                     if (!byTime.has(s.time)) byTime.set(s.time, []);
                     byTime.get(s.time)!.push(s);
                   }
-                  const merged = [...byTime.entries()].map(([time, stylists]) => {
+                  const merged = [...byTime.entries()].map(([, stylists]) => {
                     stylists.sort((a, b) => {
                       const la = stylistLoad[a.stylist_id] || 0;
                       const lb = stylistLoad[b.stylist_id] || 0;
@@ -382,11 +340,12 @@ export default function BookPage() {
             <button onClick={() => setStep('datetime')} className="flex items-center gap-1 text-sm text-gray-500 mb-3">
               <ArrowLeft size={14} /> {format(selectedDate, 'EEEE d MMMM', { locale: it })} alle {selectedSlot.time}{!anyStylist ? ` · ${selectedSlot.stylist_name}` : ''}
             </button>
+            {selectionSummary}
             <h3 className="font-semibold mb-3">I tuoi dati</h3>
             <div className="space-y-3">
-              <input type="text" placeholder="Nome *" value={name} onChange={e => setName(e.target.value)}
+              <input type="text" aria-label="Nome" autoComplete="given-name" maxLength={80} placeholder="Nome *" value={name} onChange={e => setName(e.target.value)}
                 className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
-              <input type="text" placeholder="Cognome *" value={surname} onChange={e => setSurname(e.target.value)}
+              <input type="text" aria-label="Cognome" autoComplete="family-name" maxLength={80} placeholder="Cognome *" value={surname} onChange={e => setSurname(e.target.value)}
                 className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
               <div className="flex gap-2">
                 <select value={phonePrefix} onChange={e => setPhonePrefix(e.target.value)}
@@ -395,17 +354,17 @@ export default function BookPage() {
                     <option key={c.code} value={c.code}>{c.flag} {c.code}</option>
                   ))}
                 </select>
-                <input type="tel" placeholder="Telefono *" value={phone}
+                <input type="tel" aria-label="Telefono" maxLength={25} placeholder="Telefono *" value={phone}
                   onChange={e => setPhone(e.target.value.replace(/[^\d\s\-\(\)]/g, ''))}
                   className="flex-1 px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
               </div>
-              <input type="email" placeholder="Email *" value={email} onChange={e => setEmail(e.target.value)}
+              <input type="email" aria-label="Email" autoComplete="email" maxLength={254} placeholder="Email *" value={email} onChange={e => setEmail(e.target.value)}
                 className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
-              <textarea placeholder="Note (opzionale)" value={note} onChange={e => setNote(e.target.value)}
+              <textarea maxLength={1000} placeholder="Note (opzionale)" value={note} onChange={e => setNote(e.target.value)}
                 className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" rows={2} />
               <button onClick={handlePayAndBook} disabled={!name || !surname || !phone || !email || loading}
                 className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50">
-                {loading ? 'Reindirizzamento al pagamento...' : `Paga e conferma €${(selectedService!.price_cents / 100).toFixed(2)}`}
+                {loading ? 'Reindirizzamento al pagamento...' : `Paga e conferma €${(totalPrice / 100).toFixed(2)}`}
               </button>
               <p className="text-xs text-center text-gray-400">Il pagamento online conferma la prenotazione</p>
             </div>
