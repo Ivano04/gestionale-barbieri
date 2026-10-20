@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import type { CommerceLine, Reward } from "@/services/commerce/types";
+import { AppointmentSelection } from "./AppointmentSelection";
+import type { CheckoutAppointment, CommerceLine, Reward } from "@/services/commerce/types";
 import { euroInput, parseBasket } from "@/services/checkout/basket";
 import { promotionPreview } from "@/services/commerce/validation";
 import {
@@ -28,6 +29,7 @@ export function CommerceCheckout({
 }: Props) {
   const editor = useRef<HTMLDivElement>(null);
   const [inputError, setInputError] = useState("");
+  const [selectedIds, setSelectedIds] = useState<string[]>(appointmentId ? [appointmentId] : []);
   const [quoteId, setQuoteId] = useState(initialQuoteId);
   const [now] = useState(() => Date.now());
   const query = appointmentId
@@ -73,24 +75,28 @@ export function CommerceCheckout({
                 },
               ]
             : actualKind === "appointment"
-              ? (data.appointment?.lines ?? [])
+              ? (data.relatedAppointments?.find(a => a.id === appointmentId)?.lines ?? data.appointment?.lines ?? []).map(l => ({ ...l, appointmentId }))
               : [],
       );
       setReady(true);
     });
-  }, [data, ready, actualKind, quoteId]);
+  }, [data, ready, actualKind, quoteId, appointmentId]);
   const rewards = (data?.rewards ?? []).filter(
     (r) =>
       !r.used_sale_id &&
       !r.revoked_at &&
       (!r.expires_at || Date.parse(r.expires_at) > now) &&
-      r.earned_appointment_id !== appointmentId,
+      !selectedIds.includes(r.earned_appointment_id ?? ""),
   );
   let totals = { total: 0, discount: 0 },
     creditCents = 0,
     problem = "";
   try {
     parseBasket(lines);
+    if (!done && selectedIds.some(id => data?.relatedAppointments?.find(a => a.id === id)?.canCollect === false))
+      throw new Error("Un appuntamento non è più incassabile. Ricarica la cassa.");
+    if (selectedIds.length > 1 && selectedIds.some(id => !lines.some(l => l.kind === "service" && l.appointmentId === id)))
+      throw new Error("Ogni appuntamento selezionato deve avere almeno un servizio");
     if (lines.some((l) => l.discountCents >= l.unitPriceCents * l.quantity))
       throw new Error("Lo sconto deve essere inferiore al prezzo della voce");
     totals = promotionPreview(
@@ -114,6 +120,22 @@ export function CommerceCheckout({
   }
   const locked =
     command.busy || review || done || !!command.pending || !!quoteId;
+  function toggleAppointment(appointment: CheckoutAppointment, checked: boolean) {
+    if (locked || !appointment.canCollect || appointment.id === appointmentId) return;
+    setSelectedIds(old => checked ? [...new Set([...old, appointment.id])] : old.filter(id => id !== appointment.id));
+    setLines(old => checked ? [...old.filter(l => l.appointmentId !== appointment.id), ...appointment.lines] : old.filter(l => l.appointmentId !== appointment.id));
+    setConfirmed(false);
+    setRewardId("");
+    setCredit("0.00");
+    setInputError("");
+  }
+  async function refreshCheckout() {
+    try {
+      await load();
+      setReady(false); setSelectedIds(appointmentId ? [appointmentId] : []);
+      setQuoteId(undefined); setCredit("0.00"); setRewardId(""); setReview(false); setConfirmed(false); setInputError("");
+    } catch { setInputError("Impossibile aggiornare la cassa. Riprova."); }
+  }
   function change(
     index: number,
     key: "quantity" | "unitPriceCents" | "discountCents",
@@ -153,6 +175,7 @@ export function CommerceCheckout({
           {
             kind: "service",
             id: s.id,
+            appointmentId,
             description: s.name,
             quantity: 1,
             unitPriceCents: s.price_cents,
@@ -171,6 +194,7 @@ export function CommerceCheckout({
       clientId: data.appointment?.clientId ?? clientId ?? null,
       expectedUpdate: data.appointment?.updatedAt ?? null,
       lines,
+      ...(selectedIds.length > 1 ? { appointments: selectedIds.map(id => ({ id, expectedUpdate: data.relatedAppointments.find(a => a.id === id)?.updatedAt })) } : {}),
       method,
       creditCents,
       rewardId: rewardId || null,
@@ -184,7 +208,7 @@ export function CommerceCheckout({
       title={
         kind === "topup" && !appointmentId
           ? "Ricarica credito cliente"
-          : actualKind === "extra"
+          : actualKind === "extra" && !done
             ? "Cassa · acquisti aggiuntivi"
             : "Cassa"
       }
@@ -210,13 +234,21 @@ export function CommerceCheckout({
               ? `${data.client.first_name} ${data.client.last_name}`
               : (data.appointment?.clientName ?? "Cliente occasionale")}
           </p>
-          {actualKind === "extra" && (
+          {actualKind === "extra" && !done && (
             <p className="bg-blue-50 rounded-lg p-3 text-sm">
               Il pagamento dell’appuntamento è già registrato o da verificare.
-              Puoi aggiungere soltanto prodotti, se la vendita · attiva.
+              Puoi aggiungere soltanto prodotti, se la vendita è attiva.
             </p>
           )}
+          {data.appointment?.groupedSale && <p className="rounded-lg bg-blue-50 p-3 text-sm">
+            Incasso unico di {money(data.appointment.groupedSale.amountCents)} per {data.appointment.groupedSale.appointmentIds.length} appuntamenti. Il documento qui sotto è condiviso con gli altri appuntamenti inclusi.
+          </p>}
+          {!done && actualKind === "appointment" && appointmentId && <>
+            {!quoteId && <AppointmentSelection appointments={data.relatedAppointments ?? []} selected={selectedIds} primaryId={appointmentId} locked={locked} onToggle={toggleAppointment} />}
+            {!review && !command.pending && <button className="underline text-sm text-blue-700" disabled={command.busy} onClick={() => void refreshCheckout()}>Ricarica cassa e disponibilità</button>}
+          </>}
           {!done &&
+            selectedIds.length <= 1 &&
             !review &&
             !quoteId &&
             data.appointment?.canCollect &&
@@ -288,6 +320,9 @@ export function CommerceCheckout({
                           ) : (
                             l.description
                           )}
+                          {selectedIds.length > 1 && l.appointmentId && <span className="block text-xs text-gray-500">
+                            Appuntamento delle {new Date(data.relatedAppointments.find(a => a.id === l.appointmentId)?.startTime ?? "").toLocaleTimeString("it-IT", { timeZone: "Europe/Rome", hour: "2-digit", minute: "2-digit" })}
+                          </span>}
                         </td>
                         <td className="p-2">
                           <input
@@ -340,7 +375,7 @@ export function CommerceCheckout({
                         <td>
                           <button
                             aria-label={`Rimuovi ${l.description}`}
-                            disabled={locked || kind === "topup"}
+                            disabled={locked || kind === "topup" || selectedIds.length > 1 && l.kind === "service" && lines.filter(v => v.kind === "service" && v.appointmentId === l.appointmentId).length <= 1}
                             onClick={() =>
                               setLines((old) => old.filter((_, n) => n !== i))
                             }
@@ -408,6 +443,7 @@ export function CommerceCheckout({
                       ...old,
                       {
                         kind: "service",
+                        appointmentId,
                         description: "Servizio aggiuntivo",
                         quantity: 1,
                         unitPriceCents: 100,
@@ -490,7 +526,7 @@ export function CommerceCheckout({
                   <span>{money(totals.discount)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Totale vendita</span>
+                  <span>{selectedIds.length > 1 ? `Totale ${selectedIds.length} appuntamenti` : "Totale vendita"}</span>
                   <strong>{money(totals.total)}</strong>
                 </div>
                 <div className="flex justify-between">
@@ -560,7 +596,7 @@ export function CommerceCheckout({
                       }
                       onClick={() => void collect()}
                     >
-                      Conferma ed emetti TEST
+                      {selectedIds.length > 1 ? "Conferma ed emetti documento unico TEST" : "Conferma ed emetti TEST"}
                     </button>
                     <button
                       disabled={command.busy || !!command.pending}

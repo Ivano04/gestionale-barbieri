@@ -17,7 +17,7 @@ function database(fail?: string) {
 it('scopes every batch by authenticated RLS client, salon and loaded appointment ids', async () => {
   const { db, calls } = database();
   const result = await attachCalendarFinance(db, 'salon', [{ id: 'a', source: 'widget' }, { id: 'b', source: 'phone' }]);
-  expect(calls).toHaveLength(4);
+  expect(calls).toHaveLength(5);
   for (const call of calls) { expect(call.salon).toBe('salon'); expect(call.ids).toEqual(['a', 'b']); expect(call.columns).not.toContain('*'); expect(call.columns).not.toContain('metadata'); }
   expect(result.map(a => a.finance.payment)).toEqual(['online', 'unpaid']);
 });
@@ -32,5 +32,21 @@ it('batches large calendars and skips reads for empty calendars', async () => {
   await attachCalendarFinance(db, 'salon', []); expect(calls).toHaveLength(0);
   const apps = Array.from({ length: 51 }, (_, i) => ({ id: `a${i}`, source: 'manual' }));
   expect(await attachCalendarFinance(db, 'salon', apps)).toHaveLength(51);
-  expect(calls).toHaveLength(8); expect(calls[0].ids).toHaveLength(50); expect(calls[4].ids).toHaveLength(1);
+  expect(calls).toHaveLength(10); expect(calls[0].ids).toHaveLength(50); expect(calls[5].ids).toHaveLength(1);
+});
+
+it('shows one shared receipt and its payment on every settled appointment without double counting the anchor', async () => {
+  const sale = { appointment_id: 'a', kind: 'appointment', state: 'recorded', amount_cents: 7000, credit_cents: 1000, tender_cents: 6000, payment_method: 'card', reversals: null,
+    documents: [{ operation: 'receipt', status: 'issued', processing_status: 'completed' }] };
+  const db = { from(table: string) { const q = { select: () => q, eq: () => q, in: () => q,
+    range: async () => ({ error: null, data: table === 'salon_sale_appointments' ? [{ appointment_id: 'a', sale }, { appointment_id: 'b', sale }] : table === 'salon_sales' ? [sale] : table === 'fiscal_documents' ? sale.documents.map(d => ({ ...d, appointment_id: 'a' })) : [] }) }; return q; } } as unknown as SupabaseClient;
+  const rows = await attachCalendarFinance(db, 'salon', [{ id: 'a', source: 'manual' }, { id: 'b', source: 'manual' }]);
+  for (const row of rows) expect(row.finance).toMatchObject({ payment: 'salon', receipt: 'issued', notice: null, paymentDetail: 'Credito cliente + POS' });
+  sale.reversals = { sale_id: 'sale' } as never;
+  for (const row of await attachCalendarFinance(db, 'salon', [{ id: 'a', source: 'manual' }, { id: 'b', source: 'manual' }])) expect(row.finance.payment).toBe('refunded');
+});
+it('does not report an appointment unpaid when shared-sale reads fail', async () => {
+  const { db } = database('salon_sale_appointments');
+  const [row] = await attachCalendarFinance(db, 'salon', [{ id: 'b', source: 'manual' }]);
+  expect(row.finance).toMatchObject({ payment: 'unknown', receipt: 'unknown' });
 });

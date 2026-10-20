@@ -425,3 +425,16 @@ commerce, TypeScript/lint, prove browser desktop/mobile. Prove isolate fiskaly
 COMPLETED/FINISHED: ricarica 01a1517c-b7f8-7948-9590-5275bfd39788,
 credito completo 01a1517b-d749-73d6-9421-78fa2e1b60b9,
 credito+POS 01a1517c-b356-7dd2-8491-88ced0ef0dac.
+
+
+## Incasso unico di appuntamenti nella stessa giornata
+
+La migrazione `021_grouped_checkout.sql` introduce `salon_sale_appointments`, con un collegamento immutabile e univoco per ogni appuntamento incassato. Recupera anche le vendite precedenti, senza emettere nuovi documenti. Una vendita cumulativa conserva un solo movimento economico, un documento e un lavoro fiscale; tutti gli appuntamenti inclusi rimandano allo stesso documento in Cassa e nel calendario.
+
+Dalla Cassa di un appuntamento lo staff può selezionare altri appuntamenti dello stesso cliente e della stessa giornata in Europe/Rome (massimo 20 appuntamenti, 30 voci). Appuntamenti annullati, pagamenti online riusciti/rimborsati o in attesa, incassi già registrati e documenti già presenti non sono selezionabili. Il database ricontrolla identità, giornata, revisione e stato sotto lock, incluse le richieste provenienti dal vecchio checkout. Gli appuntamenti senza anagrafica cliente restano singoli.
+
+I prezzi e gli sconti del carrello sono verificabili prima della conferma. Le promozioni si applicano una sola volta secondo la regola esistente; il credito viene addebitato una sola volta per l'intero incasso. Il recupero di una richiesta con esito incerto conserva tutti i membri e la stessa chiave di idempotenza, anche dopo un ricaricamento del browser. I preventivi salvati si convertono nel flusso singolo; un incasso cumulativo usa gli importi confermati in Cassa e segnala la presenza di preventivi da verificare.
+
+L'annullo integrale TEST riguarda l'intera vendita cumulativa. Annullare un singolo appuntamento segnala l'incasso condiviso come da verificare, senza rimborsare automaticamente gli altri servizi. Restano necessari flussi dedicati per resi parziali e il passaggio LIVE.
+
+Verifica transazionale isolata: `node scripts/grouped-checkout-db-verify.mjs`. Non chiama Nexi, fiskaly o Resend e rimuove il database temporaneo al termine.

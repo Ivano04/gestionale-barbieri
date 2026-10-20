@@ -6,6 +6,7 @@ export type CommerceLine = {
   unitPriceCents: number;
   discountCents: number;
   vatPercent?: number;
+  appointmentId?: string;
 };
 export type Reward = {
   id: string;
@@ -46,7 +47,19 @@ export type CommerceSale = {
     operation: string;
   }[];
 };
+export type CheckoutAppointment = {
+  id: string;
+  updatedAt: string;
+  startTime: string;
+  serviceName: string;
+  stylistName: string;
+  canCollect: boolean;
+  reason: string | null;
+  hasQuote: boolean;
+  lines: CommerceLine[];
+};
 export type CommerceData = {
+  relatedAppointments: CheckoutAppointment[];
   manager: boolean;
   canSell: boolean;
   productsEnabled: boolean;
@@ -91,6 +104,7 @@ export type CommerceData = {
     clientId: string | null;
     clientName: string;
     canCollect: boolean;
+    groupedSale?: { id: string; amountCents: number; appointmentIds: string[] } | null;
     lines: CommerceLine[];
     documents: {
       id: string;

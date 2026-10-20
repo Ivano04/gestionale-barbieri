@@ -1,3 +1,4 @@
+import { checkoutDay } from '@/services/checkout/day';
 import { fiscalStaffAccess } from "@/services/fiscal/staff-access";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { checkoutContext, json, UUID } from "@/services/checkout/repo";
@@ -146,7 +147,9 @@ export async function GET(request: Request) {
         kind: "service" as const,
         id: appointment.lineIds[i],
       })) ?? [];
+    const relatedAppointments = appointment?.canCollect ? await checkoutDay(salon, appointment) : [];
     return json({
+      relatedAppointments,
       manager: access.manager,
       canSell: access.canSell,
       productsEnabled: settings.data?.products_enabled ?? false,
@@ -154,7 +157,7 @@ export async function GET(request: Request) {
       services: services.data,
       clients: clients.data,
       rule: rule.data,
-      sales: sales.data,
+      sales: sales.data?.map(s => ({ ...s, reversals: Array.isArray(s.reversals) ? s.reversals : s.reversals ? [s.reversals] : [] })),
       stockMovements: stock.data,
       totals: summary.data,
       client,
@@ -167,6 +170,7 @@ export async function GET(request: Request) {
             ...appointment.appointment,
             clientId: cid,
             canCollect: appointment.canCollect,
+            groupedSale: appointment.groupedSale,
             lines: lines as CommerceLine[],
             documents: appointment.documents,
             quote: appointment.quote,

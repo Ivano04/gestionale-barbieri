@@ -21,6 +21,21 @@ export function parseSale(input: Record<string, unknown>) {
     (input.creditCents as number) < 0
   )
     throw new Error("Credito non valido");
+  let appointments: { id: string; expectedUpdate: string }[] | undefined;
+  if (input.appointments != null) {
+    if (input.kind !== "appointment" || !input.clientId || !input.appointmentId || input.quoteId ||
+        !Array.isArray(input.appointments) || input.appointments.length < 2 || input.appointments.length > 20)
+      throw new Error("Seleziona da 2 a 20 appuntamenti dello stesso cliente");
+    appointments = input.appointments.map((raw: unknown) => {
+      if (!raw || typeof raw !== "object") throw new Error("Selezione non valida");
+      const a = raw as Record<string, unknown>;
+      if (typeof a.id !== "string" || !uuid.test(a.id) || typeof a.expectedUpdate !== "string" || !Number.isFinite(Date.parse(a.expectedUpdate)))
+        throw new Error("Aggiorna gli appuntamenti selezionati");
+      return { id: a.id.toLowerCase(), expectedUpdate: a.expectedUpdate };
+    }).sort((a, b) => a.id.localeCompare(b.id));
+    if (new Set(appointments.map(a => a.id)).size !== appointments.length || !appointments.some(a => a.id === String(input.appointmentId).toLowerCase()))
+      throw new Error("Selezione duplicata o incompleta");
+  }
   const basket = parseBasket(input.lines);
   const source = input.lines as Record<string, unknown>[];
   const lines: CommerceLine[] = basket.lines.map((line, i) => {
@@ -32,10 +47,13 @@ export function parseSale(input: Record<string, unknown>) {
       throw new Error("Voce non valida");
     if (line.discountCents >= line.quantity * line.unitPriceCents)
       throw new Error("Lo sconto deve essere inferiore al prezzo della voce");
+    if (appointments && raw.kind === "service" && (typeof raw.appointmentId !== "string" || !appointments.some(a => a.id === String(raw.appointmentId).toLowerCase())))
+      throw new Error("Collega ogni servizio a un appuntamento selezionato");
     return {
       ...line,
       kind: raw.kind as CommerceLine["kind"],
       ...(raw.id ? { id: raw.id as string } : {}),
+      ...(appointments && raw.kind === "service" ? { appointmentId: String(raw.appointmentId).toLowerCase() } : {}),
     };
   });
   if (
@@ -44,6 +62,8 @@ export function parseSale(input: Record<string, unknown>) {
       !Number.isFinite(Date.parse(input.expectedUpdate)))
   )
     throw new Error("Aggiorna i dati dell’appuntamento");
+  if (appointments?.some(a => !lines.some(l => l.kind === "service" && l.appointmentId === a.id)))
+    throw new Error("Ogni appuntamento selezionato deve avere almeno un servizio");
   if (input.quoteId && !Number.isSafeInteger(input.quoteVersion))
     throw new Error("Versione del preventivo non valida");
   return {
@@ -59,6 +79,7 @@ export function parseSale(input: Record<string, unknown>) {
     quoteId: input.quoteId ?? null,
     quoteVersion: input.quoteVersion ?? null,
     lines,
+    ...(appointments ? { appointments } : {}),
   };
 }
 export function promotionPreview(lines: CommerceLine[], reward?: Reward) {
@@ -87,13 +108,17 @@ export function promotionPreview(lines: CommerceLine[], reward?: Reward) {
   return { total: gross - discount, discount };
 }
 export const commerceErrors: Record<string, string> = {
+  INVALID_GROUP: "Seleziona da 2 a 20 appuntamenti dello stesso cliente e della stessa giornata.",
+  GROUP_MISMATCH: "Gli appuntamenti devono appartenere allo stesso cliente e alla stessa giornata.",
+  GROUP_LINES_MISMATCH: "Controlla i servizi di tutti gli appuntamenti selezionati.",
+  APPOINTMENT_NOT_FOUND: "Un appuntamento non è più disponibile. Ricarica la cassa.",
   NOT_AUTHORIZED: "Operazione riservata al personale autorizzato.",
   INSUFFICIENT_CREDIT: "Credito insufficiente. Aggiorna il saldo.",
   INSUFFICIENT_STOCK: "Quantità in magazzino insufficiente.",
   PRODUCTS_DISABLED: "La vendita prodotti è disattivata.",
   PRICE_CHANGED: "Il prezzo è cambiato. Ricarica la cassa.",
   ALREADY_PAID:
-    "Il servizio è già pagato. Usa una vendita aggiuntiva per i prodotti.",
+    "Uno degli appuntamenti è già incassato o ha un pagamento da verificare. Ricarica la cassa.",
   STALE_APPOINTMENT: "Appuntamento modificato. Ricarica la cassa.",
   REWARD_UNAVAILABLE:
     "Promozione già usata, scaduta o non ancora utilizzabile.",
