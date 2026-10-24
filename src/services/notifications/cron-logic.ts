@@ -2,6 +2,7 @@ import type { NotificationType } from './types';
 
 // Finestre temporali delle automazioni a tempo.
 export const REMINDER_LEAD_MS = 2 * 60 * 60_000; // promemoria: entro 2h dall'inizio
+export const REVIEW_DELAY_MS = 60 * 60_000; // staff only marks exceptions during this hour
 export const REVIEW_WINDOW_MS = 24 * 60 * 60_000; // recensione: fino a 24h dopo la fine
 
 export interface CronAppointment {
@@ -23,7 +24,7 @@ export function selectDueNotifications(appointments: CronAppointment[], now: Dat
   const due: DueNotification[] = [];
 
   for (const a of appointments) {
-    if (a.status === 'cancelled') continue;
+    if (!['confirmed','completed'].includes(a.status)) continue;
     const start = new Date(a.start_time).getTime();
     const end = new Date(a.end_time).getTime();
 
@@ -34,7 +35,7 @@ export function selectDueNotifications(appointments: CronAppointment[], now: Dat
     }
 
     // Recensione: l'appuntamento e' finito, da non piu' di REVIEW_WINDOW_MS
-    if (end <= t && t - end <= REVIEW_WINDOW_MS) {
+    if (t - end >= REVIEW_DELAY_MS && t - end <= REVIEW_WINDOW_MS) {
       due.push({ appointmentId: a.id, type: 'review' });
     }
   }

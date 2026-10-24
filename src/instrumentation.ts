@@ -9,6 +9,8 @@ export async function register() {
     startFiscalTestCron();
     const { startRescheduleCron } = await import('@/services/rescheduling/worker');
     startRescheduleCron();
+    const { startNoShowEmailCron } = await import('@/services/attendance/worker');
+    startNoShowEmailCron();
     const { startNotificationsCron } = await import('@/services/notifications/cron');
     startNotificationsCron();
     if (process.env.RESEND_API_KEY) {

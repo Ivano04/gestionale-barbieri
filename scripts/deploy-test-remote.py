@@ -37,8 +37,9 @@ def main():
     env = read_env(source)
     if env.get('PAYMENT_PROVIDER') != 'nexi' or env.get('NEXI_ENV') != 'test': raise ValueError('Server is not Nexi TEST')
     additions = settings['env']
-    allowed = {'FISKALY_ENV','FISKALY_API_KEY','FISKALY_API_SECRET','FISKALY_SYSTEM_ID','FISKALY_TEST_ENABLED','FISKALY_TEST_REFUNDS_ENABLED','FISKALY_TEST_VAT_PERCENT','FISKALY_TEST_EMAIL_ENABLED','FISKALY_TEST_EMAIL_TO','RESEND_API_KEY','RESEND_FROM'}
+    allowed = {'NO_SHOW_EMAIL_ENABLED','NO_SHOW_EMAIL_MODE','NO_SHOW_EMAIL_TEST_TO','FISKALY_ENV','FISKALY_API_KEY','FISKALY_API_SECRET','FISKALY_SYSTEM_ID','FISKALY_TEST_ENABLED','FISKALY_TEST_REFUNDS_ENABLED','FISKALY_TEST_VAT_PERCENT','FISKALY_TEST_EMAIL_ENABLED','FISKALY_TEST_EMAIL_TO','RESEND_API_KEY','RESEND_FROM'}
     if set(additions) - allowed or additions.get('FISKALY_ENV') != 'test': raise ValueError('Invalid fiscal settings')
+    if additions.get('NO_SHOW_EMAIL_MODE') != 'test': raise ValueError('Attendance emails require TEST mode')
     if additions.get('FISKALY_TEST_REFUNDS_ENABLED') != 'false': raise ValueError('Verify sandbox payment before enabling refunds')
     for value in additions.values():
         if not isinstance(value,str) or any(c in value for c in ('\n','\r','$')): raise ValueError('Unsupported environment value')

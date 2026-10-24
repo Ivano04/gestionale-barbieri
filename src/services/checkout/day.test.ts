@@ -45,3 +45,9 @@ it('fails closed when payment reads are incomplete and never groups anonymous cu
   expect(await checkoutDay('salon', { ...context, snapshotBase: { ...context.snapshotBase, clientId: null } })).toEqual([]);
   expect(m.calls).toHaveLength(0);
 });
+
+it('does not turn a missed appointment into a new charge', async () => {
+  m.rows.appointments = [{ ...appointment('missed'), status: 'no_show' }];
+  const [choice] = await checkoutDay('salon', context);
+  expect(choice.canCollect).toBe(false);
+});

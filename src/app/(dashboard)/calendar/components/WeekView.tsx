@@ -168,7 +168,7 @@ export function WeekView({ date, stylists, appointments, financeFilter = 'all', 
                           {format(parseISO(app.start_time), 'HH:mm')}
                         </span>
                       </div>
-                      <div className="flex items-center gap-1 text-[10px] text-slate-600 mt-0.5"><span className="truncate flex-1">{appointmentServiceName(app)}</span><BookingSource source={app.source} /></div>
+                      <div className="flex items-center gap-1 text-[10px] text-slate-600 mt-0.5"><span className="truncate flex-1">{appointmentServiceName(app)}</span>{app.status === 'no_show' && <span className="ml-1 rounded bg-amber-950 px-1 text-[9px] font-semibold text-white shrink-0">Assente</span>}<BookingSource source={app.source} /></div>
                       {app.service?.price_cents && (
                         <div className="text-[10px] font-medium text-slate-700">€{(app.service.price_cents / 100).toFixed(0)}</div>
                       )}

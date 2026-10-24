@@ -40,3 +40,11 @@ describe('selectDueNotifications', () => {
     expect(selectDueNotifications([appt('a', 1 * H, 30 * 60_000, 'cancelled')], now)).toEqual([]);
   });
 });
+
+it('waits one full hour from the end while confirmed visits need no staff action', () => {
+  expect(selectDueNotifications([appt('early', -89 * 60000)], now)).toEqual([]);
+  expect(selectDueNotifications([appt('ready', -90 * 60000)], now)).toEqual([{ appointmentId: 'ready', type: 'review' }]);
+});
+it('suppresses reviews and reminders for no-shows regardless of payment', () => {
+  expect(selectDueNotifications([appt('past', -2 * H, 30 * 60000, 'no_show'), appt('future', H, 30 * 60000, 'no_show')], now)).toEqual([]);
+});

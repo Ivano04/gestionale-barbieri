@@ -34,7 +34,7 @@ async function runNotifications() {
       .select('id, booked_services, added_services, start_time, end_time, status, salon_id, client:clients(first_name,email), service:services(name), salon:salons(name)')
       .gte('start_time', from)
       .lte('start_time', to)
-      .neq('status', 'cancelled');
+      .in('status', ['confirmed','completed']);
 
     if (!appts?.length) return;
 

@@ -93,3 +93,15 @@ it('skips a reminder whose date changed while the cron was preparing it', async 
   await sendBookingEmail({ provider, repo, type: 'reminder', data: { salonId: 'salon', appointmentId: 'id', appointmentStartTime: '2026-11-01T10:00:00Z', to: 'test@example.invalid', clientName: 'TEST', salonName: 'TEST', serviceName: 'Taglio', dateText: 'domani', timeText: '11:00' } });
   expect(provider.send).not.toHaveBeenCalled(); expect(repo.markSent).not.toHaveBeenCalled();
 });
+
+it('checks attendance after duplicate lookup and before a review is sent', async () => {
+  const calls: string[] = [];
+  const provider = { send: vi.fn().mockResolvedValue({ id: 'accepted' }) };
+  const repo = {
+    alreadySent: async () => { calls.push('history'); return false; },
+    isCurrent: async (_id: string, _start: string, type?: string) => { calls.push(type ?? 'missing'); return false; },
+    markSent: vi.fn(),
+  };
+  await sendBookingEmail({ provider, repo, type: 'review', data: { ...data, appointmentStartTime: '2026-10-24T10:00:00Z' } });
+  expect(calls).toEqual(['history', 'review']); expect(provider.send).not.toHaveBeenCalled();
+});

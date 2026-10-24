@@ -19,7 +19,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const { data: existing } = await supabase
     .from('appointments')
-    .select('stylist_id, service_id, salon_id, start_time, end_time, buffer_end_time, added_services, booked_services')
+    .select('stylist_id, service_id, salon_id, start_time, end_time, buffer_end_time, added_services, booked_services, status')
     .eq('id', id)
     .single();
 
@@ -27,6 +27,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return Response.json({ error: 'Appuntamento non trovato' }, { status: 404 });
   }
 
+  if (existing.status==='no_show' || (body.status!==undefined && body.status!==existing.status && body.status==='no_show')) return Response.json({error:'Usa la sezione Mancata presenza della card per segnare o ripristinare la visita.'},{status:409});
   const newStylistId = body.stylist_id ?? existing.stylist_id;
   const serviceId = body.service_id ?? existing.service_id;
   if (existing.booked_services?.length && serviceId !== existing.service_id) return Response.json({ error: 'I servizi già pagati sono conservati nella prenotazione. Per una variazione economica usa la cassa.' }, { status: 409 });
@@ -180,9 +181,10 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) return Response.json({ error: 'Non autenticato' }, { status: 401 });
   const { data: profile } = await supabase.from('users').select('salon_id').eq('id', user.id).single();
-  const { data: appointment } = await supabase.from('appointments').select('id')
+  const { data: appointment } = await supabase.from('appointments').select('id,status')
     .eq('id', id).eq('salon_id', profile?.salon_id ?? '').maybeSingle();
   if (!appointment) return Response.json({ error: 'Appuntamento non trovato' }, { status: 404 });
+  if (appointment.status==='no_show') return Response.json({error:'Rimuovi prima la segnalazione di mancata presenza.'},{status:409});
   // Annullo lato staff: soft-cancel + sync esterni + rimborso automatico (policy staff)
   // + email di annullamento. Logica centralizzata nel servizio di cancellazione.
   const result = await cancelAndMaybeRefund(id, 'staff');

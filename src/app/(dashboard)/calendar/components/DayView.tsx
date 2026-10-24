@@ -396,7 +396,7 @@ export function DayView({ date, stylists, appointments, financeFilter = 'all', t
                       {format(parseISO(app.start_time), 'HH:mm')}
                     </span>
                   </div>
-                  <div className="flex items-center gap-1 text-slate-600 text-[9px] leading-tight"><span className="truncate flex-1">{appointmentServiceName(app)}</span><BookingSource source={app.source} /></div>
+                  <div className="flex items-center gap-1 text-slate-600 text-[9px] leading-tight"><span className="truncate flex-1">{appointmentServiceName(app)}</span>{app.status === 'no_show' && <span className="ml-1 rounded bg-amber-950 px-1 text-[9px] font-semibold text-white shrink-0">Assente</span>}<BookingSource source={app.source} /></div>
                   {app.service?.price_cents != null && cardHeight >= 38 && (
                     <div className="text-[9px] font-medium text-slate-700 leading-tight">€{(app.service.price_cents / 100).toFixed(0)}</div>
                   )}

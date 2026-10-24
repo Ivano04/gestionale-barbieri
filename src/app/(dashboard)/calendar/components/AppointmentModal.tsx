@@ -1,4 +1,5 @@
 'use client';
+import { NoShowControl } from '@/components/attendance/NoShowControl';
 import { clientServiceDuration } from '@/lib/booking-services';
 import { FinancialStatus } from './FinancialStatus';
 import type { CalendarFinance } from '@/lib/calendar-finance';
@@ -17,6 +18,7 @@ interface Props {
   appointment: Appointment | null;
   finance?: CalendarFinance;
   onFinanceChange?: () => void;
+  onAttendanceChange?: () => void;
   services: Service[];
   categories: ServiceCategory[];
   clients: Client[];
@@ -28,7 +30,7 @@ interface Props {
   onAddService?: (appointmentId: string, serviceId: string) => Promise<any>;
 }
 
-export function AppointmentModal({ appointment, finance, onFinanceChange, services, categories, clients, stylists, salonId, onClose, onSave, onDelete, onAddService }: Props) {
+export function AppointmentModal({ appointment, finance, onFinanceChange, onAttendanceChange, services, categories, clients, stylists, salonId, onClose, onSave, onDelete, onAddService }: Props) {
   const [financeMode, setFinanceMode] = useState<'checkout' | 'quote' | null>(null);
   const [form, setForm] = useState<Partial<Appointment>>({});
   const [clientMode, setClientMode] = useState<'existing' | 'new'>('existing');
@@ -176,6 +178,8 @@ export function AppointmentModal({ appointment, finance, onFinanceChange, servic
         <div className="space-y-4 max-h-[80vh] overflow-y-auto">
 
           {!isNew && <div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><FinancialStatus finance={finance ?? appointment.finance} expanded /></div>}
+          {!isNew && <NoShowControl appointmentId={appointment.id} status={appointment.status} onChanged={onAttendanceChange ?? onClose}
+            disabled={saving || ['client_id','service_id','stylist_id','start_time','end_time','status','source','notes'].some(key => (form[key as keyof Appointment] ?? '') !== (appointment[key as keyof Appointment] ?? ''))} />}
           {/* 1. Cliente */}
           <div>
             <label className="text-sm font-medium text-gray-700">Cliente</label>
@@ -438,7 +442,7 @@ export function AppointmentModal({ appointment, finance, onFinanceChange, servic
           )}
 
           {/* 6. Add service (in-chair upselling) — only for existing, in-progress appointments */}
-          {!isNew && isInProgress && onAddService && (
+          {!isNew && appointment.status!=='no_show' && isInProgress && onAddService && (
             <div className="border-t pt-3">
               <label className="text-sm font-medium text-gray-700 flex items-center gap-1">
                 <Plus size={14} /> Aggiungi servizio in poltrona
@@ -499,7 +503,7 @@ export function AppointmentModal({ appointment, finance, onFinanceChange, servic
           {/* Actions */}
           <div className="flex items-center gap-2 justify-end pt-2 border-t">
             {!isNew && <FinanceMenu disabled={saving || ['client_id','service_id','stylist_id','start_time','end_time','status','source','notes'].some(key => (form[key as keyof Appointment] ?? '') !== (appointment[key as keyof Appointment] ?? ''))} onSelect={setFinanceMode} />}
-            {!isNew && (
+            {!isNew && appointment.status !== 'no_show' && (
               <button
                 onClick={() => { if (confirm('Sicuro di voler cancellare questo appuntamento?')) onDelete(appointment.id); }}
                 className="px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-1 text-sm">

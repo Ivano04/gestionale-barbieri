@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
   if (!appointmentId) return Response.json({ error: 'Link non valido' }, { status: 400 });
 
   const result = await cancelAndMaybeRefund(appointmentId, 'client');
-  if (!result.ok) return Response.json({ error: 'Prenotazione non trovata' }, { status: 404 });
+  if (!result.ok) return Response.json({ error: result.reason === 'attendance_closed' ? 'Questa visita è già terminata. Per correggere la presenza contatta il salone.' : 'Prenotazione non trovata' }, { status: result.reason === 'attendance_closed' ? 409 : 404 });
 
   return Response.json({ ok: true, refunded: result.refunded, refundPending: !!result.refundPending, refundStatus: result.refundStatus, alreadyCancelled: !!result.alreadyCancelled });
 }

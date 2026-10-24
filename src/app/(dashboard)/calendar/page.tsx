@@ -217,6 +217,7 @@ export default function CalendarPage() {
           appointment={selectedAppointment}
           finance={appointments.find(a => a.id === selectedAppointment.id)?.finance}
           onFinanceChange={() => { void refresh(true); }}
+          onAttendanceChange={() => { setSelectedAppointment(null); void refresh(true); }}
           services={services} categories={categories} clients={clients} stylists={stylists} salonId={salonId}
           onClose={() => setSelectedAppointment(null)}
           onSave={handleSave} onDelete={handleDelete}

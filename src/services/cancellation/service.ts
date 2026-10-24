@@ -12,7 +12,7 @@ import { shouldRefundOnCancel, cancellationWindowHours, type CancelInitiator } f
 
 export interface CancelResult {
   ok: boolean;
-  reason?: 'not_found';
+  reason?: 'not_found' | 'attendance_closed';
   alreadyCancelled?: boolean;
   refunded: boolean;
   refundPending?: boolean;
@@ -39,6 +39,7 @@ export async function cancelAndMaybeRefund(appointmentId: string, initiatedBy: C
     .maybeSingle();
 
   if (!appt) return { ok: false, reason: 'not_found', refunded: false };
+  if (appt.status === 'no_show') return { ok: false, reason: 'attendance_closed', refunded: false };
   let testResult: CancelResult | undefined;
   if (process.env.FISKALY_TEST_ENABLED === 'true') {
     if (process.env.FISKALY_ENV !== 'test' || process.env.NEXI_ENV !== 'test') throw new Error('TEST cancellation required');
