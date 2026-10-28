@@ -1,4 +1,5 @@
 'use client';
+import { DailyNotificationHistory } from '@/components/notifications/DailyNotificationHistory';
 import { NoShowHistory } from '@/components/attendance/NoShowHistory';
 import { ClientCredit } from '@/components/commerce/ClientCredit';
 import { useState, useEffect } from 'react';
@@ -181,6 +182,7 @@ export default function ClientsPage() {
               <button onClick={() => setHistory(null)}><X size={20} /></button>
             </div>
             <NoShowHistory clientId={history.client.id}/>
+            <DailyNotificationHistory clientId={history.client.id}/>
             {history.appointments.length === 0 ? (
               <p className="text-gray-400 text-center py-4">Nessun appuntamento passato</p>
             ) : (

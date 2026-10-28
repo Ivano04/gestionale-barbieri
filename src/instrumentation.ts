@@ -14,7 +14,7 @@ export async function register() {
     const { startNotificationsCron } = await import('@/services/notifications/cron');
     startNotificationsCron();
     if (process.env.RESEND_API_KEY) {
-      console.log('[cron] Notifiche email avviate (ogni 15 min)');
+      console.log('[cron] Notifiche giornaliere avviate (ogni minuto)');
     }
   }
 }

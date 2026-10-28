@@ -6,7 +6,7 @@ La presenza regolare è implicita: lo staff non deve completare o confermare ogn
 
 ## Automazioni
 
-- Recensioni: attendono almeno un'ora dalla fine dell'intera sequenza; il cron esistente passa ogni 15 minuti. La verifica immediatamente prima dell'invio esclude no_show e cancelled. Anche confirmed è idoneo, senza intervento dello staff.
+- Recensioni: attendono almeno un'ora dalla fine dell'intera sequenza; il cron giornaliero passa ogni minuto. La verifica immediatamente prima dell'invio esclude no_show e cancelled. Anche confirmed è idoneo, senza intervento dello staff.
 - Mancata presenza: una email per salone, cliente e giorno della visita (Europe/Rome), dopo 30 minuti dall'ultima segnalazione, elaborata ogni minuto. Il ripristino prima dell'invio la annulla. Lo stesso giorno non genera una seconda email se la precedente è stata inviata o ha un esito incerto.
 - Telefono senza email: segnalazione registrata e messaggio “Email assente”; nessun SMS. Non è configurato alcun provider SMS.
 - I dati e il destinatario del messaggio vengono congelati al primo tentativo; retry con la stessa chiave Resend e blocco entro 23 ore. Un timeout dopo accettazione non deve produrre una nuova email. Dopo cinque errori l'esito richiede verifica.
@@ -25,6 +25,6 @@ Verifiche: npm test; npx tsc --noEmit --incremental false; node scripts/no-show-
 3. Rimuovere la segnalazione entro 30 minuti e verificare l'annullamento del messaggio. Ripristinando la visita tornano idonee le automazioni non già inviate.
 4. Per provare la consegna, usare il destinatario autorizzato Resend TEST e lasciare una segnalazione valida in attesa. Non servono credenziali SMS.
 
-## Fase successiva separata
+## Recensioni e promemoria giornalieri
 
-Il raggruppamento di tutte le richieste di recensione del cliente per giornata, il promemoria riepilogativo e le relative preferenze restano il passo successivo concordato. Questa modifica introduce il ritardo di un'ora e la soppressione/ripresa legata alle assenze. Nessuna blacklist, lista d'attesa, penale o link per prepagare.
+Il raggruppamento giornaliero di recensioni e promemoria è implementato dalla migrazione 024_daily_notifications.sql. Vedere [automazioni giornaliere](daily-notifications-test.md). Le visite regolari continuano a non richiedere conferme dello staff. SMS, blacklist, lista d’attesa, penali e link per prepagare restano esclusi.
