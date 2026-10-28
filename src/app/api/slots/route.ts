@@ -1,3 +1,4 @@
+import { appointmentOccupiedEnd } from '@/lib/appointment-time';
 import { createServerSupabase } from '@/lib/supabase/server';
 import { getAvailableSlots } from '@/services/booking-engine';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -26,7 +27,7 @@ export async function GET(request: Request) {
       if (error || !a) return Response.json({ error: 'Appuntamento non disponibile' }, { status: 404 });
       if (a.service_id === ids[0]) {
         ids = [...new Set<string>([ids[0], ...(a.added_services ?? []).map((s: { service_id: string }) => s.service_id)])];
-        duration = (new Date(a.buffer_end_time ?? a.end_time).getTime()-new Date(a.start_time).getTime())/60000;
+        duration = (appointmentOccupiedEnd(a).getTime()-new Date(a.start_time).getTime())/60000;
       }
     }
     const slots = await getAvailableSlots({ salon_id, service_id: ids[0], service_ids: p.has('service_ids') || appointmentId ? ids : undefined, stylist_id: stylist_id || undefined, date, exclude_appointment_id: appointmentId ?? undefined, duration_minutes: duration });

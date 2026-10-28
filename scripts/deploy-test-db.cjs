@@ -16,7 +16,7 @@ const path = require('node:path');
     await db.query('CREATE SCHEMA IF NOT EXISTS localvista_deploy');
     await db.query('REVOKE ALL ON SCHEMA localvista_deploy FROM PUBLIC, anon, authenticated');
     await db.query('CREATE TABLE IF NOT EXISTS localvista_deploy.migrations(version text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())');
-    for (const file of ['014_fiscal_jobs.sql','015_fiscal_pdf_storage.sql','016_fiscal_email_jobs.sql','017_refunds_fiscal_cancellations.sql','018_client_rescheduling.sql','019_salon_checkout_quotes.sql','020_customer_commerce.sql','021_grouped_checkout.sql','022_widget_service_bundles.sql','023_no_show_visits.sql','024_daily_notifications.sql']) {
+    for (const file of ['014_fiscal_jobs.sql','015_fiscal_pdf_storage.sql','016_fiscal_email_jobs.sql','017_refunds_fiscal_cancellations.sql','018_client_rescheduling.sql','019_salon_checkout_quotes.sql','020_customer_commerce.sql','021_grouped_checkout.sql','022_widget_service_bundles.sql','023_no_show_visits.sql','024_daily_notifications.sql','025_booking_buffer_end.sql']) {
       const raw = readFileSync(path.join(root, 'supabase/migrations', file), 'utf8');
       const checksum = createHash('sha256').update(raw).digest('hex');
       const prior = await db.query('SELECT checksum FROM localvista_deploy.migrations WHERE version=$1',[file]);

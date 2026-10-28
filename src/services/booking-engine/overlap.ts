@@ -1,3 +1,4 @@
+import { appointmentOccupiedEnd } from '@/lib/appointment-time';
 import { addMinutes } from 'date-fns';
 
 export interface OccupiedBlock {
@@ -87,9 +88,9 @@ export function computeBusyPeriods(
 
 /** Bundles reserve the whole interval, including buffers; never use only the first service's phases. */
 export function appointmentBusyPeriods(a: { start_time: string; end_time: string; buffer_end_time?: string | null; added_services?: unknown; booked_services?: unknown }, service?: { duration_application: number | null; duration_processing: number | null; duration_finishing: number | null }) {
-  const start = new Date(a.start_time), end = new Date(a.buffer_end_time ?? a.end_time);
+  const start = new Date(a.start_time), end = appointmentOccupiedEnd(a);
   if (!service || (Array.isArray(a.added_services) && a.added_services.length) || (Array.isArray(a.booked_services) && a.booked_services.length)) return [{ start, end }];
-  const busy = computeBusyPeriods(start, new Date(a.end_time), service.duration_application, service.duration_processing, service.duration_finishing);
+  const busy = computeBusyPeriods(start, end, service.duration_application, service.duration_processing, service.duration_finishing);
   const last = addMinutes(start, (service.duration_application ?? 0)+(service.duration_processing ?? 0)+(service.duration_finishing ?? 0));
   if (last > start && last < end) busy.push({ start: last, end });
   return busy;

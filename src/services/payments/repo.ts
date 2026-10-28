@@ -12,7 +12,7 @@ export function createSupabasePaymentsRepo(supabase: SupabaseClient): PaymentsRe
         .insert(row)
         .select('id')
         .single();
-      if (error) throw new Error(`Inserimento payment fallito: ${error.message}`);
+      if (error) throw Object.assign(new Error(`Inserimento payment fallito: ${error.message}`), { code: error.code });
       return { id: data.id };
     },
 

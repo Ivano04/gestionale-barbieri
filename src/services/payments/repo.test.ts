@@ -1,14 +1,15 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, it, expect } from 'vitest';
 import { createSupabasePaymentsRepo } from './repo';
 
-function makeFakeSupabase(row: any = null) {
+function makeFakeSupabase(row: any = null, insertError: { code: string; message: string } | null = null) {
   const calls: any = { from: [], insert: [], update: [], eq: [], select: [] };
   const builder: any = {
     insert(r: any) { calls.insert.push(r); return builder; },
     update(patch: any) { calls.update.push(patch); return builder; },
     select(cols?: string) { calls.select.push(cols); return builder; },
     eq(col: string, val: any) { calls.eq.push({ col, val }); return builder; },
-    single() { return Promise.resolve({ data: { id: 'pay_99' }, error: null }); },
+    single() { return Promise.resolve({ data: { id: 'pay_99' }, error: insertError }); },
     maybeSingle() { return Promise.resolve({ data: row, error: null }); },
     // rende il builder "awaitable" per update().eq()
     then(resolve: any) { return Promise.resolve({ error: null }).then(resolve); },
@@ -58,4 +59,11 @@ describe('createSupabasePaymentsRepo', () => {
     const repo = createSupabasePaymentsRepo(sb as any);
     expect(await repo.getByProviderRef('NOPE')).toBeNull();
   });
+});
+
+it('preserves the database error code for safe checkout diagnostics', async () => {
+  const sb = makeFakeSupabase(null, { code: '22000', message: 'range lower bound must be less than or equal to range upper bound' });
+  await expect(createSupabasePaymentsRepo(sb as unknown as SupabaseClient).insertPending({
+    salon_id: 's1', provider: 'nexi', provider_payment_id: 'TEST', amount_cents: 5600, currency: 'EUR', status: 'pending',
+  })).rejects.toMatchObject({ code: '22000' });
 });

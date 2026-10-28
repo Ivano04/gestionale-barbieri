@@ -1,3 +1,4 @@
+import { appointmentOccupiedEnd } from '@/lib/appointment-time';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { ServiceOverride } from '@/lib/types';
 import { normalizeShifts, type WorkingHoursShift } from '@/lib/working-hours';
@@ -119,7 +120,7 @@ export async function fetchOccupiedSlots(
 
   const mapBlock = (b: any) => {
     const startTime = new Date(b.start_time);
-    const endTime = b.buffer_end_time ? new Date(b.buffer_end_time) : new Date(b.end_time);
+    const endTime = appointmentOccupiedEnd(b);
     const svc = serviceMap.get(b.service_id);
     const busyPeriods = appointmentBusyPeriods(b, svc);
     return {

@@ -11,16 +11,16 @@ const salon=randomUUID(),stylist=randomUUID(),service=randomUUID(),client=random
 try {
  run('CREATE DATABASE '+database,'postgres');created=true;
  run(`CREATE SCHEMA auth;CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS 'SELECT NULL::uuid';
- CREATE TABLE salons(id uuid PRIMARY KEY,name text);CREATE TABLE users(id uuid PRIMARY KEY,salon_id uuid,role text,uala_staff_id integer);
- CREATE TABLE clients(id uuid PRIMARY KEY,email text,first_name text);
+ CREATE TABLE salons(id uuid PRIMARY KEY,name text,phone text);CREATE TABLE users(id uuid PRIMARY KEY,salon_id uuid,role text,uala_staff_id integer,full_name text);
+ CREATE TABLE clients(id uuid PRIMARY KEY,email text,first_name text,salon_id uuid);
  CREATE TABLE services(id uuid PRIMARY KEY,name text,duration_application integer,duration_processing integer,duration_finishing integer,uala_treatment_id integer);
- CREATE TABLE appointments(id uuid PRIMARY KEY,salon_id uuid REFERENCES salons(id),start_time timestamptz,end_time timestamptz,buffer_end_time timestamptz,status text DEFAULT 'confirmed',stylist_id uuid,service_id uuid,client_id uuid,ghl_appointment_id text,treatwell_appointment_id text,added_services jsonb NOT NULL DEFAULT '[]');
+ CREATE TABLE appointments(id uuid PRIMARY KEY,salon_id uuid REFERENCES salons(id),start_time timestamptz,end_time timestamptz,buffer_end_time timestamptz,status text DEFAULT 'confirmed',stylist_id uuid,service_id uuid,client_id uuid,ghl_appointment_id text,treatwell_appointment_id text,added_services jsonb NOT NULL DEFAULT '[]',updated_at timestamptz NOT NULL DEFAULT now());
  CREATE TABLE time_blocks(id uuid PRIMARY KEY,salon_id uuid,stylist_id uuid,start_time timestamptz,end_time timestamptz);
  CREATE TABLE notifications(id uuid DEFAULT gen_random_uuid(),salon_id uuid,appointment_id uuid,type text,status text,sent_at timestamptz,UNIQUE(appointment_id,type));
  CREATE FUNCTION get_user_salon_id() RETURNS uuid LANGUAGE sql AS 'SELECT NULL::uuid';
  CREATE FUNCTION set_updated_at() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN NEW.updated_at:=now();RETURN NEW;END;';`);
- for(const file of ['012_payments_fiscal.sql','014_fiscal_jobs.sql','017_refunds_fiscal_cancellations.sql','018_client_rescheduling.sql','022_widget_service_bundles.sql'])run(readFileSync('supabase/migrations/'+file,'utf8'));
- run(`INSERT INTO salons VALUES('${salon}','TEST');INSERT INTO users(id,salon_id,role) VALUES('${stylist}','${salon}','stylist');INSERT INTO services(id,name) VALUES('${service}','TEST');INSERT INTO clients VALUES('${client}',NULL,'TEST');`);
+ for(const file of ['012_payments_fiscal.sql','014_fiscal_jobs.sql','017_refunds_fiscal_cancellations.sql','018_client_rescheduling.sql','022_widget_service_bundles.sql','023_no_show_visits.sql','024_daily_notifications.sql'])run(readFileSync('supabase/migrations/'+file,'utf8'));
+ run(`INSERT INTO salons(id,name) VALUES('${salon}','TEST');INSERT INTO users(id,salon_id,role) VALUES('${stylist}','${salon}','stylist');INSERT INTO services(id,name) VALUES('${service}','TEST');INSERT INTO clients(id,email,first_name,salon_id) VALUES('${client}',NULL,'TEST','${salon}');`);
 
  const start=(day,hour=9)=>run(`SELECT (date_trunc('day',now())+interval '${day} days ${hour} hours')::text`);
  const j=o=>"'"+JSON.stringify(o).replaceAll("'","''")+"'::jsonb";
@@ -28,6 +28,26 @@ try {
  const hold=(day,id=randomUUID(),more={})=>`INSERT INTO payments(id,salon_id,provider,amount_cents,metadata)VALUES('${id}','${salon}','nexi',7300,${j({...metadata(day),...more})})`;
  const appt=(day,id=randomUUID(),snapshot=[{name:'Colore'},{name:'Taglio'}],extra=[{service_id:service,name:'Taglio',duration_added:30}])=>`INSERT INTO appointments(id,salon_id,stylist_id,service_id,client_id,start_time,end_time,buffer_end_time,booked_services,added_services)VALUES('${id}','${salon}','${stylist}','${service}','${client}','${start(day)}','${start(day,11)}','${start(day,11)}',${j(snapshot)},${j(extra)})`;
  const fails=(name,sql)=>check(name,()=>assert.throws(()=>run(sql),/Slot no longer available/));
+ // Reproduce a historical imported appointment whose buffer predates its start.
+ // This test database is disposable; real salon data and triggers are never changed.
+ const historical=randomUUID();
+ run(`ALTER TABLE appointments DISABLE TRIGGER guard_rescheduled_appointment;
+ INSERT INTO appointments(id,salon_id,stylist_id,service_id,start_time,end_time,buffer_end_time,treatwell_appointment_id)
+ VALUES('${historical}','${salon}','${stylist}','${service}','${start(-10,9)}','${start(-10,10)}','${start(-10,7)}','fixture-import');
+ ALTER TABLE appointments ENABLE TRIGGER guard_rescheduled_appointment;`);
+ check('reproduces the checkout failure caused by an unrelated old buffer',()=>assert.throws(()=>run(hold(5)),/range lower bound must be less than or equal to range upper bound/));
+ run(readFileSync('supabase/migrations/025_booking_buffer_end.sql','utf8'));
+ check('migration restores checkout without deleting the historical appointment',()=>{run(hold(5));assert.equal(run(`SELECT buffer_end_time<start_time FROM appointments WHERE id='${historical}'`),'t');});
+ fails('historical service still blocks its real occupied interval',hold(-10));
+ check('stale buffer does not occupy the free time before the service',()=>run(`INSERT INTO payments(id,salon_id,provider,amount_cents,metadata) VALUES('${randomUUID()}','${salon}','nexi',5600,${j(metadata(-10,7))})`));
+ const short=randomUUID();run(`INSERT INTO appointments(id,salon_id,stylist_id,service_id,start_time,end_time,buffer_end_time) VALUES('${short}','${salon}','${stylist}','${service}','${start(3,9)}','${start(3,11)}','${start(3,10)}')`);
+ fails('a buffer inside the service must not release the remaining service',`INSERT INTO payments(id,salon_id,provider,amount_cents,metadata) VALUES('${randomUUID()}','${salon}','nexi',5600,${j(metadata(3,10))})`);
+ const positive=randomUUID();run(`INSERT INTO appointments(id,salon_id,stylist_id,service_id,start_time,end_time,buffer_end_time) VALUES('${positive}','${salon}','${stylist}','${service}','${start(2,9)}','${start(2,10)}','${start(2,11)}')`);
+ fails('valid cleanup buffer still blocks another checkout',`INSERT INTO payments(id,salon_id,provider,amount_cents,metadata) VALUES('${randomUUID()}','${salon}','nexi',5600,${j(metadata(2,10))})`);
+ check('rescheduling ignores a stale buffer and preserves the actual service duration',()=>{
+  assert.equal(JSON.parse(run(`SELECT reschedule_client_appointment('${short}','${start(3,9)}','${start(4,9)}','${randomUUID()}',24)`)).ok,true);
+  assert.equal(run(`SELECT extract(epoch FROM(end_time-start_time))::int||':'||(buffer_end_time=end_time) FROM appointments WHERE id='${short}'`),'7200:true');
+ });
  const results=await Promise.allSettled([concurrent(hold(7)),concurrent(hold(7))]);
  check('simultaneous widget checkouts reserve only one slot',()=>assert.equal(results.filter(r=>r.status==='fulfilled').length,1));
  fails('pending combined checkout blocks a staff appointment',appt(7,randomUUID(),[],[]));

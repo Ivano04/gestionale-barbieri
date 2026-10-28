@@ -26,3 +26,14 @@ it('reports a concurrent hold collision without returning a checkout URL',async(
 it('requires the customer to review a changed catalog price or duration',async()=>{expect((await call({booking,expectedAmountCents:1})).status).toBe(409);expect((await call({booking,expectedDurationMinutes:30})).status).toBe(409);expect(m.checkout).not.toHaveBeenCalled();});
 it('rejects a missing/foreign service and duplicated selections',async()=>{m.catalog.mockRejectedValue(new Error('Servizio non disponibile'));expect((await call({booking})).status).toBe(400);expect((await call({booking:{...booking,service_ids:[a,a]}})).status).toBe(400);expect(m.checkout).not.toHaveBeenCalled();});
 it('fails closed if availability cannot be verified',async()=>{m.slots.mockRejectedValue(new Error('database error'));expect((await call({booking})).status).toBe(503);expect(m.checkout).not.toHaveBeenCalled();});
+
+it('logs only a database code and never exposes internal details to the customer', async () => {
+ const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+ try {
+  m.checkout.mockRejectedValue(Object.assign(new Error('private database details'), { code: '22000' }));
+  const response = await call({ booking });
+  expect(response.status).toBe(503);
+  expect(await response.json()).toEqual({ error: 'Impossibile avviare il pagamento. Riprova tra poco.' });
+  expect(log).toHaveBeenCalledWith('[booking] checkout unavailable', '22000');
+ } finally { log.mockRestore(); }
+});
